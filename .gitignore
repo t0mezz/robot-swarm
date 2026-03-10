@@ -1,0 +1,23 @@
+# PlatformIO
+.pio/
+.pioenvs/
+.piodeps/
+.piolibdeps/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build artifacts
+tools/swarm_terminal
+*.o
+*.d
+
+# macOS
+.DS_Store
+
+# Credentials (falls WiFi-Passwörter in Configs landen)
+secrets.h

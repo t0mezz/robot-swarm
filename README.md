@@ -1,0 +1,96 @@
+# Robot Swarm
+
+ESP-NOW basiertes Schwarm-Steuerungssystem für bis zu 20 Pololu 3pi+ 2040 Roboter.
+
+## Architektur
+
+```
+Controller-PC  →  USB-Serial  →  Dongle-ESP32  →  ESP-NOW Broadcast  →  20× Robot-ESP32  →  UART  →  RP2040
+                  921600 Baud                        ~1ms Latenz                              921600 Baud
+```
+
+Gesamtlatenz: ~4ms vom Tastendruck bis Motorreaktion.
+
+## Projektstruktur
+
+```
+robot-swarm/
+├── platformio.ini              # Build-Konfiguration
+├── lib/
+│   └── SwarmProtocol/          # Gemeinsame Header
+│       ├── protocol.h          # Nachrichtentypen, CRC, Frame-Builder
+│       ├── hardware.h          # Pin-Definitionen, Timing
+│       └── debug_protocol.h    # RP2040 Display-Kommunikation
+├── src/
+│   ├── receiver/
+│   │   └── main.cpp            # Robot-ESP32 Firmware
+│   └── dongle/
+│       └── main.cpp            # Dongle-ESP32 Firmware
+├── tools/
+│   ├── swarm_terminal.cpp      # Terminal-Monitor (PC)
+│   └── Makefile
+└── docs/
+    └── architecture.md         # Pipeline-Dokumentation
+```
+
+## Voraussetzungen
+
+- [PlatformIO](https://platformio.org/) (CLI oder VS Code Extension)
+- ESP32-S3 SuperMini (2×: ein Dongle, ein+ Receiver)
+- Pololu 3pi+ 2040
+
+## Quick Start
+
+### 1. Dongle flashen
+
+```bash
+pio run -e dongle -t upload
+```
+
+### 2. Receiver flashen (Robot 0)
+
+```bash
+pio run -e receiver -t upload
+```
+
+Für andere Robot-IDs:
+
+```bash
+# Direkt per Build-Flag
+pio run -e receiver -t upload --build-flag="-DROBOT_ID=3"
+```
+
+Oder in `platformio.ini` eigene Environments anlegen (siehe Kommentare dort).
+
+### 3. Terminal-Monitor starten
+
+```bash
+cd tools
+make
+./swarm_terminal /dev/tty.usbmodem* 50
+```
+
+Zeigt alle registrierten Roboter mit RSSI, Latenz und Status.
+
+## Protokoll
+
+| Typ | Code | Richtung | Payload |
+|-----|------|----------|---------|
+| SWARM | 0x10 | PC → Broadcast | [id\|L\|R] × 20 = 60 Bytes |
+| ANNOUNCE | 0x20 | Robot → Broadcast | [id, MAC × 6] |
+| ANNOUNCE_ACK | 0x21 | Dongle → Broadcast | [id] |
+| PING | 0x22 | PC → Robot | [target_id, timestamp × 4] |
+| PONG | 0x23 | Robot → Dongle | [id, echo_timestamp × 4] |
+| TELEMETRY | 0x30 | Robot → Dongle | [id, rssi, bat, flags, mL, mR, uptime × 2] |
+| SPEED | 0x01 | ESP32 → RP2040 | [left, right] |
+
+Alle Frames: `[0xAA][0x55][type][len][payload...][CRC-8]`
+
+## Features
+
+- **Automatische Registrierung**: Roboter meldet sich per ANNOUNCE, Dongle bestätigt mit ACK
+- **TDMA-Telemetrie**: Jeder Robot hat einen 50ms Zeitslot im 1s-Zyklus
+- **Ping/Latenz**: Round-Robin Ping mit µs-Auflösung
+- **Motor-Watchdog**: Stoppt nach 300ms ohne Paket
+- **Debug-Display**: RSSI, Latenz, Status live auf dem RP2040 OLED
+- **Transport-Abstraktion**: Receiver vorbereitet für Wechsel auf WiFi STA
