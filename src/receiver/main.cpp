@@ -22,7 +22,6 @@ namespace Transport {
 
     void init() {
         WiFi.mode(WIFI_STA);
-        WiFi.disconnect();
         esp_wifi_set_ps(WIFI_PS_NONE);
         esp_wifi_set_channel(ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
 
@@ -77,7 +76,6 @@ static State state = State::ANNOUNCING;
 static volatile bool     hasData  = false;
 static uint8_t           rxBuf[250];
 static volatile uint8_t  rxLen    = 0;
-static volatile int      rxRSSI   = 0;
 
 static unsigned long lastAnnounce      = 0;
 static unsigned long lastSwarmReceived = 0;
@@ -89,7 +87,6 @@ static bool          debugRegistered   = false;
 
 static int8_t   currentMotorL = 0;
 static int8_t   currentMotorR = 0;
-static int8_t   lastRSSI      = 0;
 static uint16_t lastLatencyUs = 0;
 static uint8_t  statusFlags   = STATUS_ANNOUNCING;
 
@@ -97,12 +94,12 @@ static uint8_t  statusFlags   = STATUS_ANNOUNCING;
 // ESP-NOW Callback
 // ═══════════════════════════════════════════════════════════════
 
-void onReceive(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
+void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
     if (len > 0 && len <= (int)sizeof(rxBuf)) {
         memcpy(rxBuf, data, len);
         rxLen  = len;
-        rxRSSI = info->rx_ctrl->rssi;
         hasData = true;
+        if(!Transport::dongleKnown) Transport::registerDongle(mac);
     }
 }
 
@@ -120,7 +117,10 @@ static void sendAnnounce() {
     uint8_t frame[12];
     buildFrame(frame, MSG_ANNOUNCE, payload, 7);
     Transport::sendBroadcast(frame, 12);
+    Serial.printf("[ANN] Announce sent (ID=%d)\n", ROBOT_ID);
 }
+
+static void uart_send_speed(int8_t left, int8_t right);  // forward declaration
 
 // ═══════════════════════════════════════════════════════════════
 // Paket-Handler
@@ -146,10 +146,7 @@ static void processIncoming(const uint8_t* data, uint8_t len) {
 
         case MSG_SWARM: {
             lastSwarmReceived = millis();
-            if (state == State::ANNOUNCING) {
-                state = State::ACTIVE;
-                statusFlags &= ~STATUS_ANNOUNCING;
-            }
+            if (state == State::ANNOUNCING) break;
             // Eigene ID suchen
             uint8_t entries = payloadLen / 3;
             for (uint8_t i = 0; i < entries; i++) {
@@ -158,7 +155,6 @@ static void processIncoming(const uint8_t* data, uint8_t len) {
                     currentMotorR = (int8_t)payload[i * 3 + 2];
                     uart_send_speed(currentMotorL, currentMotorR);
                     lastSpeedApplied = millis();
-                    statusFlags |= STATUS_MOTOR_ACTIVE;
                     digitalWrite(LED_PIN, LED_ON);
                     ledOffAt = millis() + 5;
                     break;
@@ -193,6 +189,34 @@ static void processIncoming(const uint8_t* data, uint8_t len) {
 // UART an RP2040
 // ═══════════════════════════════════════════════════════════════
 
+static uint8_t uartRxBuf[64];
+static uint8_t uartRxIdx = 0;
+
+static void processUartFrame(const uint8_t* data, uint8_t len) {
+    if (!validateFrame(data, len)) return;
+    if (data[2] == MSG_DEBUG_PING && !debugRegistered) {
+        DebugScreen::registerAllFields(UART);
+        debugRegistered = true;
+    }
+}
+
+static void pollUart() {
+    while (UART.available()) {
+        uint8_t b = (uint8_t)UART.read();
+        if (uartRxIdx == 0 && b != MAGIC_0) continue;
+        if (uartRxIdx == 1 && b != MAGIC_1) { uartRxIdx = 0; continue; }
+        uartRxBuf[uartRxIdx++] = b;
+        if (uartRxIdx >= 4) {
+            uint8_t needed = frameSize(uartRxBuf[3]);
+            if (uartRxIdx >= needed) {
+                processUartFrame(uartRxBuf, needed);
+                uartRxIdx = 0;
+            }
+        }
+        if (uartRxIdx >= sizeof(uartRxBuf)) uartRxIdx = 0;
+    }
+}
+
 static void uart_send_speed(int8_t left, int8_t right) {
     uint8_t payload[2] = {(uint8_t)left, (uint8_t)right};
     uint8_t frame[7];
@@ -207,9 +231,8 @@ static void uart_send_speed(int8_t left, int8_t right) {
 static void sendTelemetry() {
     uint16_t uptime = (uint16_t)((millis() - bootTime) / 1000);
 
-    uint8_t payload[8] = {
+    uint8_t payload[7] = {
         ROBOT_ID,
-        (uint8_t)lastRSSI,
         0,                       // Batterie (TODO)
         statusFlags,
         (uint8_t)currentMotorL,
@@ -218,9 +241,9 @@ static void sendTelemetry() {
         (uint8_t)(uptime >> 8)
     };
 
-    uint8_t frame[13];
-    buildFrame(frame, MSG_TELEMETRY, payload, 8);
-    Transport::sendToDongle(frame, 13);
+    uint8_t frame[12];
+    buildFrame(frame, MSG_TELEMETRY, payload, 7);
+    Transport::sendToDongle(frame, 12);
 }
 
 static bool isMyTDMASlot() {
@@ -240,7 +263,6 @@ static void checkWatchdog() {
         if (currentMotorL != 0 || currentMotorR != 0) {
             currentMotorL = currentMotorR = 0;
             uart_send_speed(0, 0);
-            statusFlags &= ~STATUS_MOTOR_ACTIVE;
         }
     }
 }
@@ -261,12 +283,12 @@ void setup() {
     unsigned long t = millis();
     while (!Serial && millis() - t < 2000) delay(10);
 
-    Serial.printf("═══ Swarm Receiver ID:%d ═══\n", ROBOT_ID);
+    Serial.printf("Swarm Receiver ID:%d\n", ROBOT_ID);
     Serial.print("MAC: "); Serial.println(WiFi.macAddress());
 
     Transport::init();
     esp_now_register_recv_cb(onReceive);
-    esp_now_register_send_cb([](const wifi_tx_info_t*, esp_now_send_status_t) {});
+    esp_now_register_send_cb([](const uint8_t*, esp_now_send_status_t) {});
 }
 
 void loop() {
@@ -275,7 +297,6 @@ void loop() {
     // Empfang
     if (hasData) {
         hasData = false;
-        lastRSSI = (int8_t)rxRSSI;
         processIncoming(rxBuf, rxLen);
     }
 
@@ -306,20 +327,13 @@ void loop() {
     checkWatchdog();
 
     // Debug-Screen
-    if (!debugRegistered && now - bootTime > DEBUG_REG_DELAY_MS) {
-        DebugScreen::registerAllFields(UART);
-        debugRegistered = true;
-    }
     if (debugRegistered && now - lastDebugUpdate >= DEBUG_UPDATE_MS) {
         const char* st = (state == State::ANNOUNCING) ? "ANN" :
-                         (statusFlags & STATUS_MOTOR_ACTIVE) ? "RUN" : "IDL";
-        DebugScreen::updateAll(UART, lastRSSI, lastLatencyUs, st,
+                         (currentMotorL != 0 || currentMotorR != 0) ? "RUN" : "IDL";
+        DebugScreen::updateAll(UART, lastLatencyUs, st,
                                 currentMotorL, currentMotorR);
         lastDebugUpdate = now;
     }
-
-    // UART vom RP2040 verwerfen (vorerst)
-    while (UART.available()) UART.read();
 
     // LED
     if (ledOffAt && now >= ledOffAt) { digitalWrite(LED_PIN, LED_OFF); ledOffAt = 0; }

@@ -17,12 +17,11 @@
 #define MSG_ANNOUNCE_ACK  0x21   // Dongle -> Broadcast: [id]
 #define MSG_PING          0x22   // Bidirektional: [target_id, timestamp x4]
 #define MSG_PONG          0x23   // Antwort: [id, roundtrip_us x2]
-#define MSG_TELEMETRY     0x30   // Robot -> Dongle: [id, rssi, bat, flags, mL, mR, uptime x2]
+#define MSG_TELEMETRY     0x30   // Robot -> Dongle: [id, bat, flags, mL, mR, uptime x2]
+                                 // TODO: add RSSI once ESP-IDF 5.x is used (esp_now_recv_info_t)
 #define MSG_CONFIG        0x40   // PC -> Robot
 
 // ─── Telemetrie Status-Flags ─────────────────────────────────
-#define STATUS_MOTOR_ACTIVE   0x01
-#define STATUS_SENSOR_ERROR   0x02
 #define STATUS_LOW_BATTERY    0x04
 #define STATUS_ANNOUNCING     0x08
 

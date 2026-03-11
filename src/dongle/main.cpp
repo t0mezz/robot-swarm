@@ -10,7 +10,7 @@
 #include "protocol.h"
 
 // ─── Hardware ────────────────────────────────────────────────
-#define LED_PIN           8
+#define LED_PIN           21
 #define LED_ON            LOW
 #define LED_OFF           HIGH
 #define ESPNOW_CHANNEL    1
@@ -21,7 +21,6 @@ struct Robot {
     bool          active;
     uint8_t       mac[6];
     unsigned long lastSeen;
-    int8_t        rssi;
 };
 
 static Robot robots[MAX_ROBOTS] = {};
@@ -42,15 +41,13 @@ static PingTracker pingTracker = {false, 0, 0};
 static volatile bool    hasData  = false;
 static uint8_t          rxBuf[250];
 static volatile uint8_t rxLen    = 0;
-static volatile int     rxRSSI   = 0;
 static uint8_t          rxMAC[6] = {};
 
-void onReceive(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
+void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
     if (len > 0 && len <= (int)sizeof(rxBuf)) {
         memcpy(rxBuf, data, len);
         rxLen  = len;
-        rxRSSI = info->rx_ctrl->rssi;
-        memcpy(rxMAC, info->src_addr, 6);
+        memcpy(rxMAC, mac, 6);
         hasData = true;
     }
 }
@@ -65,7 +62,8 @@ static unsigned long lastByteAt = 0;
 // ─── Eingehende ESP-NOW Pakete routen ────────────────────────
 
 static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) {
-    if (!validateFrame(data, len)) return;
+    Serial.printf("[RX] %d bytes, magic=%02X %02X\n", len, data[0], data[1]);
+    if (!validateFrame(data, len)) { Serial.println("[RX] validateFrame FAILED"); return; }
 
     uint8_t type       = data[2];
     uint8_t payloadLen = data[3];
@@ -81,7 +79,6 @@ static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) 
             robots[robotId].active = true;
             memcpy(robots[robotId].mac, mac, 6);
             robots[robotId].lastSeen = millis();
-            robots[robotId].rssi = (int8_t)rxRSSI;
 
             // ACK
             uint8_t ackPayload[1] = {robotId};
@@ -89,13 +86,12 @@ static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) 
             buildFrame(ackFrame, MSG_ANNOUNCE_ACK, ackPayload, 1);
             esp_now_send(broadcastMAC, ackFrame, 6);
 
-            // An PC: [id][mac x6][rssi]
-            uint8_t regPayload[8] = {robotId};
+            // An PC: [id][mac x6]
+            uint8_t regPayload[7] = {robotId};
             memcpy(&regPayload[1], mac, 6);
-            regPayload[7] = (uint8_t)(int8_t)rxRSSI;
-            uint8_t regFrame[13];
-            buildFrame(regFrame, MSG_ANNOUNCE, regPayload, 8);
-            Serial.write(regFrame, 13);
+            uint8_t regFrame[12];
+            buildFrame(regFrame, MSG_ANNOUNCE, regPayload, 7);
+            Serial.write(regFrame, 12);
 
             digitalWrite(LED_PIN, LED_ON);
             break;
@@ -104,7 +100,6 @@ static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) 
         case MSG_TELEMETRY: {
             if (payloadLen >= 1 && payload[0] < MAX_ROBOTS) {
                 robots[payload[0]].lastSeen = millis();
-                robots[payload[0]].rssi = (int8_t)rxRSSI;
             }
             // 1:1 an PC
             Serial.write(data, len);
@@ -174,14 +169,13 @@ void setup() {
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, LED_OFF);
 
-    Serial.begin(921600);
+    Serial.begin(115200);
     unsigned long t = millis();
     while (!Serial && millis() - t < 2000) delay(10);
 
     Serial.println("═══ Swarm Dongle ═══");
 
     WiFi.mode(WIFI_STA);
-    WiFi.disconnect();
     esp_wifi_set_ps(WIFI_PS_NONE);
     esp_wifi_set_channel(ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
 
@@ -193,7 +187,7 @@ void setup() {
     }
 
     esp_now_register_recv_cb(onReceive);
-    esp_now_register_send_cb([](const wifi_tx_info_t*, esp_now_send_status_t status) {
+    esp_now_register_send_cb([](const uint8_t*, esp_now_send_status_t status) {
         if (status == ESP_NOW_SEND_SUCCESS) {
             digitalWrite(LED_PIN, LED_ON);
             ledOffAt = millis() + 20;

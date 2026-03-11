@@ -36,8 +36,6 @@ robot-swarm/
 ## Voraussetzungen
 
 - [PlatformIO](https://platformio.org/) (CLI oder VS Code Extension)
-- ESP32-S3 SuperMini (2×: ein Dongle, ein+ Receiver)
-- Pololu 3pi+ 2040
 
 ## Quick Start
 
@@ -53,14 +51,11 @@ pio run -e dongle -t upload
 pio run -e receiver -t upload
 ```
 
-Für andere Robot-IDs:
+Für andere Robot-IDs: eigene Environments in `platformio.ini` anlegen (siehe Kommentare dort) und dann:
 
 ```bash
-# Direkt per Build-Flag
-pio run -e receiver -t upload --build-flag="-DROBOT_ID=3"
+pio run -e robot_3 -t upload
 ```
-
-Oder in `platformio.ini` eigene Environments anlegen (siehe Kommentare dort).
 
 ### 3. Terminal-Monitor starten
 

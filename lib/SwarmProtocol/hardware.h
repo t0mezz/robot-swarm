@@ -12,7 +12,7 @@
 #endif
 
 // ─── Pins (ESP32-S3 SuperMini) ───────────────────────────────
-#define LED_PIN           8
+#define LED_PIN           21
 #define LED_ON            LOW
 #define LED_OFF           HIGH
 #define UART_TX_PIN       43
@@ -26,8 +26,7 @@
 // ─── Timing ──────────────────────────────────────────────────
 #define ANNOUNCE_INTERVAL_MS   500     // Announce-Rate im Registrierungsmodus
 #define ANNOUNCE_TIMEOUT_MS    10000   // 10s ohne Swarm -> re-announce
-#define TDMA_CYCLE_MS          1000    // Telemetrie-Zyklus
-#define TDMA_SLOT_MS           50      // Slot-Breite pro Robot
+#define TDMA_CYCLE_MS          5000    // Telemetrie-Zyklus
+#define TDMA_SLOT_MS           250     // Slot-Breite pro Robot
 #define WATCHDOG_TIMEOUT_MS    300     // Motor-Stop nach 300ms ohne Paket
-#define DEBUG_REG_DELAY_MS     2000    // Debug-Felder nach Boot registrieren
 #define DEBUG_UPDATE_MS        250     // Debug-Daten Aktualisierung

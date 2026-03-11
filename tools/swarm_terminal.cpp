@@ -47,8 +47,6 @@
 
 #define MAX_ROBOTS        20
 
-#define STATUS_MOTOR_ACTIVE   0x01
-#define STATUS_SENSOR_ERROR   0x02
 #define STATUS_LOW_BATTERY    0x04
 #define STATUS_ANNOUNCING     0x08
 
@@ -81,12 +79,22 @@ static int serial_open(const std::string& path, int baud) {
         std::cerr << "Cannot open " << path << ": " << strerror(errno) << std::endl;
         return -1;
     }
+    // Prevent ESP32 auto-reset: clear DTR/RTS immediately after open
+    {
+        int pins = 0;
+        ioctl(fd, TIOCMGET, &pins);
+        pins &= ~(TIOCM_DTR | TIOCM_RTS);
+        ioctl(fd, TIOCMSET, &pins);
+    }
     struct termios tty{};
     tcgetattr(fd, &tty);
     cfsetispeed(&tty, B115200);
     cfsetospeed(&tty, B115200);
-    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
-    tty.c_cflag &= ~(PARENB | CSTOPB | CRTSCTS);
+        tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
+        tty.c_cflag &= ~(PARENB | CSTOPB | HUPCL);  // HUPCL: don't drop DTR on close
+    #ifdef CRTSCTS
+        tty.c_cflag &= ~CRTSCTS;
+    #endif
     tty.c_cflag |= (CLOCAL | CREAD);
     tty.c_iflag &= ~(IXON | IXOFF | IXANY | ICRNL | INLCR | IGNCR);
     tty.c_oflag &= ~OPOST;
@@ -96,7 +104,10 @@ static int serial_open(const std::string& path, int baud) {
     tcsetattr(fd, TCSANOW, &tty);
     tcflush(fd, TCIOFLUSH);
 #ifdef __APPLE__
-    if (baud > 230400) { speed_t c = (speed_t)baud; ioctl(fd, IOSSIOSPEED, &c); }
+    {
+        speed_t speed = (speed_t)baud;
+        ioctl(fd, IOSSIOSPEED, &speed);
+    }
 #else
     if (baud > 230400) {
         speed_t h = (baud == 460800) ? B460800 : B921600;
@@ -114,7 +125,6 @@ static int serial_open(const std::string& path, int baud) {
 struct RobotStatus {
     bool     registered = false;
     uint8_t  mac[6]     = {};
-    int8_t   rssi       = 0;
     uint8_t  battery    = 0;
     uint8_t  flags      = 0;
     int8_t   motorL     = 0;
@@ -153,32 +163,32 @@ static void parsePacket(const uint8_t* data, int len) {
 
     switch (type) {
         case MSG_ANNOUNCE: {
-            // Robot registriert sich: [id][mac x6][rssi]
-            if (plen < 8) break;
+            // Robot registriert sich: [id][mac x6]
+            if (plen < 7) break;
             uint8_t id = payload[0];
             if (id >= MAX_ROBOTS) break;
 
             robots[id].registered = true;
             memcpy(robots[id].mac, &payload[1], 6);
-            robots[id].rssi = (int8_t)payload[7];
             robots[id].lastSeen = now;
-            robots[id].flags |= STATUS_ANNOUNCING;
+            if (!robots[id].hasTelemetry)
+                robots[id].flags |= STATUS_ANNOUNCING;
             break;
         }
 
         case MSG_TELEMETRY: {
-            // [id][rssi][battery][flags][motorL][motorR][uptime_lo][uptime_hi]
-            if (plen < 8) break;
+            // [id][battery][flags][motorL][motorR][uptime_lo][uptime_hi]
+            // TODO: add RSSI once ESP-IDF 5.x is used (esp_now_recv_info_t)
+            if (plen < 7) break;
             uint8_t id = payload[0];
             if (id >= MAX_ROBOTS) break;
 
             robots[id].registered = true;
-            robots[id].rssi    = (int8_t)payload[1];
-            robots[id].battery = payload[2];
-            robots[id].flags   = payload[3];
-            robots[id].motorL  = (int8_t)payload[4];
-            robots[id].motorR  = (int8_t)payload[5];
-            robots[id].uptime  = payload[6] | (payload[7] << 8);
+            robots[id].battery = payload[1];
+            robots[id].flags   = payload[2];
+            robots[id].motorL  = (int8_t)payload[3];
+            robots[id].motorR  = (int8_t)payload[4];
+            robots[id].uptime  = payload[5] | (payload[6] << 8);
             robots[id].lastSeen = now;
             robots[id].lastTelemetry = now;
             robots[id].hasTelemetry = true;
@@ -280,20 +290,12 @@ static void sendPing(int fd, uint8_t robotId) {
 // Terminal UI
 // ═══════════════════════════════════════════════════════════════
 
-static const char* statusStr(uint8_t flags) {
-    if (flags & STATUS_ANNOUNCING) return "\033[33mANNOUNCE\033[0m";
-    if (flags & STATUS_SENSOR_ERROR) return "\033[31mERROR\033[0m";
-    if (flags & STATUS_LOW_BATTERY) return "\033[31mLOW BAT\033[0m";
-    if (flags & STATUS_MOTOR_ACTIVE) return "\033[32mRUNNING\033[0m";
-    return "\033[36mIDLE\033[0m";
-}
-
-static const char* rssiBar(int8_t rssi) {
-    if (rssi > -40) return "\033[32m████\033[0m";
-    if (rssi > -55) return "\033[32m███\033[0m ";
-    if (rssi > -70) return "\033[33m██\033[0m  ";
-    if (rssi > -80) return "\033[31m█\033[0m   ";
-    return "\033[31m·\033[0m   ";
+static void statusParts(uint8_t flags, int8_t motorL, int8_t motorR,
+                        const char*& color, const char*& text) {
+    if (flags & STATUS_ANNOUNCING)  { color = "\033[33m"; text = "ANNOUNCE"; return; }
+    if (flags & STATUS_LOW_BATTERY) { color = "\033[31m"; text = "LOW BAT "; return; }
+    if (motorL != 0 || motorR != 0) { color = "\033[32m"; text = "RUNNING "; return; }
+    color = "\033[36m"; text = "IDLE    ";
 }
 
 static void drawUI() {
@@ -309,8 +311,8 @@ static void drawUI() {
     std::cout << "\n";
 
     // Tabellen-Header
-    std::cout << "\033[1;37m ID │ MAC               │ RSSI │ Signal │ Latency │ Status   │ Motors  │ Uptime\033[0m\n";
-    std::cout << "\033[90m────┼───────────────────┼──────┼────────┼─────────┼──────────┼─────────┼────────\033[0m\n";
+    std::cout << "\033[1;37m ID │ MAC               │ Latency │ Status   │ Motors    │ Uptime\033[0m\n";
+    std::cout << "\033[90m────┼───────────────────┼─────────┼──────────┼───────────┼────────\033[0m\n";
 
     int activeCount = 0;
     int totalCount = 0;
@@ -337,23 +339,20 @@ static void drawUI() {
         else
             snprintf(latStr, sizeof(latStr), "   --- ");
 
-        char motorStr[10];
+        char motorStr[12];
         snprintf(motorStr, sizeof(motorStr), "%+4d %+4d", r.motorL, r.motorR);
 
         char uptimeStr[10];
         snprintf(uptimeStr, sizeof(uptimeStr), "%4ds", r.uptime);
 
         if (lost) {
-            std::cout << "\033[31m";
-            printf(" %2d │ %s │ %4d │ ·    │ %s │ LOST     │ %s │ %s",
-                   i, macStr, r.rssi, latStr, motorStr, uptimeStr);
-            std::cout << "\033[0m\n";
+            printf("\033[31m %2d │ %s │ %s │ LOST     │ %s │ %s\033[0m\n",
+                   i, macStr, latStr, motorStr, uptimeStr);
         } else {
-            printf(" %2d │ %s │ %4d │ %s│ %s │ %-8s │ %s │ %s\n",
-                   i, macStr, r.rssi, rssiBar(r.rssi), latStr,
-                   "", motorStr, uptimeStr);
-            // Status mit Farbe nochmal drüber (cursor back)
-            std::cout << "\033[1A\033[59G" << statusStr(r.flags) << "\033[1B\033[0G";
+            const char* sc; const char* st;
+            statusParts(r.flags, r.motorL, r.motorR, sc, st);
+            printf(" %2d │ %s │ %s │ %s%s\033[0m │ %s │ %s\n",
+                   i, macStr, latStr, sc, st, motorStr, uptimeStr);
         }
     }
 
@@ -373,13 +372,13 @@ static void drawUI() {
 // ═══════════════════════════════════════════════════════════════
 
 int main(int argc, char* argv[]) {
-    std::string port_path = (argc > 1) ? argv[1] : "/dev/ttyACM0";
+    std::string port_path = (argc > 1) ? argv[1] : "/dev/tty.usbserial-0001";
     int         send_ms   = (argc > 2) ? std::stoi(argv[2]) : 50;
 
     std::cout << "Swarm Terminal Monitor\n";
     std::cout << "Port: " << port_path << "  Interval: " << send_ms << "ms\n\n";
 
-    int fd = serial_open(port_path, 921600);
+    int fd = serial_open(port_path, 115200);
     if (fd < 0) return 1;
 
     signal(SIGINT, signal_handler);

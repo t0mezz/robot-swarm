@@ -10,6 +10,7 @@
 // ─── Debug-Nachrichtentypen (UART zum RP2040) ────────────────
 #define MSG_DEBUG_REG     0x22   // Feld registrieren
 #define MSG_DEBUG_DATA    0x23   // Wert-Update
+#define MSG_DEBUG_PING    0x24   // RP2040 -> ESP32: bereit für Debug-Daten
 
 // ─── Display-Typen ───────────────────────────────────────────
 #define DBG_METRIC        0x01   // Fixer Text an Position (x, y)
@@ -23,11 +24,11 @@
 #define DBG_STRING        0x04   // n Bytes UTF-8
 
 // ─── Feld-IDs für den Robot-Debug-Screen ─────────────────────
-#define DEBUG_FIELD_RSSI      0
-#define DEBUG_FIELD_LATENCY   1
-#define DEBUG_FIELD_STATUS    2
-#define DEBUG_FIELD_MOTOR_L   3
-#define DEBUG_FIELD_MOTOR_R   4
+// TODO: add DEBUG_FIELD_RSSI once ESP-IDF 5.x is used (esp_now_recv_info_t)
+#define DEBUG_FIELD_LATENCY   0
+#define DEBUG_FIELD_STATUS    1
+#define DEBUG_FIELD_MOTOR_L   2
+#define DEBUG_FIELD_MOTOR_R   3
 
 // ─── UART-Paket senden ──────────────────────────────────────
 // Nutzt den gemeinsamen buildFrame aus protocol.h
@@ -62,11 +63,10 @@ namespace DebugScreen {
     // ─── Alle Robot-Debug-Felder registrieren ────────────────
     template<typename UartType>
     static void registerAllFields(UartType& uart) {
-        registerField(uart, DEBUG_FIELD_RSSI,    DBG_GRAPH,  0,  0,  "RSSI");
-        registerField(uart, DEBUG_FIELD_LATENCY, DBG_METRIC, 0,  34, "LAT");
-        registerField(uart, DEBUG_FIELD_STATUS,  DBG_METRIC, 64, 34, "STA");
-        registerField(uart, DEBUG_FIELD_MOTOR_L, DBG_METRIC, 0,  44, "ML");
-        registerField(uart, DEBUG_FIELD_MOTOR_R, DBG_METRIC, 64, 44, "MR");
+        registerField(uart, DEBUG_FIELD_LATENCY, DBG_METRIC, 0,  0,  "LAT");
+        registerField(uart, DEBUG_FIELD_STATUS,  DBG_METRIC, 64, 0,  "STA");
+        registerField(uart, DEBUG_FIELD_MOTOR_L, DBG_METRIC, 0,  10, "ML");
+        registerField(uart, DEBUG_FIELD_MOTOR_R, DBG_METRIC, 64, 10, "MR");
     }
 
     // ─── Wert-Updates ────────────────────────────────────────
@@ -88,9 +88,8 @@ namespace DebugScreen {
 
     // ─── Alle Debug-Werte auf einmal aktualisieren ───────────
     template<typename UartType>
-    static void updateAll(UartType& uart, int8_t rssi, uint16_t latencyUs,
+    static void updateAll(UartType& uart, uint16_t latencyUs,
                            const char* status, int8_t motorL, int8_t motorR) {
-        sendInt8(uart, DEBUG_FIELD_RSSI, rssi);
         sendInt8(uart, DEBUG_FIELD_MOTOR_L, motorL);
         sendInt8(uart, DEBUG_FIELD_MOTOR_R, motorR);
 
