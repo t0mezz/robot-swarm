@@ -36,6 +36,43 @@ struct PingTracker {
 
 static PingTracker pingTracker = {false, 0, 0};
 
+// ─── ESP-NOW Send-Queue ──────────────────────────────────────
+// esp_now_send() must not be called while a previous send is in flight.
+// We queue packets and dispatch the next one from the send callback.
+
+#define TX_QUEUE_SIZE 8
+struct TxPacket { uint8_t data[250]; uint8_t len; bool isPing; };
+
+static TxPacket txQueue[TX_QUEUE_SIZE];
+static uint8_t  txHead = 0;
+static uint8_t  txTail = 0;
+static volatile bool txBusy = false;
+
+static void txDispatchNext() {
+    if (txHead == txTail) { txBusy = false; return; }
+    TxPacket& p = txQueue[txHead];
+    txHead = (txHead + 1) % TX_QUEUE_SIZE;
+    if (p.isPing) pingTracker.sentAt = micros();
+    esp_now_send(broadcastMAC, p.data, p.len);
+}
+
+static void enqueueSend(const uint8_t* data, uint8_t len, bool isPing = false) {
+    if (!txBusy) {
+        txBusy = true;
+        if (isPing) pingTracker.sentAt = micros();
+        esp_now_send(broadcastMAC, data, len);
+        return;
+    }
+    // Queue if space available, otherwise drop
+    uint8_t next = (txTail + 1) % TX_QUEUE_SIZE;
+    if (next != txHead) {
+        memcpy(txQueue[txTail].data, data, len);
+        txQueue[txTail].len    = len;
+        txQueue[txTail].isPing = isPing;
+        txTail = next;
+    }
+}
+
 // ─── Empfangs-Buffer ─────────────────────────────────────────
 
 static volatile bool    hasData  = false;
@@ -84,7 +121,7 @@ static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) 
             uint8_t ackPayload[1] = {robotId};
             uint8_t ackFrame[6];
             buildFrame(ackFrame, MSG_ANNOUNCE_ACK, ackPayload, 1);
-            esp_now_send(broadcastMAC, ackFrame, 6);
+            enqueueSend(ackFrame, 6);
 
             // An PC: [id][mac x6]
             uint8_t regPayload[7] = {robotId};
@@ -138,22 +175,21 @@ static void processSerialPacket(const uint8_t* data, uint8_t len) {
 
     switch (type) {
         case MSG_SWARM:
-            esp_now_send(broadcastMAC, data, len);
+            enqueueSend(data, len);
             break;
 
         case MSG_PING: {
             uint8_t payloadLen = data[3];
             if (payloadLen >= 1) {
                 pingTracker.robotId = data[4];
-                pingTracker.sentAt = micros();
                 pingTracker.pending = true;
-                esp_now_send(broadcastMAC, data, len);
+                enqueueSend(data, len, /*isPing=*/true);
             }
             break;
         }
 
         default:
-            esp_now_send(broadcastMAC, data, len);
+            enqueueSend(data, len);
             break;
     }
 }
@@ -192,6 +228,7 @@ void setup() {
             digitalWrite(LED_PIN, LED_ON);
             ledOffAt = millis() + 20;
         }
+        txDispatchNext();
     });
 
     esp_now_peer_info_t peer = {};
@@ -225,7 +262,17 @@ void loop() {
     }
 
     if (serialLen > 0 && (now - lastByteAt) >= SERIAL_TIMEOUT_MS) {
-        processSerialPacket(serialBuf, serialLen);
+        uint8_t* p   = serialBuf;
+        uint8_t  rem = serialLen;
+        while (rem >= 5) {
+            while (rem >= 2 && !(p[0] == MAGIC_0 && p[1] == MAGIC_1)) { p++; rem--; }
+            if (rem < 5) break;
+            uint8_t needed = frameSize(p[3]);
+            if (rem < needed) break;
+            processSerialPacket(p, needed);
+            p   += needed;
+            rem -= needed;
+        }
         serialLen = 0;
     }
 
@@ -235,7 +282,7 @@ void loop() {
         for (int i = 0; i < MAX_ROBOTS; i++) payload[i * 3] = (uint8_t)i;
         uint8_t frame[5 + MAX_ROBOTS * 3];
         buildFrame(frame, MSG_SWARM, payload, MAX_ROBOTS * 3);
-        esp_now_send(broadcastMAC, frame, sizeof(frame));
+        enqueueSend(frame, sizeof(frame));
         lastSerial = now;
     }
 

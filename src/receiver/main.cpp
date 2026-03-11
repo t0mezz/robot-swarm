@@ -3,6 +3,8 @@
 // Nutzt: protocol.h, hardware.h, debug_protocol.h
 //
 // Board: ESP32-S3 SuperMini | Arduino ESP32 Core 3.x
+//
+// Led blinkt 
 
 #include <WiFi.h>
 #include <esp_now.h>
@@ -144,6 +146,7 @@ static void processIncoming(const uint8_t* data, uint8_t len) {
             break;
         }
 
+        // LED flashen und uart senden
         case MSG_SWARM: {
             lastSwarmReceived = millis();
             if (state == State::ANNOUNCING) break;
@@ -156,7 +159,7 @@ static void processIncoming(const uint8_t* data, uint8_t len) {
                     uart_send_speed(currentMotorL, currentMotorR);
                     lastSpeedApplied = millis();
                     digitalWrite(LED_PIN, LED_ON);
-                    ledOffAt = millis() + 5;
+                    ledOffAt = millis() + LED_ON_DURATION_MS;
                     break;
                 }
             }

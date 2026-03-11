@@ -8,6 +8,7 @@
 .vscode/
 .idea/
 *.swp
+*.claude/
 *.swo
 *~
 
@@ -19,5 +20,5 @@ tools/swarm_terminal
 # macOS
 .DS_Store
 
-# Credentials (falls WiFi-Passwörter in Configs landen)
+# Credentials
 secrets.h
