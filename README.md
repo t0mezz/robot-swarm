@@ -1,6 +1,10 @@
 # Robot Swarm
 
-ESP-NOW basiertes Schwarm-Steuerungssystem für bis zu 20 Pololu 3pi+ 2040 Roboter.
+ESP-NOW basiertes Schwarm-Steuerungssystem für bis zu min. 20 Pololu 3pi+ 2040 Roboter. (MAX_ROBOTS)
+
+
+
+---
 
 ## Architektur
 
@@ -89,3 +93,18 @@ Alle Frames: `[0xAA][0x55][type][len][payload...][CRC-8]`
 - **Motor-Watchdog**: Stoppt nach 300ms ohne Paket
 - **Debug-Display**: RSSI, Latenz, Status live auf dem RP2040 OLED
 - **Transport-Abstraktion**: Receiver vorbereitet für Wechsel auf WiFi STA
+
+---
+
+## Summary
+
+ESP-NOW based swarm control system for up to 20 Pololu 3pi+ 2040 robots. A controller PC sends commands over USB serial to a dongle ESP32, which broadcasts them via ESP-NOW to all robot ESP32s. Each robot ESP32 forwards motor commands to the RP2040 over UART. End-to-end latency is ~4ms from keypress to motor response.
+
+**Key features:**
+- Automatic robot registration via ANNOUNCE/ACK handshake
+- TDMA telemetry: each robot gets a 50ms slot in a 1s cycle
+- Round-robin ping with µs-resolution latency measurement
+- Motor watchdog: stops motors after 300ms without a packet
+- Live debug display (RSSI, latency, status) on the RP2040 OLED
+
+**Quick start:** Flash the dongle (`pio run -e dongle -t upload`), flash each robot (`pio run -e receiver -t upload`), then run the terminal monitor (`./tools/swarm_terminal /dev/tty.usbmodem* 50`).
