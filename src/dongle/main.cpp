@@ -36,33 +36,37 @@ struct PingTracker {
 
 static PingTracker pingTracker = {false, 0, 0};
 
-// ─── ESP-NOW Send-Queue ──────────────────────────────────────
+// ─── ESP-NOW Send — single pending slot (latest-wins) ────────
 // esp_now_send() must not be called while a previous send is in flight.
-// We queue packets and dispatch the next one from the send callback.
+// Instead of a FIFO queue, we keep only the single most-recent pending
+// packet.  This guarantees zero stale-command lag: a burst of SWARM frames
+// never causes the robot to execute old directions before a new one.
+//
+// Revert to the queue version if needed:
+//   git checkout a1cdb1a -- src/dongle/main.cpp
 
-#define TX_QUEUE_SIZE 8
-struct TxPacket { uint8_t data[250]; uint8_t len; bool isPing; };
-
-static TxPacket      txQueue[TX_QUEUE_SIZE];
-static uint8_t       txHead     = 0;
-static uint8_t       txTail     = 0;
-static volatile bool txBusy     = false;
-static portMUX_TYPE  txMux      = portMUX_INITIALIZER_UNLOCKED;
+static uint8_t       pendingData[250];
+static uint8_t       pendingLen  = 0;
+static bool          pendingPing = false;
+static volatile bool txBusy      = false;
+static portMUX_TYPE  txMux       = portMUX_INITIALIZER_UNLOCKED;
 
 static void txDispatchNext() {
-    // Fix: hold spinlock while touching txHead/txTail so Core 1 (enqueueSend)
-    // sees a consistent queue state and the memcpy-before-txTail-update ordering
-    // is enforced across both cores.
+    // Copy the pending packet under the spinlock so Core 1 cannot overwrite
+    // pendingData between the lock release and the esp_now_send call.
+    uint8_t buf[250];
+    uint8_t len;
+    bool    ping;
     portENTER_CRITICAL(&txMux);
-    if (txHead == txTail) { txBusy = false; portEXIT_CRITICAL(&txMux); return; }
-    uint8_t slot = txHead;
-    txHead = (txHead + 1) % TX_QUEUE_SIZE;
+    len  = pendingLen;
+    ping = pendingPing;
+    if (len) memcpy(buf, pendingData, len);
+    pendingLen = 0;
     portEXIT_CRITICAL(&txMux);
-    // esp_now_send copies data internally before returning, so slot can be
-    // reused by enqueueSend immediately after this call.
-    if (txQueue[slot].isPing) pingTracker.sentAt = micros();
-    if (esp_now_send(broadcastMAC, txQueue[slot].data, txQueue[slot].len) != ESP_OK) {
-        // Send failed — callback will NOT fire, so release the lock immediately
+    if (!len) { txBusy = false; return; }
+    if (ping) pingTracker.sentAt = micros();
+    if (esp_now_send(broadcastMAC, buf, len) != ESP_OK) {
+        // Send failed — callback will NOT fire, so release the busy flag.
         txBusy = false;
     }
 }
@@ -76,25 +80,11 @@ static void enqueueSend(const uint8_t* data, uint8_t len, bool isPing = false) {
         }
         return;
     }
+    // A send is in flight: overwrite pending with the latest command.
     portENTER_CRITICAL(&txMux);
-    uint8_t next = (txTail + 1) % TX_QUEUE_SIZE;
-    if (next != txHead) {
-        memcpy(txQueue[txTail].data, data, len);
-        txQueue[txTail].len    = len;
-        txQueue[txTail].isPing = isPing;
-        txTail = next;
-    } else if (!isPing && data[2] == MSG_SWARM) {
-        // Fix: queue full but this is a SWARM (latest-wins) — overwrite the most
-        // recently queued slot if it is also a SWARM, so the freshest direction
-        // command always wins over a stale one.
-        uint8_t last = (txTail - 1 + TX_QUEUE_SIZE) % TX_QUEUE_SIZE;
-        if (txQueue[last].data[2] == MSG_SWARM) {
-            memcpy(txQueue[last].data, data, len);
-            txQueue[last].len = len;
-        }
-        // else: non-SWARM at tail (e.g. ping/pong) — drop new SWARM to preserve it
-    }
-    // else: queue full, non-SWARM packet — drop
+    memcpy(pendingData, data, len);
+    pendingLen  = len;
+    pendingPing = isPing;
     portEXIT_CRITICAL(&txMux);
 }
 
