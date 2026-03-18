@@ -12,6 +12,7 @@
 
 // ─── Nachrichtentypen ────────────────────────────────────────
 #define MSG_SPEED         0x01   // ESP32 -> RP2040 (UART): [left, right]
+#define MSG_ROBOT_ID      0x04   // ESP32 -> RP2040 (UART): [robot_id]
 #define MSG_SWARM         0x10   // PC -> Broadcast: [id|L|R] x MAX_ROBOTS
 #define MSG_ANNOUNCE      0x20   // Robot -> Broadcast: [id, mac x6]
 #define MSG_ANNOUNCE_ACK  0x21   // Dongle -> Broadcast: [id]

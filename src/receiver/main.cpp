@@ -157,6 +157,7 @@ static void sendAnnounce() {
 }
 
 static void uart_send_speed(int8_t left, int8_t right);  // forward declaration
+static void uart_send_robot_id();                         // forward declaration
 
 // ═══════════════════════════════════════════════════════════════
 // Paket-Handler
@@ -243,6 +244,7 @@ static void processUartFrame(const uint8_t* data, uint8_t len) {
     if (!validateFrame(data, len)) return;
     if (data[2] == MSG_DEBUG_PING) {
         if (Serial) Serial.println("[DBG] Debug screen ping received, registering fields...");
+        uart_send_robot_id();
         DebugScreen::registerAllFields(UART);
         debugRegistered = true;
     }
@@ -271,6 +273,13 @@ static void uart_send_speed(int8_t left, int8_t right) {
     uint8_t frame[7];
     buildFrame(frame, MSG_SPEED, payload, 2);
     if (UART.availableForWrite() >= 7) UART.write(frame, 7);
+}
+
+static void uart_send_robot_id() {
+    uint8_t payload[1] = {ROBOT_ID};
+    uint8_t frame[6];
+    buildFrame(frame, MSG_ROBOT_ID, payload, 1);
+    if (UART.availableForWrite() >= 6) UART.write(frame, 6);
 }
 
 // ═══════════════════════════════════════════════════════════════

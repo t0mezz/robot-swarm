@@ -51,8 +51,9 @@
 #define MAX_CLIENTS    16
 
 // Frame magic — only needed for serial→client frame extraction
-#define MAGIC_0  0xAA
-#define MAGIC_1  0x55
+#define MAGIC_0   0xAA
+#define MAGIC_1   0x55
+#define MSG_SWARM 0x10
 
 // ═══════════════════════════════════════════════════════════════
 // Frame helpers (used only for serial→client extraction)
@@ -138,13 +139,22 @@ static int serial_open(const std::string& path, int baud) {
 // ═══════════════════════════════════════════════════════════════
 
 struct ClientConn {
-    int     fd    = -1;
+    int     fd     = -1;
     bool    active = false;
+    uint8_t rxBuf[512];
+    int     rxLen  = 0;
 };
 
 static ClientConn    clients[MAX_CLIENTS];
 static int           g_serialFd = -1;
 static volatile bool g_running  = true;
+
+// Latest-wins SWARM slot — holds the most recent MSG_SWARM frame received from
+// any client.  Flushed once per poll() wakeup so stale SWARM frames never pile
+// up in the kernel serial TX buffer ahead of fresher ones.
+static uint8_t g_latestSwarm[250];
+static int     g_latestSwarmLen   = 0;
+static bool    g_latestSwarmDirty = false;
 
 void signal_handler(int) { g_running = false; }
 
@@ -157,6 +167,7 @@ static void client_close(int slot) {
         close(clients[slot].fd);
         clients[slot].active = false;
         clients[slot].fd     = -1;
+        clients[slot].rxLen  = 0;
         std::cout << "[hub] Client disconnected (slot " << slot << ")\n";
     }
 }
@@ -234,24 +245,66 @@ static void serial_read_and_broadcast(int serialFd) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Clients → Serial (raw pass-through)
+// Clients → Serial (frame-aware, latest-wins for MSG_SWARM)
 // ═══════════════════════════════════════════════════════════════
 
+// Write the latest pending SWARM frame to serial and clear the slot.
+// Called once per poll() wakeup after all client data has been processed,
+// so only the freshest SWARM frame reaches the serial TX buffer.
+static void flushLatestSwarm() {
+    if (!g_latestSwarmDirty) return;
+    g_latestSwarmDirty = false;
+    ssize_t written = write(g_serialFd, g_latestSwarm, g_latestSwarmLen);
+    if (written < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        std::cerr << "[hub] Serial write error (SWARM flush): " << strerror(errno) << "\n";
+    }
+}
+
 static void process_client_data(int slot) {
+    ClientConn& c = clients[slot];
     uint8_t tmp[256];
-    ssize_t n = read(clients[slot].fd, tmp, sizeof(tmp));
+    ssize_t n = read(c.fd, tmp, sizeof(tmp));
     if (n <= 0) {
         client_close(slot);
         return;
     }
-    // Non-blocking write: at 115200 baud the serial TX kernel buffer (~4 KB) is never
-    // full at our packet rate (~2 kB/s), so EAGAIN won't occur in practice.
-    // Keeping O_NONBLOCK avoids stalling the poll loop and blocking the dongle's loop()
-    // by starving the hub's serial reads (which would cause Serial.write() on the dongle
-    // to block when its USB CDC TX buffer fills).
-    ssize_t written = write(g_serialFd, tmp, n);
-    if (written < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-        std::cerr << "[hub] Serial write error: " << strerror(errno) << "\n";
+
+    // Append incoming bytes to the per-client frame buffer.
+    int space = (int)sizeof(c.rxBuf) - c.rxLen;
+    int copy  = (n < space) ? (int)n : space;
+    memcpy(&c.rxBuf[c.rxLen], tmp, copy);
+    c.rxLen += copy;
+
+    // Extract and dispatch complete frames.
+    while (c.rxLen >= 4) {
+        // Hunt for magic header.
+        int idx = -1;
+        for (int i = 0; i < c.rxLen - 1; i++) {
+            if (c.rxBuf[i] == MAGIC_0 && c.rxBuf[i+1] == MAGIC_1) { idx = i; break; }
+        }
+        if (idx < 0) { c.rxLen = 0; break; }
+        if (idx > 0) { memmove(c.rxBuf, c.rxBuf + idx, c.rxLen - idx); c.rxLen -= idx; }
+        if (c.rxLen < 4) break;
+
+        int flen = frameSize(c.rxBuf[3]);
+        if (flen > (int)sizeof(c.rxBuf)) { c.rxLen = 0; break; }  // oversized — reset
+        if (c.rxLen < flen) break;                                  // frame incomplete
+
+        if (c.rxBuf[2] == MSG_SWARM) {
+            // Latest-wins: overwrite any previously pending SWARM frame.
+            memcpy(g_latestSwarm, c.rxBuf, flen);
+            g_latestSwarmLen   = flen;
+            g_latestSwarmDirty = true;
+        } else {
+            // Non-SWARM frames (ping, config, …) pass through immediately.
+            ssize_t written = write(g_serialFd, c.rxBuf, flen);
+            if (written < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                std::cerr << "[hub] Serial write error: " << strerror(errno) << "\n";
+            }
+        }
+
+        memmove(c.rxBuf, c.rxBuf + flen, c.rxLen - flen);
+        c.rxLen -= flen;
     }
 }
 
@@ -421,6 +474,12 @@ int main(int argc, char* argv[]) {
             else if (slotOf[i] == -2) client_accept(serverFd);
             else                      process_client_data(slotOf[i]);
         }
+
+        // Flush the latest SWARM frame (if any arrived this wakeup) to serial.
+        // Doing this after all events are processed ensures only the freshest
+        // SWARM frame enters the serial TX buffer, regardless of how many were
+        // queued in the socket since the last poll() wakeup.
+        flushLatestSwarm();
     }
 
     for (int i = 0; i < MAX_CLIENTS; i++) client_close(i);
