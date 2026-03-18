@@ -4,17 +4,13 @@
 // ═══════════════════════════════════════════════════════════════
 //
 // Zeigt alle registrierten Roboter mit Live-Status im Terminal.
-// Sendet periodische Pings für Latenz-Messung.
-// Sendet Swarm-Pakete (alle Motoren 0 = idle, oder Test-Pattern).
+// Verbindet sich mit swarm_hub statt direkt mit dem Dongle.
 //
-// Kompilieren (macOS):
-//   g++ swarm_terminal.cpp -o swarm_terminal -std=c++17 -framework IOKit
-//
-// Kompilieren (Linux):
-//   g++ swarm_terminal.cpp -o swarm_terminal -std=c++17
+// Voraussetzung:
+//   ./swarm_hub /dev/tty.usbmodem* muss laufen
 //
 // Aufruf:
-//   ./swarm_terminal /dev/tty.usbmodem* [send_ms]
+//   ./swarm_terminal
 
 #include <cstdint>
 #include <cstring>
@@ -26,12 +22,11 @@
 #include <csignal>
 #include <fcntl.h>
 #include <unistd.h>
-#include <termios.h>
 #include <errno.h>
-#ifdef __APPLE__
-#include <sys/ioctl.h>
-#include <IOKit/serial/ioss.h>
-#endif
+#include <glob.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/wait.h>
 
 // ═══════════════════════════════════════════════════════════════
 // Protokoll
@@ -39,13 +34,11 @@
 
 #define MAGIC_0           0xAA
 #define MAGIC_1           0x55
-#define MSG_SWARM         0x10
 #define MSG_ANNOUNCE      0x20
-#define MSG_PING          0x22
 #define MSG_PONG          0x23
 #define MSG_TELEMETRY     0x30
 
-#define MAX_ROBOTS        20
+#define MAX_ROBOTS        32
 
 #define STATUS_LOW_BATTERY    0x04
 #define STATUS_ANNOUNCING     0x08
@@ -60,62 +53,95 @@ static uint8_t crc8(const uint8_t* data, uint8_t len) {
     return crc;
 }
 
-static void buildFrame(uint8_t* buf, uint8_t type, const uint8_t* payload, uint8_t plen) {
-    buf[0] = MAGIC_0;
-    buf[1] = MAGIC_1;
-    buf[2] = type;
-    buf[3] = plen;
-    memcpy(&buf[4], payload, plen);
-    buf[4 + plen] = crc8(&buf[2], plen + 2);
-}
-
 // ═══════════════════════════════════════════════════════════════
-// Serial Port
+// Hub Connection
 // ═══════════════════════════════════════════════════════════════
 
-static int serial_open(const std::string& path, int baud) {
-    int fd = open(path.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
-    if (fd < 0) {
-        std::cerr << "Cannot open " << path << ": " << strerror(errno) << std::endl;
+static int hub_connect() {
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return -1;
+    struct sockaddr_un addr{};
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, "/tmp/swarm_hub.sock", sizeof(addr.sun_path) - 1);
+    if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        close(fd);
         return -1;
     }
-    // Prevent ESP32 auto-reset: clear DTR/RTS immediately after open
-    {
-        int pins = 0;
-        ioctl(fd, TIOCMGET, &pins);
-        pins &= ~(TIOCM_DTR | TIOCM_RTS);
-        ioctl(fd, TIOCMSET, &pins);
-    }
-    struct termios tty{};
-    tcgetattr(fd, &tty);
-    cfsetispeed(&tty, B115200);
-    cfsetospeed(&tty, B115200);
-        tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
-        tty.c_cflag &= ~(PARENB | CSTOPB | HUPCL);  // HUPCL: don't drop DTR on close
-    #ifdef CRTSCTS
-        tty.c_cflag &= ~CRTSCTS;
-    #endif
-    tty.c_cflag |= (CLOCAL | CREAD);
-    tty.c_iflag &= ~(IXON | IXOFF | IXANY | ICRNL | INLCR | IGNCR);
-    tty.c_oflag &= ~OPOST;
-    tty.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
-    tty.c_cc[VMIN] = 0;
-    tty.c_cc[VTIME] = 0;
-    tcsetattr(fd, TCSANOW, &tty);
-    tcflush(fd, TCIOFLUSH);
-#ifdef __APPLE__
-    {
-        speed_t speed = (speed_t)baud;
-        ioctl(fd, IOSSIOSPEED, &speed);
-    }
-#else
-    if (baud > 230400) {
-        speed_t h = (baud == 460800) ? B460800 : B921600;
-        cfsetispeed(&tty, h); cfsetospeed(&tty, h);
-        tcsetattr(fd, TCSANOW, &tty);
-    }
-#endif
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     return fd;
+}
+
+static std::string find_serial_port() {
+    const char* patterns[] = {
+        "/dev/tty.usbmodem*", "/dev/tty.usbserial*",
+        "/dev/ttyUSB*",       "/dev/ttyACM*",
+        nullptr
+    };
+    for (int p = 0; patterns[p]; p++) {
+        glob_t g{};
+        if (glob(patterns[p], 0, nullptr, &g) == 0 && g.gl_pathc > 0) {
+            std::string port = g.gl_pathv[0];
+            globfree(&g);
+            return port;
+        }
+        globfree(&g);
+    }
+    return "";
+}
+
+static bool hub_is_running() {
+    FILE* f = fopen("/tmp/swarm_hub.pid", "r");
+    if (!f) return false;
+    pid_t pid = 0;
+    fscanf(f, "%d", &pid);
+    fclose(f);
+    return pid > 0 && kill(pid, 0) == 0;
+}
+
+static int hub_connect_or_start() {
+    int fd = hub_connect();
+    if (fd >= 0) return fd;
+
+    // If hub process is alive but socket not ready yet, wait for it
+    if (hub_is_running()) {
+        std::cerr << "[auto] Hub is running, waiting for socket...\n";
+        for (int i = 0; i < 20; i++) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            fd = hub_connect();
+            if (fd >= 0) { std::cerr << "[auto] Connected to swarm_hub.\n"; return fd; }
+        }
+        std::cerr << "Error: hub is running but socket not ready.\n";
+        return -1;
+    }
+
+    std::string port = find_serial_port();
+    if (port.empty()) {
+        std::cerr << "Error: swarm_hub not running and no serial port found.\n"
+                  << "Start manually: ./swarm_hub /dev/tty.usbmodem*\n";
+        return -1;
+    }
+
+    std::cerr << "[auto] Starting swarm_hub on " << port << "...\n";
+    pid_t pid = fork();
+    if (pid == 0) {
+        execlp("./swarm_hub", "./swarm_hub", "--daemon", port.c_str(), nullptr);
+        execlp("swarm_hub",   "swarm_hub",   "--daemon", port.c_str(), nullptr);
+        _exit(1);
+    } else if (pid < 0) {
+        std::cerr << "Error: fork failed: " << strerror(errno) << "\n";
+        return -1;
+    }
+    int status; waitpid(pid, &status, 0);
+
+    // Poll up to 5s for the socket to appear
+    for (int i = 0; i < 50; i++) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        fd = hub_connect();
+        if (fd >= 0) { std::cerr << "[auto] Connected to swarm_hub.\n"; return fd; }
+    }
+    std::cerr << "Error: swarm_hub did not become ready within 5s.\n";
+    return -1;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -132,7 +158,6 @@ struct RobotStatus {
     uint16_t uptime     = 0;
     uint16_t latencyUs  = 0;
 
-    // Timing
     std::chrono::steady_clock::time_point lastSeen;
     std::chrono::steady_clock::time_point lastTelemetry;
     bool     hasTelemetry = false;
@@ -163,7 +188,6 @@ static void parsePacket(const uint8_t* data, int len) {
 
     switch (type) {
         case MSG_ANNOUNCE: {
-            // Robot registriert sich: [id][mac x6]
             if (plen < 7) break;
             uint8_t id = payload[0];
             if (id >= MAX_ROBOTS) break;
@@ -177,8 +201,6 @@ static void parsePacket(const uint8_t* data, int len) {
         }
 
         case MSG_TELEMETRY: {
-            // [id][battery][flags][motorL][motorR][uptime_lo][uptime_hi]
-            // TODO: add RSSI once ESP-IDF 5.x is used (esp_now_recv_info_t)
             if (plen < 7) break;
             uint8_t id = payload[0];
             if (id >= MAX_ROBOTS) break;
@@ -196,7 +218,6 @@ static void parsePacket(const uint8_t* data, int len) {
         }
 
         case MSG_PONG: {
-            // [id][roundtrip_us_lo][roundtrip_us_hi]
             if (plen < 3) break;
             uint8_t id = payload[0];
             if (id >= MAX_ROBOTS) break;
@@ -220,15 +241,12 @@ static void readAndParse(int fd) {
     ssize_t n = read(fd, tmp, sizeof(tmp));
     if (n <= 0) return;
 
-    // An Buffer anfügen
     int space = sizeof(rxBuf) - rxLen;
     int copy = (n < space) ? n : space;
     memcpy(&rxBuf[rxLen], tmp, copy);
     rxLen += copy;
 
-    // Pakete extrahieren
     while (rxLen >= 5) {
-        // Magic suchen
         int idx = -1;
         for (int i = 0; i < rxLen - 1; i++) {
             if (rxBuf[i] == MAGIC_0 && rxBuf[i+1] == MAGIC_1) { idx = i; break; }
@@ -252,41 +270,6 @@ static void readAndParse(int fd) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Swarm-Paket senden (alle Motoren idle)
-// ═══════════════════════════════════════════════════════════════
-
-static void sendSwarmIdle(int fd) {
-    uint8_t payload[MAX_ROBOTS * 3];
-    memset(payload, 0, sizeof(payload));
-    for (int i = 0; i < MAX_ROBOTS; i++) {
-        payload[i * 3] = (uint8_t)i;
-    }
-    uint8_t frame[5 + MAX_ROBOTS * 3];
-    buildFrame(frame, MSG_SWARM, payload, MAX_ROBOTS * 3);
-    write(fd, frame, sizeof(frame));
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Ping senden
-// ═══════════════════════════════════════════════════════════════
-
-static void sendPing(int fd, uint8_t robotId) {
-    uint32_t ts = (uint32_t)(std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count() & 0xFFFFFFFF);
-
-    uint8_t payload[5];
-    payload[0] = robotId;
-    payload[1] = ts & 0xFF;
-    payload[2] = (ts >> 8) & 0xFF;
-    payload[3] = (ts >> 16) & 0xFF;
-    payload[4] = (ts >> 24) & 0xFF;
-
-    uint8_t frame[10];
-    buildFrame(frame, MSG_PING, payload, 5);
-    write(fd, frame, 10);
-}
-
-// ═══════════════════════════════════════════════════════════════
 // Terminal UI
 // ═══════════════════════════════════════════════════════════════
 
@@ -301,21 +284,18 @@ static void statusParts(uint8_t flags, int8_t motorL, int8_t motorR,
 static void drawUI() {
     auto now = std::chrono::steady_clock::now();
 
-    // Cursor nach oben, Bildschirm löschen
     std::cout << "\033[H\033[J";
 
-    // Header
     std::cout << "\033[1;36m═══════════════════════════════════════════════════════════════════════════\033[0m\n";
     std::cout << "\033[1;37m  ROBOT SWARM MONITOR                                                     \033[0m\n";
     std::cout << "\033[1;36m═══════════════════════════════════════════════════════════════════════════\033[0m\n";
     std::cout << "\n";
 
-    // Tabellen-Header
     std::cout << "\033[1;37m ID │ MAC               │ Latency │ Status   │ Motors    │ Uptime\033[0m\n";
     std::cout << "\033[90m────┼───────────────────┼─────────┼──────────┼───────────┼────────\033[0m\n";
 
     int activeCount = 0;
-    int totalCount = 0;
+    int totalCount  = 0;
 
     for (int i = 0; i < MAX_ROBOTS; i++) {
         auto& r = robots[i];
@@ -323,7 +303,6 @@ static void drawUI() {
 
         totalCount++;
 
-        // Timeout check: 5s ohne Telemetrie = lost
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - r.lastSeen).count();
         bool lost = elapsed > 5000;
 
@@ -364,71 +343,35 @@ static void drawUI() {
     std::cout << "\033[90m────────────────────────────────────────────────────────────────────────────\033[0m\n";
     printf("\033[37m  Active: %d/%d    Registered: %d/%d\033[0m\n",
            activeCount, MAX_ROBOTS, totalCount, MAX_ROBOTS);
-    std::cout << "\033[90m  Ctrl+C to exit\033[0m\n";
+    std::cout << "\033[90m  via swarm_hub (/tmp/swarm_hub.sock)   Ctrl+C to exit\033[0m\n";
 }
 
 // ═══════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════
 
-int main(int argc, char* argv[]) {
-    std::string port_path = (argc > 1) ? argv[1] : "/dev/tty.usbserial-0001";
-    int         send_ms   = (argc > 2) ? std::stoi(argv[2]) : 50;
-
+int main(int /*argc*/, char* argv[]) {
     std::cout << "Swarm Terminal Monitor\n";
-    std::cout << "Port: " << port_path << "  Interval: " << send_ms << "ms\n\n";
 
-    int fd = serial_open(port_path, 115200);
+    int fd = hub_connect_or_start();
     if (fd < 0) return 1;
+    std::cout << "Connected to swarm_hub (/tmp/swarm_hub.sock)\n\n";
 
     signal(SIGINT, signal_handler);
 
-    auto lastSwarm   = std::chrono::steady_clock::now();
-    auto lastPing    = std::chrono::steady_clock::now();
-    auto lastDraw    = std::chrono::steady_clock::now();
-    int  pingRobot   = 0;   // Round-Robin Ping
+    auto lastDraw = std::chrono::steady_clock::now();
 
     while (running) {
-        auto now = std::chrono::steady_clock::now();
-
-        // Serial lesen und parsen
         readAndParse(fd);
 
-        // Swarm-Paket senden (idle = alle 0)
-        auto swarmElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSwarm).count();
-        if (swarmElapsed >= send_ms) {
-            sendSwarmIdle(fd);
-            lastSwarm = now;
-        }
-
-        // Ping: alle 200ms den nächsten registrierten Robot pingen (Round-Robin)
-        auto pingElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPing).count();
-        if (pingElapsed >= 200) {
-            // Nächsten aktiven Robot finden
-            for (int attempt = 0; attempt < MAX_ROBOTS; attempt++) {
-                pingRobot = (pingRobot + 1) % MAX_ROBOTS;
-                if (robots[pingRobot].registered) {
-                    sendPing(fd, pingRobot);
-                    break;
-                }
-            }
-            lastPing = now;
-        }
-
-        // UI zeichnen alle 500ms
-        auto drawElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastDraw).count();
-        if (drawElapsed >= 500) {
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastDraw).count() >= 500) {
             drawUI();
             lastDraw = now;
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
-
-    // Stop: alle Motoren 0
-    sendSwarmIdle(fd);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    sendSwarmIdle(fd);
 
     close(fd);
     std::cout << "\n\033[0mStopped.\n";

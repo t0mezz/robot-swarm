@@ -49,17 +49,22 @@ robot-swarm/
 pio run -e dongle -t upload
 ```
 
-### 2. Receiver flashen (Robot 0)
+### 2. Receiver flashen
+
+Robot-ID beim Flashen per Umgebungsvariable setzen (Standard: 0):
 
 ```bash
+# Robot 0 (Standard)
 pio run -e receiver -t upload
+
+# Robot 3
+ROBOT_ID=3 pio run -e receiver -t upload
+
+# Robot 7
+ROBOT_ID=7 pio run -e receiver -t upload
 ```
 
-Für andere Robot-IDs: eigene Environments in `platformio.ini` anlegen (siehe Kommentare dort) und dann:
-
-```bash
-pio run -e robot_3 -t upload
-```
+Die ID wird als `ROBOT_ID`-Makro in die Firmware eingebaut und ist nach dem Flashen fest verdrahtet.
 
 ### 3. Terminal-Monitor starten
 
@@ -107,4 +112,4 @@ ESP-NOW based swarm control system for up to 20 Pololu 3pi+ 2040 robots. A contr
 - Motor watchdog: stops motors after 300ms without a packet
 - Live debug display (RSSI, latency, status) on the RP2040 OLED
 
-**Quick start:** Flash the dongle (`pio run -e dongle -t upload`), flash each robot (`pio run -e receiver -t upload`), then run the terminal monitor (`./tools/swarm_terminal /dev/tty.usbmodem* 50`).
+**Quick start:** Flash the dongle (`pio run -e dongle -t upload`), flash each robot with its ID (`ROBOT_ID=0 pio run -e receiver -t upload`), then run the terminal monitor (`./tools/swarm_terminal /dev/tty.usbmodem* 50`).

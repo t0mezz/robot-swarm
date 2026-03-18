@@ -12,7 +12,7 @@
 
 // ─── Nachrichtentypen ────────────────────────────────────────
 #define MSG_SPEED         0x01   // ESP32 -> RP2040 (UART): [left, right]
-#define MSG_SWARM         0x10   // PC -> Broadcast: [id|L|R] x 20
+#define MSG_SWARM         0x10   // PC -> Broadcast: [id|L|R] x MAX_ROBOTS
 #define MSG_ANNOUNCE      0x20   // Robot -> Broadcast: [id, mac x6]
 #define MSG_ANNOUNCE_ACK  0x21   // Dongle -> Broadcast: [id]
 #define MSG_PING          0x22   // Bidirektional: [target_id, timestamp x4]
@@ -26,7 +26,7 @@
 #define STATUS_ANNOUNCING     0x08
 
 // ─── Limits ──────────────────────────────────────────────────
-#define MAX_ROBOTS        20
+#define MAX_ROBOTS        32
 
 // ─── CRC-8 (Polynom 0x07) ────────────────────────────────────
 static inline uint8_t crc8(const uint8_t* data, uint8_t len) {

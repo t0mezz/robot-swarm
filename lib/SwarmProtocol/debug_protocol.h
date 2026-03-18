@@ -10,7 +10,7 @@
 // ─── Debug-Nachrichtentypen (UART zum RP2040) ────────────────
 #define MSG_DEBUG_REG     0x22   // Feld registrieren
 #define MSG_DEBUG_DATA    0x23   // Wert-Update
-#define MSG_DEBUG_PING    0x24   // RP2040 -> ESP32: bereit für Debug-Daten
+#define MSG_DEBUG_PING    0x20   // RP2040 -> ESP32: fordert reg an
 
 // ─── Display-Typen ───────────────────────────────────────────
 #define DBG_METRIC        0x01   // Fixer Text an Position (x, y)
@@ -63,10 +63,10 @@ namespace DebugScreen {
     // ─── Alle Robot-Debug-Felder registrieren ────────────────
     template<typename UartType>
     static void registerAllFields(UartType& uart) {
-        registerField(uart, DEBUG_FIELD_LATENCY, DBG_METRIC, 0,  0,  "LAT");
-        registerField(uart, DEBUG_FIELD_STATUS,  DBG_METRIC, 64, 0,  "STA");
-        registerField(uart, DEBUG_FIELD_MOTOR_L, DBG_METRIC, 0,  10, "ML");
-        registerField(uart, DEBUG_FIELD_MOTOR_R, DBG_METRIC, 64, 10, "MR");
+        registerField(uart, DEBUG_FIELD_LATENCY, DBG_GRAPH, 0,  0,  "LAT (ms)");
+        registerField(uart, DEBUG_FIELD_STATUS,  DBG_METRIC, 64, 40,"STA");
+        registerField(uart, DEBUG_FIELD_MOTOR_L, DBG_METRIC, 0,  50, "ML");
+        registerField(uart, DEBUG_FIELD_MOTOR_R, DBG_METRIC, 64, 50, "MR");
     }
 
     // ─── Wert-Updates ────────────────────────────────────────
@@ -93,9 +93,7 @@ namespace DebugScreen {
         sendInt8(uart, DEBUG_FIELD_MOTOR_L, motorL);
         sendInt8(uart, DEBUG_FIELD_MOTOR_R, motorR);
 
-        char latBuf[10];
-        snprintf(latBuf, sizeof(latBuf), "%uus", latencyUs);
-        sendString(uart, DEBUG_FIELD_LATENCY, latBuf);
+        sendInt8(uart, DEBUG_FIELD_LATENCY, (int8_t)(latencyUs / 1000)); // ms
         sendString(uart, DEBUG_FIELD_STATUS, status);
     }
 }
