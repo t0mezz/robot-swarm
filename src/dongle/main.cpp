@@ -43,64 +43,98 @@ static PingTracker pingTracker = {false, 0, 0};
 #define TX_QUEUE_SIZE 8
 struct TxPacket { uint8_t data[250]; uint8_t len; bool isPing; };
 
-static TxPacket txQueue[TX_QUEUE_SIZE];
-static uint8_t  txHead = 0;
-static uint8_t  txTail = 0;
-static volatile bool txBusy = false;
+static TxPacket      txQueue[TX_QUEUE_SIZE];
+static uint8_t       txHead     = 0;
+static uint8_t       txTail     = 0;
+static volatile bool txBusy     = false;
+static portMUX_TYPE  txMux      = portMUX_INITIALIZER_UNLOCKED;
 
 static void txDispatchNext() {
-    if (txHead == txTail) { txBusy = false; return; }
-    TxPacket& p = txQueue[txHead];
+    // Fix: hold spinlock while touching txHead/txTail so Core 1 (enqueueSend)
+    // sees a consistent queue state and the memcpy-before-txTail-update ordering
+    // is enforced across both cores.
+    portENTER_CRITICAL(&txMux);
+    if (txHead == txTail) { txBusy = false; portEXIT_CRITICAL(&txMux); return; }
+    uint8_t slot = txHead;
     txHead = (txHead + 1) % TX_QUEUE_SIZE;
-    if (p.isPing) pingTracker.sentAt = micros();
-    esp_now_send(broadcastMAC, p.data, p.len);
+    portEXIT_CRITICAL(&txMux);
+    // esp_now_send copies data internally before returning, so slot can be
+    // reused by enqueueSend immediately after this call.
+    if (txQueue[slot].isPing) pingTracker.sentAt = micros();
+    if (esp_now_send(broadcastMAC, txQueue[slot].data, txQueue[slot].len) != ESP_OK) {
+        // Send failed — callback will NOT fire, so release the lock immediately
+        txBusy = false;
+    }
 }
 
 static void enqueueSend(const uint8_t* data, uint8_t len, bool isPing = false) {
     if (!txBusy) {
         txBusy = true;
         if (isPing) pingTracker.sentAt = micros();
-        esp_now_send(broadcastMAC, data, len);
+        if (esp_now_send(broadcastMAC, data, len) != ESP_OK) {
+            txBusy = false;  // callback won't fire on error — release immediately
+        }
         return;
     }
-    // Queue if space available, otherwise drop
+    portENTER_CRITICAL(&txMux);
     uint8_t next = (txTail + 1) % TX_QUEUE_SIZE;
     if (next != txHead) {
         memcpy(txQueue[txTail].data, data, len);
         txQueue[txTail].len    = len;
         txQueue[txTail].isPing = isPing;
         txTail = next;
+    } else if (!isPing && data[2] == MSG_SWARM) {
+        // Fix: queue full but this is a SWARM (latest-wins) — overwrite the most
+        // recently queued slot if it is also a SWARM, so the freshest direction
+        // command always wins over a stale one.
+        uint8_t last = (txTail - 1 + TX_QUEUE_SIZE) % TX_QUEUE_SIZE;
+        if (txQueue[last].data[2] == MSG_SWARM) {
+            memcpy(txQueue[last].data, data, len);
+            txQueue[last].len = len;
+        }
+        // else: non-SWARM at tail (e.g. ping/pong) — drop new SWARM to preserve it
     }
+    // else: queue full, non-SWARM packet — drop
+    portEXIT_CRITICAL(&txMux);
 }
 
 // ─── Empfangs-Buffer ─────────────────────────────────────────
+// The dongle is esp32dev (dual-core): onReceive fires on Core 0 (WiFi task)
+// while loop() runs on Core 1.  Protect shared state with a spinlock.
 
-static volatile bool    hasData  = false;
 static uint8_t          rxBuf[250];
-static volatile uint8_t rxLen    = 0;
+static uint8_t          rxLen    = 0;
 static uint8_t          rxMAC[6] = {};
+static bool             hasData  = false;
+static portMUX_TYPE     rxMux    = portMUX_INITIALIZER_UNLOCKED;
 
 void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
-    if (len > 0 && len <= (int)sizeof(rxBuf)) {
-        memcpy(rxBuf, data, len);
-        rxLen  = len;
-        memcpy(rxMAC, mac, 6);
-        hasData = true;
-    }
+    if (len <= 0 || len > (int)sizeof(rxBuf)) return;
+    portENTER_CRITICAL(&rxMux);
+    memcpy(rxBuf, data, len);
+    rxLen = (uint8_t)len;
+    memcpy(rxMAC, mac, 6);
+    hasData = true;
+    portEXIT_CRITICAL(&rxMux);
 }
 
 // ─── Serial vom PC ───────────────────────────────────────────
 
-#define SERIAL_TIMEOUT_MS  2
-static uint8_t       serialBuf[250];
-static uint8_t       serialLen = 0;
-static unsigned long lastByteAt = 0;
+// State-machine parser: process frames as soon as they are complete.
+// Never accumulates more than one frame; no timeout needed.
+static uint8_t serialBuf[256];   // one max-size frame (5 + MAX_ROBOTS*3 + 1)
+static uint8_t serialLen = 0;
 
 // ─── Eingehende ESP-NOW Pakete routen ────────────────────────
 
+// Non-blocking Serial write: HardwareSerial blocks loop() if the TX buffer is full.
+// Guard every write so the dongle is never stalled waiting for the hub to drain bytes.
+static inline void serialWrite(const uint8_t* data, uint8_t len) {
+    if (Serial.availableForWrite() >= len) Serial.write(data, len);
+}
+
 static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) {
-    Serial.printf("[RX] %d bytes, magic=%02X %02X\n", len, data[0], data[1]);
-    if (!validateFrame(data, len)) { Serial.println("[RX] validateFrame FAILED"); return; }
+    if (!validateFrame(data, len)) return;
 
     uint8_t type       = data[2];
     uint8_t payloadLen = data[3];
@@ -128,7 +162,7 @@ static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) 
             memcpy(&regPayload[1], mac, 6);
             uint8_t regFrame[12];
             buildFrame(regFrame, MSG_ANNOUNCE, regPayload, 7);
-            Serial.write(regFrame, 12);
+            serialWrite(regFrame, 12);
 
             digitalWrite(LED_PIN, LED_ON);
             break;
@@ -139,7 +173,7 @@ static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) 
                 robots[payload[0]].lastSeen = millis();
             }
             // 1:1 an PC
-            Serial.write(data, len);
+            serialWrite(data, len);
             break;
         }
 
@@ -155,13 +189,14 @@ static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) 
                 uint8_t pongPayload[3] = {robotId, (uint8_t)(rtUs & 0xFF), (uint8_t)(rtUs >> 8)};
                 uint8_t pongFrame[8];
                 buildFrame(pongFrame, MSG_PONG, pongPayload, 3);
-                Serial.write(pongFrame, 8);
+                serialWrite(pongFrame, 8);
+                enqueueSend(pongFrame, 8);   // also broadcast RTT back to robot
             }
             break;
         }
 
         default:
-            Serial.write(data, len);
+            serialWrite(data, len);
             break;
     }
 }
@@ -205,6 +240,8 @@ void setup() {
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, LED_OFF);
 
+    Serial.setRxBufferSize(512);   // MSG_SWARM frame is 101 bytes; default 128 is marginal
+    Serial.setTxBufferSize(512);   // enough headroom for bursts of telemetry + pong frames
     Serial.begin(115200);
     unsigned long t = millis();
     while (!Serial && millis() - t < 2000) delay(10);
@@ -245,35 +282,45 @@ void setup() {
 void loop() {
     unsigned long now = millis();
 
-    // ESP-NOW Empfang
+    // ESP-NOW Empfang — copy under spinlock, then process outside it
+    uint8_t localBuf[250];
+    uint8_t localLen = 0;
+    uint8_t localMAC[6];
+    bool    got = false;
+    portENTER_CRITICAL(&rxMux);
     if (hasData) {
+        localLen = rxLen;
+        memcpy(localBuf, rxBuf, localLen);
+        memcpy(localMAC, rxMAC, 6);
         hasData = false;
-        routeIncoming(rxBuf, rxLen, rxMAC);
+        got = true;
     }
+    portEXIT_CRITICAL(&rxMux);
+    if (got) routeIncoming(localBuf, localLen, localMAC);
 
-    // Serial vom PC
+    // Serial vom PC — byte-by-byte frame state machine
     while (Serial.available()) {
-        if (serialLen < sizeof(serialBuf))
-            serialBuf[serialLen++] = Serial.read();
-        else
-            Serial.read();
-        lastByteAt = now;
+        uint8_t b = Serial.read();
         lastSerial = now;
-    }
 
-    if (serialLen > 0 && (now - lastByteAt) >= SERIAL_TIMEOUT_MS) {
-        uint8_t* p   = serialBuf;
-        uint8_t  rem = serialLen;
-        while (rem >= 5) {
-            while (rem >= 2 && !(p[0] == MAGIC_0 && p[1] == MAGIC_1)) { p++; rem--; }
-            if (rem < 5) break;
-            uint8_t needed = frameSize(p[3]);
-            if (rem < needed) break;
-            processSerialPacket(p, needed);
-            p   += needed;
-            rem -= needed;
+        // Hunt for frame header
+        if (serialLen == 0) {
+            if (b != MAGIC_0) continue;
+        } else if (serialLen == 1) {
+            if (b != MAGIC_1) { serialLen = 0; continue; }
         }
-        serialLen = 0;
+
+        serialBuf[serialLen++] = b;
+
+        if (serialLen < 4) continue;  // need header to know length
+
+        uint8_t needed = frameSize(serialBuf[3]);
+        if (needed > sizeof(serialBuf)) { serialLen = 0; continue; }  // oversized, reset
+
+        if (serialLen >= needed) {
+            processSerialPacket(serialBuf, needed);
+            serialLen = 0;  // ready for next frame
+        }
     }
 
     // Dongle-Watchdog: Stop wenn PC weg
