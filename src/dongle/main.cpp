@@ -239,6 +239,22 @@ static void processSerialPacket(const uint8_t* data, uint8_t len) {
 static unsigned long ledOffAt    = 0;
 static unsigned long lastSerial  = 0;
 
+// ─── Idle Throttle ───────────────────────────────────────────
+
+static bool anyRobotActive() {
+    for (int i = 0; i < MAX_ROBOTS; i++) if (robots[i].active) return true;
+    return false;
+}
+
+// Track WiFi PS state to avoid redundant esp_wifi_set_ps() calls.
+static bool wifiPsEnabled = false;
+
+static void setWifiPs(bool enable) {
+    if (enable == wifiPsEnabled) return;
+    esp_wifi_set_ps(enable ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
+    wifiPsEnabled = enable;
+}
+
 // ─── Setup ───────────────────────────────────────────────────
 
 void setup() {
@@ -340,4 +356,11 @@ void loop() {
 
     // LED
     if (ledOffAt && now >= ledOffAt) { ledOff(); ledOffAt = 0; }
+
+    // Idle management: when no receiver is registered, throttle the loop and
+    // enable modem power-save.  As soon as any robot is active we immediately
+    // switch back to WIFI_PS_NONE so ESP-NOW latency stays minimal.
+    bool idle = !anyRobotActive();
+    setWifiPs(idle);
+    if (idle) vTaskDelay(pdMS_TO_TICKS(10));
 }
