@@ -7,15 +7,18 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
+#include <Adafruit_NeoPixel.h>
 #include "protocol.h"
 
 // ─── Hardware ────────────────────────────────────────────────
-// ESP32-S3: adjust LED_PIN to match your board (GPIO 2 = common default;
-// ESP32-S3-DevKitC-1 has a WS2812 on GPIO 48 — replace with NeoPixel if needed)
-#define LED_PIN           2
-#define LED_ON            LOW
-#define LED_OFF           HIGH
+// ESP32-S3-DevKitC-1 N16R8: WS2812 on GPIO 48
+#define LED_PIN           48
 #define ESPNOW_CHANNEL    1
+
+static Adafruit_NeoPixel led(1, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+static inline void ledOn()  { led.setPixelColor(0, led.Color(0, 20, 0)); led.show(); }
+static inline void ledOff() { led.setPixelColor(0, 0);                   led.show(); }
 
 // ─── Roboter-Registry ────────────────────────────────────────
 
@@ -166,7 +169,7 @@ static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) 
             buildFrame(regFrame, MSG_ANNOUNCE, regPayload, 7);
             serialWrite(regFrame, 12);
 
-            digitalWrite(LED_PIN, LED_ON);
+            ledOn();
             break;
         }
 
@@ -239,8 +242,8 @@ static unsigned long lastSerial  = 0;
 // ─── Setup ───────────────────────────────────────────────────
 
 void setup() {
-    pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, LED_OFF);
+    led.begin();
+    ledOff();
 
     Serial.setRxBufferSize(512);   // MSG_SWARM frame is 101 bytes; default 128 is marginal
     Serial.setTxBufferSize(512);   // enough headroom for bursts of telemetry + pong frames
@@ -264,7 +267,7 @@ void setup() {
     esp_now_register_recv_cb(onReceive);
     esp_now_register_send_cb([](const uint8_t*, esp_now_send_status_t status) {
         if (status == ESP_NOW_SEND_SUCCESS) {
-            digitalWrite(LED_PIN, LED_ON);
+            ledOn();
             ledOffAt = millis() + 20;
         }
         txDispatchNext();
@@ -336,5 +339,5 @@ void loop() {
     }
 
     // LED
-    if (ledOffAt && now >= ledOffAt) { digitalWrite(LED_PIN, LED_OFF); ledOffAt = 0; }
+    if (ledOffAt && now >= ledOffAt) { ledOff(); ledOffAt = 0; }
 }
