@@ -9,6 +9,7 @@
 #include <esp_wifi.h>
 #include <Adafruit_NeoPixel.h>
 #include "protocol.h"
+#include "hardware.h"
 
 // ─── Hardware ────────────────────────────────────────────────
 // ESP32-S3-DevKitC-1 N16R8: WS2812 on GPIO 48
@@ -318,6 +319,15 @@ void loop() {
     }
     portEXIT_CRITICAL(&rxMux);
     if (got) routeIncoming(localBuf, localLen, localMAC);
+
+    // Expire robots that haven't sent anything in ROBOT_EXPIRY_MS.
+    // This lets the idle throttle and WiFi PS kick back in when all robots
+    // drop off (power-off, out of range) without requiring a dongle reboot.
+    for (int i = 0; i < MAX_ROBOTS; i++) {
+        if (robots[i].active && now - robots[i].lastSeen > ROBOT_EXPIRY_MS) {
+            robots[i].active = false;
+        }
+    }
 
     // Serial vom PC — byte-by-byte frame state machine
     while (Serial.available()) {

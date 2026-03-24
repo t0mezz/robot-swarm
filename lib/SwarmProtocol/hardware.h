@@ -24,6 +24,7 @@
 #define ANNOUNCE_INTERVAL_MS   500     // Announce-Rate im Registrierungsmodus
 #define ANNOUNCE_TIMEOUT_MS    10000   // 10s ohne Swarm -> re-announce
 #define REANNOUNCE_INTERVAL_MS 30000   // Periodic re-announce while ACTIVE (swarm_terminal reconnect)
+#define ROBOT_EXPIRY_MS        60000   // Dongle drops robot from registry after 60s without any message
 #define TDMA_SLOT_MS           100     // Slot width per robot; cycle = MAX_ROBOTS * TDMA_SLOT_MS = 6.4s for 64 robots
 #define WATCHDOG_TIMEOUT_MS    1000    // Motor-Stop nach 1000ms ohne Paket
 #define DEBUG_UPDATE_MS        250     // Debug-Daten Aktualisierung
