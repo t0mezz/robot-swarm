@@ -9,9 +9,53 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
+#include <Adafruit_NeoPixel.h>
 #include "protocol.h"
 #include "hardware.h"
 #include "debug_protocol.h"
+
+// ─── RGB LED (WS2812, GRB, GPIO 8) ──────────────────────────
+static Adafruit_NeoPixel rgbLed(1, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+// HSV to RGB helper (hue 0-255, sat 0-255, val 0-255)
+static uint32_t hsvToColor(uint8_t h, uint8_t s, uint8_t v) {
+    uint8_t r, g, b;
+    if (s == 0) { r = g = b = v; }
+    else {
+        uint8_t region = h / 43;
+        uint8_t rem    = (h - region * 43) * 6;
+        uint8_t p = (v * (255 - s)) >> 8;
+        uint8_t q = (v * (255 - ((s * rem) >> 8))) >> 8;
+        uint8_t t2 = (v * (255 - ((s * (255 - rem)) >> 8))) >> 8;
+        switch (region) {
+            case 0: r=v; g=t2; b=p; break;
+            case 1: r=q; g=v;  b=p; break;
+            case 2: r=p; g=v;  b=t2; break;
+            case 3: r=p; g=q;  b=v; break;
+            case 4: r=t2; g=p; b=v; break;
+            default: r=v; g=p;  b=q; break;
+        }
+    }
+    return rgbLed.Color(r, g, b);
+}
+
+static void updateRgbLed(unsigned long now, bool announcing) {
+    static unsigned long lastUpdate = 0;
+    static uint8_t hue = 0;
+    if (now - lastUpdate < 40) return;
+    lastUpdate = now;
+
+    if (announcing) {
+        uint16_t t = now % 2000;
+        uint8_t bri = (t < 1000) ? (uint8_t)(t * 40 / 1000)
+                                  : (uint8_t)((2000 - t) * 40 / 1000);
+        rgbLed.setPixelColor(0, rgbLed.Color(0, 0, bri));
+    } else {
+        hue++;  // full cycle every ~5s (20ms * 256 steps)
+        rgbLed.setPixelColor(0, hsvToColor(hue, 255, 60));
+    }
+    rgbLed.show();
+}
 
 // ═══════════════════════════════════════════════════════════════
 // Transport Layer — für späteren Wechsel auf WiFi STA
@@ -97,7 +141,6 @@ static unsigned long lastSpeedApplied  = 0;
 static unsigned long lastDebugUpdate   = 0;
 static unsigned long lastUartSpeed     = 0;  // last time uart_send_speed was called
 static unsigned long bootTime          = 0;
-static unsigned long ledOffAt          = 0;
 static bool          debugRegistered   = false;
 
 // Diagnostics
@@ -202,8 +245,6 @@ static void processIncoming(const uint8_t* data, uint8_t len) {
                         currentMotorR = newR;
                         uart_send_speed(currentMotorL, currentMotorR);
                         lastUartSpeed = millis();
-                        digitalWrite(LED_PIN, LED_ON);
-                        ledOffAt = millis() + LED_ON_DURATION_MS;
                     }
                     break;
                 }
@@ -342,8 +383,9 @@ static void checkWatchdog() {
 
 void setup() {
     bootTime = millis();
-    pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, LED_OFF);
+    rgbLed.begin();
+    rgbLed.setPixelColor(0, 0);
+    rgbLed.show();
 
     UART.setTxBufferSize(512);
     UART.setRxBufferSize(512);
@@ -442,8 +484,8 @@ void loop() {
         lastDebugUpdate = now;
     }
 
-    // LED
-    if (ledOffAt && now >= ledOffAt) { digitalWrite(LED_PIN, LED_OFF); ledOffAt = 0; }
+    // RGB LED
+    updateRgbLed(now, state == State::ANNOUNCING);
 
     // Periodic diagnostics (every 2s) — only when a USB terminal is connected
     // so the Serial write overhead is zero when running standalone.

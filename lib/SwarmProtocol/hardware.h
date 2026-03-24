@@ -11,9 +11,7 @@
 #include "robot_id_cfg.h"
 
 // ─── Pins (ESP32-C3 SuperMini v2) ────────────────────────────
-#define LED_PIN           8
-#define LED_ON            LOW
-#define LED_OFF           HIGH
+#define LED_PIN           8   // WS2812 RGB LED (GRB order)
 #define UART_TX_PIN       4
 #define UART_RX_PIN       3
 #define UART_BAUD         921600
