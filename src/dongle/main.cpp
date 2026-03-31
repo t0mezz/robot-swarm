@@ -247,14 +247,6 @@ static bool anyRobotActive() {
     return false;
 }
 
-// Track WiFi PS state to avoid redundant esp_wifi_set_ps() calls.
-static bool wifiPsEnabled = false;
-
-static void setWifiPs(bool enable) {
-    if (enable == wifiPsEnabled) return;
-    esp_wifi_set_ps(enable ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
-    wifiPsEnabled = enable;
-}
 
 // ─── Setup ───────────────────────────────────────────────────
 
@@ -367,10 +359,10 @@ void loop() {
     // LED
     if (ledOffAt && now >= ledOffAt) { ledOff(); ledOffAt = 0; }
 
-    // Idle management: when no receiver is registered, throttle the loop and
-    // enable modem power-save.  As soon as any robot is active we immediately
-    // switch back to WIFI_PS_NONE so ESP-NOW latency stays minimal.
-    bool idle = !anyRobotActive();
-    setWifiPs(idle);
-    if (idle) vTaskDelay(pdMS_TO_TICKS(10));
+    // Idle management: throttle the loop when no robots are active to reduce
+    // CPU load.  WiFi PS is intentionally kept at WIFI_PS_NONE at all times —
+    // WIFI_PS_MIN_MODEM puts the radio to sleep between beacon intervals and
+    // causes incoming ESP-NOW announce packets to be dropped, preventing
+    // robots from ever re-registering after the registry expires.
+    if (!anyRobotActive()) vTaskDelay(pdMS_TO_TICKS(10));
 }

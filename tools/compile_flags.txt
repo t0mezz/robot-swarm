@@ -1,0 +1,2 @@
+-I/opt/homebrew/opt/opencv/include/opencv4
+-std=c++17

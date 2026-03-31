@@ -45,15 +45,9 @@ static void updateRgbLed(unsigned long now, bool announcing) {
     if (now - lastUpdate < 40) return;
     lastUpdate = now;
 
-    if (announcing) {
-        uint16_t t = now % 2000;
-        uint8_t bri = (t < 1000) ? (uint8_t)(t * 40 / 1000)
-                                  : (uint8_t)((2000 - t) * 40 / 1000);
-        rgbLed.setPixelColor(0, rgbLed.Color(0, 0, bri));
-    } else {
-        hue++;  // full cycle every ~5s (20ms * 256 steps)
-        rgbLed.setPixelColor(0, hsvToColor(hue, 255, 60));
-    }
+    // TEMP: maximum white for ArUco readability testing
+    (void)announcing; (void)hue;
+    rgbLed.setPixelColor(0, rgbLed.Color(0, 0, 0));
     rgbLed.show();
 }
 
