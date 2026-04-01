@@ -45,13 +45,13 @@ public:
         auto fullParams = baseParams;
         fullParams.adaptiveThreshWinSizeStep = 2;
         fullParams.adaptiveThreshWinSizeMax  = 35;  // 17 levels instead of 26; ~35% faster
-        fullParams.adaptiveThreshConstant    = 24;  // high: good lighting, reject specular highlights
+        fullParams.adaptiveThreshConstant    = 20;  // high: good lighting, reject specular highlights
         detectorFull_ = cv::aruco::ArucoDetector(dict, fullParams);
 
         // ROI crops: coarser step is fine since crops are small
         auto roiParams = baseParams;
         roiParams.adaptiveThreshWinSizeStep = 4;
-        roiParams.adaptiveThreshConstant    = 20;  // slightly lower than full: ROI local means are noisier
+        roiParams.adaptiveThreshConstant    = 16;  // slightly lower than full: ROI local means are noisier
         detectorROI_ = cv::aruco::ArucoDetector(dict, roiParams);
 
         clahe_ = cv::createCLAHE(2.0, cv::Size(8, 8));
@@ -148,7 +148,7 @@ public:
 
             for (auto& [id, roi] : roiCache_) {
                 futs.push_back(std::async(std::launch::async,
-                    [this, &gray, id=id, roi=roi]() -> RoiResult {
+                    [this, &gray, roi=roi]() -> RoiResult {
                         RoiResult out;
                         cv::Rect r = roi & cv::Rect(0, 0, gray.cols, gray.rows);
                         if (r.area() < 100) return out;

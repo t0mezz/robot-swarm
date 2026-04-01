@@ -15,7 +15,7 @@ OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config -
 
 .PHONY: all clean
 
-all: swarm_hub swarm_terminal latency_plot swarm_controller vision_controller
+all: swarm_hub swarm_terminal latency_plot swarm_controller vision_controller circle_demo
 
 swarm_hub: swarm_hub.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@ $(HUB_LDFLAGS)
@@ -32,5 +32,8 @@ swarm_controller: swarm_controller.cpp
 vision_controller: vision_controller.cpp aruco_tracker.h
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
 
+circle_demo: circle_demo.cpp aruco_tracker.h
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
+
 clean:
-	rm -f swarm_hub swarm_terminal latency_plot swarm_controller vision_controller
+	rm -f swarm_hub swarm_terminal latency_plot swarm_controller vision_controller circle_demo

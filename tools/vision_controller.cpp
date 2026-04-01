@@ -199,7 +199,7 @@ static void sendSwarm(int8_t motors[MAX_ROBOTS][2]) {
 
 static constexpr float K_DIST         = 0.40f;
 static constexpr float K_ANGLE        = 0.40f;
-static constexpr float MAX_SPEED      = 47.0f;   // -15%
+static constexpr float MAX_SPEED      = 51.7f;   // +10% from 47
 static constexpr float MAX_TURN       = 22.0f;
 static constexpr float ARRIVAL_MM     = 75.0f;
 static constexpr float SEND_INTERVALS = 0.05f;
@@ -217,7 +217,7 @@ struct Target { float x, y; bool set = false; };
 
 static std::unordered_map<int, Target> g_targets;
 static int  g_selectedRobot = -1;
-static int  g_speedLevel = 64; // 0..255, 255 => 4x speed
+static int  g_speedLevel = 45; // 0..255, 255 => 4x speed; default -30% from 64
 static bool g_haveGlobalTarget = false;
 static Target g_globalTarget = {0,0,false};
 static bool g_leftClick = false, g_rightClick = false;
@@ -254,7 +254,16 @@ static void onCalibMouse(int event, int x, int y, int, void* ud) {
 
 static bool runCalibration(ArucoTracker& tracker) {
     printf("\nCalibration: click 4 arena corners (TL TR BR BL)\n");
-    for (int i = 0; i < 10; ++i) tracker.update();
+    {
+        int attempts = 0;
+        while (!tracker.update()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            if (++attempts > 100) {
+                fprintf(stderr, "[calib] Timed out waiting for first frame.\n");
+                return false;
+            }
+        }
+    }
     cv::Mat frame = tracker.debugFrame().clone();
 
     cv::namedWindow("Calibration", cv::WINDOW_NORMAL);
@@ -543,8 +552,10 @@ int main(int argc, char* argv[]) {
             }
 
             // Follower-specific gains: gentler P, lower top speed, softer turn cap.
-            float kDist   = isFollower ? 0.16f : K_DIST;   // -10%
-            float maxSpd  = isFollower ? 34.0f : baseSpeed; // -10%
+            // maxSpd scales with g_speedLevel so +/- affects the whole swarm.
+            static constexpr float FOLLOWER_SPD_FRAC = 34.0f / MAX_SPEED;  // ~72% of leader
+            float kDist   = isFollower ? K_DIST * 0.40f : K_DIST;
+            float maxSpd  = isFollower ? baseSpeed * FOLLOWER_SPD_FRAC : baseSpeed;
             float maxTurn = isFollower ? 15.0f : MAX_TURN;
 
             float tgtAngle    = (float)(std::atan2(dy, dx) * 180.0 / M_PI);
