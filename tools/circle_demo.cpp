@@ -500,8 +500,13 @@ int main(int argc, char* argv[]) {
     if (tryHub()) printf("[hub] Connected.\n");
     else          printf("[hub] Not available — will retry.\n");
 
-    ArucoTracker tracker(camIndex, markerMm);
+    auto cfg = ArucoConfig::fromFile("aruco_tracker_config.json");
+    cfg.camIndex     = camIndex;
+    cfg.debugOverlay = true;
+    ArucoTracker tracker(cfg);
     if (!tracker.open()) { fprintf(stderr, "Could not open camera %d.\n", camIndex); return 1; }
+    //auto undist = std::make_unique<FisheyeUndistortPreprocessor>();
+    //if (undist->load("fisheye_calib.yaml", tracker.frameSize())) tracker.prependPreprocessor(std::move(undist));
     printf("Camera %d open at %dx%d.\n", camIndex, tracker.frameSize().width, tracker.frameSize().height);
 
     if (!doCalibrate && tracker.loadHomography(HOMOGRAPHY_FILE)) {
