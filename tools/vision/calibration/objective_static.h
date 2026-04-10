@@ -27,10 +27,12 @@ struct StaticObjective : IObjective {
     std::string             name()         const override { return "static"; }
     const std::vector<int>& detectedIds()  const override { return detectedIds_; }
 
-    // Open camera, capture nFrames, auto-detect expected marker IDs from the
-    // base config, and close the camera.  Returns false if the camera can't
-    // be opened or no markers are found.
-    bool capture(int camIdx, int nFrames, const ArucoConfig& baseCfg) {
+    // Open camera, capture nFrames, then resolve expected marker IDs.
+    // If hintIds is non-empty those IDs are used directly; otherwise IDs seen
+    // in >20% of frames are auto-detected from the base config.
+    // Returns false if the camera can't be opened or no markers are found.
+    bool capture(int camIdx, int nFrames, const ArucoConfig& baseCfg,
+                 const std::vector<int>& hintIds = {}) {
         cv::VideoCapture cap;
         cap.open(camIdx, cv::CAP_AVFOUNDATION);
         if (!cap.isOpened()) {
@@ -57,23 +59,28 @@ struct StaticObjective : IObjective {
         }
         printf("\n");
 
-        // Auto-detect which IDs are reliably present (seen in >20% of frames)
-        // using the base config so the starting point acts as a sanity check.
-        auto det   = makeDetector(baseCfg);
-        std::map<int, int> counts;
-        for (auto& frame : frames_) {
-            auto gray = preprocessGray(frame, baseCfg);
-            auto res  = detectFrame(gray, baseCfg, det);
-            for (int id : res.ids) counts[id]++;
+        if (!hintIds.empty()) {
+            // Caller specified IDs explicitly — use them as-is.
+            detectedIds_ = hintIds;
+        } else {
+            // Auto-detect which IDs are reliably present (seen in >20% of frames)
+            // using the base config so the starting point acts as a sanity check.
+            auto det = makeDetector(baseCfg);
+            std::map<int, int> counts;
+            for (auto& frame : frames_) {
+                auto gray = preprocessGray(frame, baseCfg);
+                auto res  = detectFrame(gray, baseCfg, det);
+                for (int id : res.ids) counts[id]++;
+            }
+            int thresh = std::max(1, nFrames / 5);
+            detectedIds_.clear();
+            for (auto& [id, cnt] : counts)
+                if (cnt >= thresh) detectedIds_.push_back(id);
         }
-        int thresh = std::max(1, nFrames / 5);
-        detectedIds_.clear();
-        for (auto& [id, cnt] : counts)
-            if (cnt >= thresh) detectedIds_.push_back(id);
 
         printf("[calib] Expected IDs: ");
         for (int id : detectedIds_) printf("%d ", id);
-        printf("(%zu/%d frames avg)\n", detectedIds_.size(), nFrames);
+        printf("(%zu ids, %d frames)\n", detectedIds_.size(), nFrames);
 
         return !detectedIds_.empty();
     }
@@ -144,7 +151,7 @@ struct StaticObjective : IObjective {
         }
         if (nMarkersStable > 0) stability /= nMarkersStable;
 
-        return -(0.7 * detRate + 0.3 * stability);
+        return -(0.8 * detRate + 0.2 * stability);
     }
 
 private:

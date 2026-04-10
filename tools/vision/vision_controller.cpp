@@ -380,7 +380,7 @@ int main(int argc, char* argv[]) {
     else          printf("[hub] Not available — will retry every 2s. "
                          "Start manually: ./swarm_hub /dev/tty.usbmodem*\n");
 
-    auto cfg = ArucoConfig::fromFile("aruco_tracker_config.json");
+    auto cfg = ArucoConfig::fromFile("vision/aruco_tracker_config.json");
     cfg.camIndex = camIndex;
     cfg.dictId   = cv::aruco::DICT_6X6_250;
     ArucoTracker tracker(cfg);

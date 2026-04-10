@@ -8,7 +8,8 @@
 //           t = toggle orbit tracking,  [ / ] = orbit speed ±5 deg/s,
 //           q/Esc = quit
 
-#include "aruco_tracker.h"
+//#include "aruco_tracker.h"
+#include "april/april_vision.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -23,6 +24,7 @@
 #include <thread>
 #include <mutex>
 #include <algorithm>
+#include <set>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -182,7 +184,7 @@ static void onCalibMouse(int event, int x, int y, int, void* ud) {
     }
 }
 
-static bool runCalibration(ArucoTracker& tracker) {
+static bool runCalibration(AprilTracker& tracker) {
     printf("\nCalibration: click 4 arena corners (TL TR BR BL)\n");
     // Wait until the capture thread delivers at least one valid frame.
     {
@@ -500,10 +502,10 @@ int main(int argc, char* argv[]) {
     if (tryHub()) printf("[hub] Connected.\n");
     else          printf("[hub] Not available — will retry.\n");
 
-    auto cfg = ArucoConfig::fromFile("aruco_tracker_config.json");
+    auto cfg = AprilConfig::fromFile("vision/april/april_vision_config.json");
     cfg.camIndex     = camIndex;
     cfg.debugOverlay = true;
-    ArucoTracker tracker(cfg);
+    AprilTracker tracker(cfg);
     if (!tracker.open()) { fprintf(stderr, "Could not open camera %d.\n", camIndex); return 1; }
     //auto undist = std::make_unique<FisheyeUndistortPreprocessor>();
     //if (undist->load("fisheye_calib.yaml", tracker.frameSize())) tracker.prependPreprocessor(std::move(undist));
@@ -543,6 +545,13 @@ int main(int argc, char* argv[]) {
     float fps         = 0;
 
     std::unordered_map<int, std::chrono::steady_clock::time_point> robotLastSeen;
+
+    // Persistent slot assignment for position mode.
+    // Slots are only recomputed when a robot ID appears that was not previously
+    // known.  Temporarily lost robots keep their slot so other robots don't
+    // get reassigned and jitter.
+    std::unordered_map<int, float> persistentSlots;
+    std::set<int>                  knownRobotIds;
 
     printf("\nLeft-click = centre  +/- = radius  . = select all (then +/- = speed)  0-9 = select robot\nt = orbit  [ / ] = orbit speed  s = stop  c = calibrate  q = quit\n\n");
 
@@ -584,11 +593,23 @@ int main(int argc, char* argv[]) {
         // ── Slot assignment (position mode only) ──────────────────────────────
         // In orbit mode slot angles are not used for control; we still compute
         // them so the HUD can draw the ideal equal-spacing markers.
+        //
+        // Slots are recomputed only when a new robot ID appears.  Robots that
+        // temporarily go missing keep their previous slot so that the other
+        // robots are not reassigned and start jittering.
         std::unordered_map<int, float> slotAngles;
         if (circle.centreSet && !poseById.empty()) {
-            auto rAngles = robotAngles(tracker.robots(), circle.centre);
-            slotAngles   = assignSlots(rAngles);
-            enforceMinGap(slotAngles, circle.radius, circle.minGapMm);
+            bool newRobot = false;
+            for (auto& [id, _] : poseById) {
+                if (!knownRobotIds.count(id)) { newRobot = true; break; }
+            }
+            if (newRobot || persistentSlots.empty()) {
+                for (auto& [id, _] : poseById) knownRobotIds.insert(id);
+                auto rAngles  = robotAngles(tracker.robots(), circle.centre);
+                persistentSlots = assignSlots(rAngles);
+                enforceMinGap(persistentSlots, circle.radius, circle.minGapMm);
+            }
+            slotAngles = persistentSlots;
         }
 
         // ── Orbit: current angle and adjacency ────────────────────────────────

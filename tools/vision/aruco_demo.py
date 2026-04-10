@@ -261,13 +261,13 @@ def main() -> None:
 
     # 1. Dictionary + optimised detector parameters
     #
-    # DICT_6X6_250 instead of DICT_APRILTAG_36h11:
+    # DICT_4X4_50 instead of DICT_APRILTAG_36h11:
     # The AprilTag backend inside OpenCV runs its own internal quad-NMS step
     # (aprilTagMaxNmsBboxes, default ~10) that silently caps detections before
     # they reach the ArUco layer — this is the hard limit of ~9 markers per frame.
     # The standard ArUco pipeline has no such hidden cap and handles dense grids
-    # without issue.  6x6 gives 250 unique IDs with strong error correction.
-    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
+    # without issue.  4x4_50 gives 50 unique IDs and is the smallest/fastest dict.
+    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
     params = cv2.aruco.DetectorParameters()
 
     # --- Threshold: finer steps + wider range catches markers at more sizes ---

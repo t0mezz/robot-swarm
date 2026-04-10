@@ -13,10 +13,21 @@
 *~
 
 # Build artifacts
+tools/swarm_hub
 tools/swarm_terminal
+tools/swarm_controller
+tools/latency_plot
+tools/vision_controller
+tools/circle_demo
+tools/wingman
+tools/vision/calibration/calibrate
 lib/SwarmProtocol/robot_id_cfg.h
 *.o
 *.d
+
+# Generated / scratch files
+*.bck
+tools/vision/markers/*.pdf
 
 # macOS
 .DS_Store

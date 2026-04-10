@@ -625,7 +625,7 @@ int main(int argc, char* argv[]) {
     if (tryHub()) printf("[hub] Connected.\n");
     else          printf("[hub] Not available — will retry.\n");
 
-    auto cfg = ArucoConfig::fromFile("aruco_tracker_config.json");
+    auto cfg = ArucoConfig::fromFile("vision/aruco_tracker_config.json");
     cfg.camIndex = camIndex;
     ArucoTracker tracker(cfg);
     if (!tracker.open()) { fprintf(stderr, "Could not open camera %d.\n", camIndex); return 1; }

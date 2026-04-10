@@ -1,5 +1,4 @@
 # tools/Makefile
-# Baut die PC-seitigen Tools
 
 CXX      = g++
 CXXFLAGS = -std=c++17 -Wall -O2
@@ -18,29 +17,29 @@ OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config -
 all: swarm_hub swarm_terminal latency_plot swarm_controller vision_controller circle_demo wingman calibrate
 
 calibrate:
-	$(MAKE) -C calibration
+	$(MAKE) -C vision/calibration
 
-swarm_hub: swarm_hub.cpp
+swarm_hub: swarm/swarm_hub.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@ $(HUB_LDFLAGS)
 
-swarm_terminal: swarm_terminal.cpp
+swarm_terminal: swarm/swarm_terminal.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@
 
-latency_plot: latency_plot.cpp
+latency_plot: swarm/latency_plot.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@
 
-swarm_controller: swarm_controller.cpp
+swarm_controller: swarm/swarm_controller.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@ $(CONTROLLER_LDFLAGS)
 
-vision_controller: vision_controller.cpp aruco_tracker.h
-	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
+vision_controller: vision/vision_controller.cpp vision/aruco_tracker.h
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) -Ivision $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
 
-circle_demo: circle_demo.cpp aruco_tracker.h
-	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
+circle_demo: vision/circle_demo.cpp vision/april/april_vision.h
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) -Ivision $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
 
-wingman: wingman.cpp aruco_tracker.h
-	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
+wingman: vision/wingman.cpp vision/aruco_tracker.h
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) -Ivision $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
 
 clean:
 	rm -f swarm_hub swarm_terminal latency_plot swarm_controller vision_controller circle_demo wingman
-	$(MAKE) -C calibration clean
+	$(MAKE) -C vision/calibration clean
