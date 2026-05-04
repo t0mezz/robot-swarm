@@ -28,5 +28,6 @@
     "global_reset": 30,
     "clahe_clip": 2.0,
     "clahe_tile": 8,
-    "debug_overlay": 1
+    "debug_overlay": 1,
+    "mirror_input": 1
 }

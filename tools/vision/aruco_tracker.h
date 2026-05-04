@@ -60,6 +60,7 @@ struct ArucoConfig {
     int   claheTile = 8;
 
     bool debugOverlay = false;
+    bool mirrorInput  = false; // flip frame horizontally before detection (mirrored markers)
 
     // Load from JSON; silently uses defaults for any missing key.
     static ArucoConfig fromFile(const std::string& path);
@@ -105,6 +106,7 @@ inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
     rf("clahe_clip",      c.claheClip);
     ri("clahe_tile",      c.claheTile);
     rb("debug_overlay",   c.debugOverlay);
+    rb("mirror_input",    c.mirrorInput);
     return c;
 }
 
@@ -202,8 +204,10 @@ public:
             {
                 std::unique_lock<std::mutex> lk(frameMutex_);
                 if (latestFrame_.empty()) return false;
-                latestFrame_.copyTo(frame_);
+                frame_ = std::move(latestFrame_); // clear so next call blocks until new frame
             }
+            if (cfg_.mirrorInput)
+                cv::flip(frame_, frame_, 1);
 
             cv::Mat gray;
             cv::cvtColor(frame_, gray, cv::COLOR_BGR2GRAY);
@@ -477,6 +481,8 @@ private:
             if (cap_.read(f) && !f.empty()) {
                 std::unique_lock<std::mutex> lk(frameMutex_);
                 latestFrame_ = std::move(f);
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
         }
     }
