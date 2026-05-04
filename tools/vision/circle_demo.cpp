@@ -44,6 +44,9 @@ static constexpr float MAX_SPEED = 51.7f;  // +10% from 47
 static constexpr float MAX_TURN  = 22.0f;
 static constexpr float ARRIVAL_MM       = 60.0f;   // stop when within this distance of slot
 static constexpr float SEND_INTERVAL_S  = 0.05f;
+// Yaw EMA: smooths per-frame corner noise and rejects brief 180° corner-order
+// flips from the overhead camera.  Lower α = smoother but slower to follow real turns.
+static constexpr float YAW_ALPHA = 0.15f;
 
 // ── Protocol ─────────────────────────────────────────────────────────────────
 
@@ -508,6 +511,10 @@ int main(int argc, char* argv[]) {
     int                             registeredCount = 0;
     std::unordered_map<int, float> persistentSlots;   // id → slot angle (deg)
 
+    // Per-robot EMA-smoothed yaw.  Seeded on first detection; updated only when
+    // the robot is visible.  Handles angle wrap via normAngle delta.
+    std::unordered_map<int, float> smoothedYaw;
+
     printf("\nLeft-click = centre  +/- = radius  . = select all (then +/- = speed)  0-9 = select robot\nt = orbit  [ / ] = orbit speed  s = stop  c = calibrate  q = quit\n\n");
 
     while (g_running) {
@@ -543,6 +550,18 @@ int main(int argc, char* argv[]) {
             if (r.id < 0 || r.id >= MAX_ROBOTS) continue;
             poseById[r.id] = r;
             robotLastSeen[r.id] = now;
+        }
+
+        // Apply EMA to yaw before it reaches any controller.
+        // emplace seeds the value on first sight; subsequent frames blend in
+        // the raw yaw via normAngle so wrap-around is handled correctly.
+        for (auto& [id, pose] : poseById) {
+            auto [it, fresh] = smoothedYaw.emplace(id, pose.yaw);
+            if (!fresh) {
+                float delta = normAngle(pose.yaw - it->second);
+                it->second  = normAngle(it->second + YAW_ALPHA * delta);
+            }
+            pose.yaw = it->second;
         }
 
         // ── Registration / eviction ───────────────────────────────────────────
