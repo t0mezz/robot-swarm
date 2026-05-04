@@ -601,14 +601,12 @@ int main(int argc, char* argv[]) {
     cv::setUseOptimized(true);
 
     int   camIndex   = -1;
-    float markerMm   = 60.0f;
     float spacingMm  = DEFAULT_SPACING_MM;
     float speedPct   = DEFAULT_SPEED_PCT;
     bool  doCalib    = false;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--cam")         && i+1<argc) camIndex  = atoi(argv[++i]);
-        if (!strcmp(argv[i], "--marker-size") && i+1<argc) markerMm  = atof(argv[++i]);
         if ((!strcmp(argv[i], "--spacing") || !strcmp(argv[i], "--dist")) && i+1<argc)
                                                            spacingMm = atof(argv[++i]);
         if (!strcmp(argv[i], "--speed")       && i+1<argc) speedPct  = atof(argv[++i]);

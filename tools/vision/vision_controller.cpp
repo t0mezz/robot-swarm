@@ -99,9 +99,13 @@ static int findGoProIndex() {
         if (line.find("AVFoundation video devices") != std::string::npos) { inVideo = true;  continue; }
         if (line.find("AVFoundation audio devices") != std::string::npos) { inVideo = false; continue; }
         if (!inVideo) continue;
-        auto bracket = line.find('['), close = line.find(']', bracket);
+        // Each device line: "[AVFoundation indev @ 0x...] [N] Device Name"
+        // Use rfind to get the last '[', which is the device-index bracket.
+        auto bracket = line.rfind('['), close = line.find(']', bracket);
         if (bracket == std::string::npos || close == std::string::npos) continue;
-        int idx = std::stoi(line.substr(bracket + 1, close - bracket - 1));
+        std::string idxStr = line.substr(bracket + 1, close - bracket - 1);
+        if (idxStr.empty() || !std::isdigit((unsigned char)idxStr[0])) continue;
+        int idx = std::stoi(idxStr);
         std::string name = line.substr(close + 2);
         while (!name.empty() && (name.back()=='\n'||name.back()=='\r'||name.back()==' ')) name.pop_back();
         printf("[camera]   [%d] %s%s\n", idx, name.c_str(), name == goProName ? "  ◄" : "");
@@ -359,13 +363,11 @@ int main(int argc, char* argv[]) {
     cv::setUseOptimized(true);
 
     int   camIndex    = -1;
-    float markerMm    = 60.0f;
     bool  doCalibrate = false;
 
     for (int i = 1; i < argc; ++i) {
-        if (!strcmp(argv[i], "--cam")         && i+1<argc) camIndex    = atoi(argv[++i]);
-        if (!strcmp(argv[i], "--marker-size") && i+1<argc) markerMm    = atof(argv[++i]);
-        if (!strcmp(argv[i], "--calibrate"))               doCalibrate = true;
+        if (!strcmp(argv[i], "--cam")       && i+1<argc) camIndex    = atoi(argv[++i]);
+        if (!strcmp(argv[i], "--calibrate"))             doCalibrate = true;
     }
 
     if (camIndex < 0) {
@@ -382,7 +384,6 @@ int main(int argc, char* argv[]) {
 
     auto cfg = ArucoConfig::fromFile("vision/aruco_tracker_config.json");
     cfg.camIndex = camIndex;
-    cfg.dictId   = cv::aruco::DICT_6X6_250;
     ArucoTracker tracker(cfg);
     if (!tracker.open()) { fprintf(stderr, "Could not open camera %d.\n", camIndex); return 1; }
     // auto undist = std::make_unique<FisheyeUndistortPreprocessor>();

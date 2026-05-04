@@ -175,11 +175,7 @@ public:
         params.cornerRefinementMethod                = cv::aruco::CORNER_REFINE_SUBPIX;
         params.cornerRefinementWinSize               = cfg_.cornerWin;
         params.cornerRefinementMaxIterations         = cfg_.cornerMaxIter;
-        cv::aruco::RefineParameters refine;
-        refine.minRepDistance      = 10.0f;
-        refine.errorCorrectionRate = 3.0f;
-        refine.checkAllOrders      = true;
-        detector_ = cv::aruco::ArucoDetector(dict, params, refine);
+        detector_ = cv::aruco::ArucoDetector(dict, params);
 
         if (cfg_.claheClip > 0)
             preprocessors_.push_back(
@@ -432,6 +428,8 @@ private:
         int             failCount = 0, globalFrames = 0;
         cv::KalmanFilter kf;
         bool            kfInit = false;
+        std::chrono::steady_clock::time_point roiLastDetected =
+            std::chrono::steady_clock::time_point::min();
     };
 
     void applyDetection(MarkerState& ms, const std::vector<cv::Point2f>& c) {
@@ -454,6 +452,7 @@ private:
         ms.state = RoiState::LOCAL;
         ms.failCount = 0;
         ms.globalFrames = 0;
+        ms.roiLastDetected = std::chrono::steady_clock::now();
     }
 
     void initKalman(cv::KalmanFilter& kf, float x, float y) const {
@@ -500,12 +499,15 @@ private:
     }
 
     void drawDebugOverlay() {
+        auto now = std::chrono::steady_clock::now();
         for (auto& [id, ms] : markerStates_) {
             cv::Scalar col = ms.state == RoiState::LOCAL     ? cv::Scalar(0,255,0)
                            : ms.state == RoiState::EXPANDING ? cv::Scalar(0,255,255)
                                                               : cv::Scalar(0,0,255);
+            bool roiVisible = ms.roiLastDetected != std::chrono::steady_clock::time_point::min()
+                           && std::chrono::duration<float>(now - ms.roiLastDetected).count() < 5.0f;
             cv::Rect r = ms.roi & cv::Rect(0, 0, debug_.cols, debug_.rows);
-            if (r.area() > 0) cv::rectangle(debug_, r, col, 1);
+            if (r.area() > 0 && roiVisible) cv::rectangle(debug_, r, col, 1);
             if (ms.kfInit) {
                 int px = std::clamp((int)ms.predicted.x, 6, debug_.cols-7);
                 int py = std::clamp((int)ms.predicted.y, 6, debug_.rows-7);

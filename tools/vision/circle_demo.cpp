@@ -8,8 +8,7 @@
 //           t = toggle orbit tracking,  [ / ] = orbit speed ±5 deg/s,
 //           q/Esc = quit
 
-//#include "aruco_tracker.h"
-#include "april/april_vision.h"
+#include "aruco_tracker.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -184,7 +183,7 @@ static void onCalibMouse(int event, int x, int y, int, void* ud) {
     }
 }
 
-static bool runCalibration(AprilTracker& tracker) {
+static bool runCalibration(ArucoTracker& tracker) {
     printf("\nCalibration: click 4 arena corners (TL TR BR BL)\n");
     // Wait until the capture thread delivers at least one valid frame.
     {
@@ -454,9 +453,13 @@ static int findGoProIndex() {
         if (line.find("AVFoundation video devices") != std::string::npos) { inVideo = true;  continue; }
         if (line.find("AVFoundation audio devices") != std::string::npos) { inVideo = false; continue; }
         if (!inVideo) continue;
-        auto bracket = line.find('['), close = line.find(']', bracket);
+        // Each device line has the form: "[AVFoundation ... ] [N] Device Name"
+        // Use rfind to get the last '[', which is the device-index bracket, not the log prefix.
+        auto bracket = line.rfind('['), close = line.find(']', bracket);
         if (bracket == std::string::npos || close == std::string::npos) continue;
-        int idx = std::stoi(line.substr(bracket + 1, close - bracket - 1));
+        std::string idxStr = line.substr(bracket + 1, close - bracket - 1);
+        if (idxStr.empty() || !std::isdigit((unsigned char)idxStr[0])) continue;
+        int idx = std::stoi(idxStr);
         std::string name = line.substr(close + 2);
         while (!name.empty() && (name.back()=='\n'||name.back()=='\r'||name.back()==' ')) name.pop_back();
         if (name == goProName) { printf("[camera] index %d\n", idx); return idx; }
@@ -473,7 +476,6 @@ int main(int argc, char* argv[]) {
     cv::setUseOptimized(true);
 
     int   camIndex    = -1;
-    float markerMm    = 60.0f;
     float radiusMm    = -1.f;   // -1 = use saved / default
     float minGapMm    = -1.f;
     float orbitSpeed  = -1.f;
@@ -482,7 +484,6 @@ int main(int argc, char* argv[]) {
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--cam")          && i+1<argc) camIndex   = atoi(argv[++i]);
-        if (!strcmp(argv[i], "--marker-size")  && i+1<argc) markerMm   = atof(argv[++i]);
         if (!strcmp(argv[i], "--radius")       && i+1<argc) radiusMm   = atof(argv[++i]);
         if (!strcmp(argv[i], "--min-gap")      && i+1<argc) minGapMm   = atof(argv[++i]);
         if (!strcmp(argv[i], "--orbit-speed")  && i+1<argc) orbitSpeed = atof(argv[++i]);
@@ -502,10 +503,10 @@ int main(int argc, char* argv[]) {
     if (tryHub()) printf("[hub] Connected.\n");
     else          printf("[hub] Not available — will retry.\n");
 
-    auto cfg = AprilConfig::fromFile("vision/april/april_vision_config.json");
+    auto cfg = ArucoConfig::fromFile("vision/aruco_tracker_config.json");
     cfg.camIndex     = camIndex;
     cfg.debugOverlay = true;
-    AprilTracker tracker(cfg);
+    ArucoTracker tracker(cfg);
     if (!tracker.open()) { fprintf(stderr, "Could not open camera %d.\n", camIndex); return 1; }
     //auto undist = std::make_unique<FisheyeUndistortPreprocessor>();
     //if (undist->load("fisheye_calib.yaml", tracker.frameSize())) tracker.prependPreprocessor(std::move(undist));
