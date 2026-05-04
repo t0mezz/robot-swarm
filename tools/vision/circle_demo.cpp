@@ -23,7 +23,6 @@
 #include <thread>
 #include <mutex>
 #include <algorithm>
-#include <set>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -302,57 +301,8 @@ static bool loadCircle(CircleState& c) {
     return true;
 }
 
-// Returns sorted robot IDs and their current angles on the circle (degrees, 0..360).
-// angleDeg[i] = atan2(robot.y - centre.y, robot.x - centre.x) wrapped to [0,360).
-static std::vector<std::pair<int,float>> robotAngles(
-    const std::vector<RobotPose>& robots, cv::Point2f c)
-{
-    std::vector<std::pair<int,float>> out;
-    for (auto& r : robots) {
-        if (r.id < 0 || r.id >= MAX_ROBOTS) continue;
-        float a = (float)(std::atan2(r.y - c.y, r.x - c.x) * 180.0 / M_PI);
-        if (a < 0) a += 360.f;
-        out.push_back({r.id, a});
-    }
-    return out;
-}
-
-// Assign N evenly-spaced slots to N robots, minimising total angular travel.
-// Returns map: robotId → target angle (degrees).
-static std::unordered_map<int,float> assignSlots(
-    const std::vector<std::pair<int,float>>& rAngles)
-{
-    int N = (int)rAngles.size();
-    if (N == 0) return {};
-
-    // Sort robots by their current angle so the greedy step is well-behaved.
-    auto sorted = rAngles;
-    std::sort(sorted.begin(), sorted.end(),
-              [](auto& a, auto& b){ return a.second < b.second; });
-
-    // Try all N rotational offsets of the slot grid; pick the one with
-    // minimum sum of |robot_angle - slot_angle|.
-    float step = 360.f / N;
-    float bestCost = 1e30f;
-    int   bestOffset = 0;
-
-    for (int off = 0; off < N; ++off) {
-        float cost = 0;
-        for (int i = 0; i < N; ++i) {
-            float slot = fmodf((off + i) * step, 360.f);
-            float err  = fabsf(normAngle(sorted[i].second - slot));
-            cost += err;
-        }
-        if (cost < bestCost) { bestCost = cost; bestOffset = off; }
-    }
-
-    std::unordered_map<int,float> out;
-    for (int i = 0; i < N; ++i) {
-        float slot = fmodf((bestOffset + i) * step, 360.f);
-        out[sorted[i].first] = slot;
-    }
-    return out;
-}
+// How long a robot must be undetected before its slot is freed.
+static constexpr float EVICT_TIMEOUT_S = 5.0f;
 
 // Nudge slot angles so no two adjacent slots are closer than minGapMm arc-chord.
 // arc-chord distance ≈ 2*R*sin(Δθ/2).
@@ -546,13 +496,17 @@ int main(int argc, char* argv[]) {
     float fps         = 0;
 
     std::unordered_map<int, std::chrono::steady_clock::time_point> robotLastSeen;
+    std::unordered_map<int, std::chrono::steady_clock::time_point> robotLostSince;
 
-    // Persistent slot assignment for position mode.
-    // Slots are only recomputed when a robot ID appears that was not previously
-    // known.  Temporarily lost robots keep their slot so other robots don't
-    // get reassigned and jitter.
-    std::unordered_map<int, float> persistentSlots;
-    std::set<int>                  knownRobotIds;
+    // Stable slot registry.
+    // Each robot is assigned a slot index on first detection; the slot angle is
+    // slotIndex * (360 / registeredCount).  Slots only change when a genuinely
+    // new robot joins or when one has been absent for > EVICT_TIMEOUT_S.
+    // Temporary detection drops (50 % detection rate, etc.) leave the count and
+    // angles untouched, so no spurious reassignment occurs.
+    std::unordered_map<int, int>   robotSlotIndex;    // id → slot index
+    int                             registeredCount = 0;
+    std::unordered_map<int, float> persistentSlots;   // id → slot angle (deg)
 
     printf("\nLeft-click = centre  +/- = radius  . = select all (then +/- = speed)  0-9 = select robot\nt = orbit  [ / ] = orbit speed  s = stop  c = calibrate  q = quit\n\n");
 
@@ -591,27 +545,65 @@ int main(int argc, char* argv[]) {
             robotLastSeen[r.id] = now;
         }
 
-        // ── Slot assignment (position mode only) ──────────────────────────────
-        // In orbit mode slot angles are not used for control; we still compute
-        // them so the HUD can draw the ideal equal-spacing markers.
-        //
-        // Slots are recomputed only when a new robot ID appears.  Robots that
-        // temporarily go missing keep their previous slot so that the other
-        // robots are not reassigned and start jittering.
-        std::unordered_map<int, float> slotAngles;
-        if (circle.centreSet && !poseById.empty()) {
-            bool newRobot = false;
+        // ── Registration / eviction ───────────────────────────────────────────
+        // Newly seen robots get a slot index equal to the current registeredCount,
+        // then the count is bumped.  Robots that briefly drop out of detection
+        // keep their slot.  Only after EVICT_TIMEOUT_S of absence is the slot
+        // freed and the remaining indices compacted.
+        {
+            bool countChanged = false;
+
+            // Register new robots; clear their lost timer.
             for (auto& [id, _] : poseById) {
-                if (!knownRobotIds.count(id)) { newRobot = true; break; }
+                robotLostSince.erase(id);
+                if (!robotSlotIndex.count(id)) {
+                    robotSlotIndex[id] = registeredCount++;
+                    printf("[circle] Robot %d registered → slot %d / %d\n",
+                           id, robotSlotIndex[id], registeredCount);
+                    countChanged = true;
+                }
             }
-            if (newRobot || persistentSlots.empty()) {
-                for (auto& [id, _] : poseById) knownRobotIds.insert(id);
-                auto rAngles  = robotAngles(tracker.robots(), circle.centre);
-                persistentSlots = assignSlots(rAngles);
+
+            // Start / maintain lost timer for registered robots not seen this frame.
+            for (auto& [id, _] : robotSlotIndex) {
+                if (!poseById.count(id) && !robotLostSince.count(id))
+                    robotLostSince[id] = now;
+            }
+
+            // Evict robots that have exceeded the timeout.
+            {
+                std::vector<int> toEvict;
+                for (auto& [id, t] : robotLostSince) {
+                    if (robotSlotIndex.count(id) &&
+                        std::chrono::duration<float>(now - t).count() > EVICT_TIMEOUT_S)
+                        toEvict.push_back(id);
+                }
+                for (int id : toEvict) {
+                    int evicted = robotSlotIndex[id];
+                    robotSlotIndex.erase(id);
+                    robotLostSince.erase(id);
+                    persistentSlots.erase(id);
+                    for (auto& [rid, sidx] : robotSlotIndex)
+                        if (sidx > evicted) sidx--;
+                    registeredCount--;
+                    countChanged = true;
+                    printf("[circle] Robot %d evicted (lost >%.0fs)  remaining: %d\n",
+                           id, EVICT_TIMEOUT_S, registeredCount);
+                }
+            }
+
+            // Recompute all slot angles whenever the count changes.
+            if (countChanged && registeredCount > 0) {
+                persistentSlots.clear();
+                for (auto& [id, slotIdx] : robotSlotIndex)
+                    persistentSlots[id] = slotIdx * 360.f / registeredCount;
                 enforceMinGap(persistentSlots, circle.radius, circle.minGapMm);
             }
-            slotAngles = persistentSlots;
         }
+
+        // slotAngles is the view used by the control loop this frame
+        // (includes all registered robots, not just currently visible ones).
+        std::unordered_map<int, float> slotAngles = persistentSlots;
 
         // ── Orbit: current angle and adjacency ────────────────────────────────
         // Robots sorted by current angle CCW; used by both orbit control and HUD.
@@ -886,8 +878,8 @@ int main(int argc, char* argv[]) {
 
         char hud[256];
         snprintf(hud, sizeof(hud),
-            "FPS:%.0f  Robots:%d  R:%.0fmm  Gap:%.0fmm  %s  HUB:%s  %s  %s",
-            fps, (int)poseById.size(),
+            "FPS:%.0f  Robots:%d/%d  R:%.0fmm  Gap:%.0fmm  %s  HUB:%s  %s  %s",
+            fps, (int)poseById.size(), registeredCount,
             circle.radius, circle.minGapMm,
             g_hasH ? "world" : "pixels",
             g_hubFd >= 0 ? "OK" : "INACTIVE",
