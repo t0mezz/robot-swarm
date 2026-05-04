@@ -52,8 +52,14 @@ inline DetResult detectFrame(const cv::Mat& gray,
 // Convenience: preprocess a grayscale frame the same way ArucoTracker does
 // (CLAHE, no fisheye — add a FisheyeUndistortPreprocessor stage upstream if needed).
 inline cv::Mat preprocessGray(const cv::Mat& bgr, const ArucoConfig& cfg) {
+    cv::Mat src = bgr;
+    cv::Mat flipped;
+    if (cfg.mirrorInput) {
+        cv::flip(bgr, flipped, 1);
+        src = flipped;
+    }
     cv::Mat gray;
-    cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+    cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
     if (cfg.claheClip > 0) {
         auto clahe = cv::createCLAHE(cfg.claheClip, {cfg.claheTile, cfg.claheTile});
         clahe->apply(gray, gray);
