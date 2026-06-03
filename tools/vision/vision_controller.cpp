@@ -3,6 +3,10 @@
 // Controls: left-click = goal all, right-click = goal selected, 0-9 select,
 //           s stop, c calibrate, q/Esc quit
 
+#ifdef __APPLE__
+#include <CoreGraphics/CoreGraphics.h>
+#endif
+
 #include "aruco_tracker.h"
 
 #include <cstdio>
@@ -26,7 +30,6 @@
 #include <glob.h>
 
 #ifdef __APPLE__
-#include <CoreGraphics/CoreGraphics.h>
 static constexpr CGKeyCode kKey_A = 0x00;
 static constexpr CGKeyCode kKey_S = 0x01;
 static constexpr CGKeyCode kKey_D = 0x02;

@@ -26,6 +26,12 @@
 //   +/-        Formation spacing ±25 mm
 //   q / ESC    Quit
 
+// Must come before aruco_tracker.h: pylon's api_autoconf.h defines `interface`
+// as a macro which corrupts CoreGraphics/IOHIDTypes.h struct members.
+#ifdef __APPLE__
+#include <CoreGraphics/CoreGraphics.h>
+#endif
+
 #include "aruco_tracker.h"
 
 #include <cstdio>
@@ -52,7 +58,6 @@
 #include <sys/wait.h>
 
 #ifdef __APPLE__
-#include <CoreGraphics/CoreGraphics.h>
 static constexpr CGKeyCode kKey_A = 0x00;
 static constexpr CGKeyCode kKey_S = 0x01;
 static constexpr CGKeyCode kKey_D = 0x02;

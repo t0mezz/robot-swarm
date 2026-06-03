@@ -3,4 +3,7 @@
 -I../lib/Calibration
 -I../lib/SwarmProtocol
 -I../lib/SwarmClient
+-F/Library/Frameworks
+-I/Library/Frameworks/pylon.framework/Headers
+-I/Library/Frameworks/pylon.framework/Headers/GenICam
 -std=c++17

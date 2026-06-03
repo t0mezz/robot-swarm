@@ -8,7 +8,8 @@ OPENCV_CFLAGS := $(shell pkg-config --cflags opencv4 2>/dev/null || pkg-config -
 OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config --libs   opencv 2>/dev/null)
 
 PYLON_DIR     ?= /Library/Frameworks/pylon.framework
-PYLON_CFLAGS   = -F$(dir $(PYLON_DIR)) -I$(PYLON_DIR)/Headers
+PYLON_CFLAGS   = -F$(dir $(PYLON_DIR)) -I$(PYLON_DIR)/Headers -I$(PYLON_DIR)/Headers/GenICam \
+                 -Wno-overloaded-virtual -Wno-unused-variable
 PYLON_LIBS     = -F$(dir $(PYLON_DIR)) -framework pylon -Wl,-rpath,$(PYLON_DIR)/Libraries
 
 UNAME := $(shell uname)

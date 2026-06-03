@@ -15,7 +15,8 @@ OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config -
 
 # Basler Pylon SDK — installed at /Library/Frameworks/pylon.framework on macOS
 PYLON_DIR     ?= /Library/Frameworks/pylon.framework
-PYLON_CFLAGS   = -F$(dir $(PYLON_DIR)) -I$(PYLON_DIR)/Headers
+PYLON_CFLAGS   = -F$(dir $(PYLON_DIR)) -I$(PYLON_DIR)/Headers -I$(PYLON_DIR)/Headers/GenICam \
+                 -Wno-overloaded-virtual -Wno-unused-variable
 PYLON_LIBS     = -F$(dir $(PYLON_DIR)) -framework pylon -Wl,-rpath,$(PYLON_DIR)/Libraries
 
 SFML_CFLAGS := -I/opt/homebrew/opt/sfml@2/include
