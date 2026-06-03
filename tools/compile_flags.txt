@@ -1,2 +1,6 @@
 -I/opt/homebrew/opt/opencv/include/opencv4
+-I../lib/ArucoTracker
+-I../lib/Calibration
+-I../lib/SwarmProtocol
+-I../lib/SwarmClient
 -std=c++17

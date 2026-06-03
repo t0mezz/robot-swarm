@@ -38,15 +38,16 @@ static constexpr float DEFAULT_MIN_GAP_MM     = 0.0f;   // min arc-chord distanc
 static constexpr float DEFAULT_ORBIT_SPEED    = 30.0f;  // deg/s, default orbit speed in tracking mode
 
 static constexpr float K_DIST    = 0.40f;
-static constexpr float K_ANGLE   = 0.40f;
-static constexpr float K_RAD     = 0.35f;  // radial correction gain (mm/s per mm of error)
-static constexpr float MAX_SPEED = 51.7f;  // +10% from 47
-static constexpr float MAX_TURN  = 22.0f;
+//static constexpr float K_ANGLE   = 0.22f;   // heading P-gain
+static constexpr float K_ANGLE   = 0.5f;   // heading P-gain
+static constexpr float K_YAW_D   = 0.08f;   // heading D-gain: dampens oscillation
+static constexpr float K_RAD     = 0.20f;   // radial correction gain (mm/s per mm of error)
+static constexpr float MAX_SPEED = 51.7f;   // +10% from 47
+static constexpr float MAX_TURN  = 16.0f;
 static constexpr float ARRIVAL_MM       = 60.0f;   // stop when within this distance of slot
 static constexpr float SEND_INTERVAL_S  = 0.05f;
-// Yaw EMA: smooths per-frame corner noise and rejects brief 180° corner-order
-// flips from the overhead camera.  Lower α = smoother but slower to follow real turns.
-static constexpr float YAW_ALPHA = 0.15f;
+// Yaw EMA: lower α = smoother but more lag; higher α = faster tracking, less overshoot.
+static constexpr float YAW_ALPHA = 0.25f;
 
 // ── Protocol ─────────────────────────────────────────────────────────────────
 
@@ -494,6 +495,7 @@ int main(int argc, char* argv[]) {
 
     auto lastSend     = std::chrono::steady_clock::now();
     auto lastFpsT     = lastSend;
+    auto lastControlT = lastSend;
     auto lastHubRetry = lastSend - std::chrono::seconds(10);
     int  frameCount   = 0;
     float fps         = 0;
@@ -514,6 +516,8 @@ int main(int argc, char* argv[]) {
     // Per-robot EMA-smoothed yaw.  Seeded on first detection; updated only when
     // the robot is visible.  Handles angle wrap via normAngle delta.
     std::unordered_map<int, float> smoothedYaw;
+    // Previous heading error per robot — used to compute the D term of the PD controller.
+    std::unordered_map<int, float> prevAngleErr;
 
     printf("\nLeft-click = centre  +/- = radius  . = select all (then +/- = speed)  0-9 = select robot\nt = orbit  [ / ] = orbit speed  s = stop  c = calibrate  q = quit\n\n");
 
@@ -525,6 +529,8 @@ int main(int argc, char* argv[]) {
 
         auto now = std::chrono::steady_clock::now();
         ++frameCount;
+        float controlDt = clampf(std::chrono::duration<float>(now - lastControlT).count(), 0.01f, 0.2f);
+        lastControlT = now;
 
         if (g_hubFd < 0 && std::chrono::duration<float>(now - lastHubRetry).count() >= 2.0f) {
             lastHubRetry = now;
@@ -602,6 +608,8 @@ int main(int argc, char* argv[]) {
                     robotSlotIndex.erase(id);
                     robotLostSince.erase(id);
                     persistentSlots.erase(id);
+                    smoothedYaw.erase(id);
+                    prevAngleErr.erase(id);
                     for (auto& [rid, sidx] : robotSlotIndex)
                         if (sidx > evicted) sidx--;
                     registeredCount--;
@@ -719,8 +727,18 @@ int main(int argc, char* argv[]) {
                 float headingN   = clampf(fabsf(angleErr) / 90.f, 0.f, 1.f);
                 float headingSc  = 1.f - headingN * headingN;
 
+                float dAngleErr = 0.f;
+                {
+                    auto it = prevAngleErr.find(id);
+                    if (it != prevAngleErr.end())
+                        dAngleErr = clampf(normAngle(angleErr - it->second) / controlDt,
+                                           -300.f, 300.f);
+                    prevAngleErr[id] = angleErr;
+                }
+
                 float forward = clampf(vMag, 0.f, MAX_SPEED) * headingSc;
-                float turn    = clampf(K_ANGLE * angleErr, -MAX_TURN, MAX_TURN);
+                float turn    = clampf(K_ANGLE * angleErr + K_YAW_D * dAngleErr,
+                                       -MAX_TURN, MAX_TURN);
 
                 motors[id][0] = (int8_t)clampf(forward + turn, -100, 100);
                 motors[id][1] = (int8_t)clampf(forward - turn, -100, 100);
@@ -749,8 +767,18 @@ int main(int argc, char* argv[]) {
                 float brakeSc   = clampf((dist - ARRIVAL_MM) / ARRIVAL_MM, 0.f, 1.f);
                 float maxSpd    = MAX_SPEED * robotSpeed(id);
 
+                float dAngleErr = 0.f;
+                {
+                    auto it = prevAngleErr.find(id);
+                    if (it != prevAngleErr.end())
+                        dAngleErr = clampf(normAngle(angleErr - it->second) / controlDt,
+                                           -300.f, 300.f);
+                    prevAngleErr[id] = angleErr;
+                }
+
                 float forward = clampf(K_DIST * dist, 0.f, maxSpd) * headingSc * brakeSc;
-                float turn    = clampf(K_ANGLE * angleErr, -MAX_TURN, MAX_TURN);
+                float turn    = clampf(K_ANGLE * angleErr + K_YAW_D * dAngleErr,
+                                       -MAX_TURN, MAX_TURN);
 
                 motors[id][0] = (int8_t)clampf(forward + turn, -100, 100);
                 motors[id][1] = (int8_t)clampf(forward - turn, -100, 100);

@@ -202,11 +202,14 @@ static void sendSwarm(int8_t motors[MAX_ROBOTS][2]) {
 // ── Controller ───────────────────────────────────────────────────────────────
 
 static constexpr float K_DIST         = 0.40f;
-static constexpr float K_ANGLE        = 0.40f;
+static constexpr float K_ANGLE        = 0.22f;   // heading P-gain
+static constexpr float K_YAW_D        = 0.08f;   // heading D-gain: dampens oscillation
 static constexpr float MAX_SPEED      = 51.7f;   // +10% from 47
-static constexpr float MAX_TURN       = 22.0f;
+static constexpr float MAX_TURN       = 16.0f;
 static constexpr float ARRIVAL_MM     = 75.0f;
 static constexpr float SEND_INTERVALS = 0.05f;
+// Yaw EMA: lower α = smoother but more lag; higher α = faster tracking, less overshoot.
+static constexpr float YAW_ALPHA      = 0.25f;
 
 static float normAngle(float a) {
     while (a >  180) a -= 360;
@@ -405,7 +408,10 @@ int main(int argc, char* argv[]) {
     static int8_t lastMotors[MAX_ROBOTS][2] = {};
     auto   lastSend     = std::chrono::steady_clock::now();
     auto   lastFpsT     = lastSend;
+    auto   lastControlT = lastSend;
     auto   lastHubRetry = lastSend - std::chrono::seconds(10);
+    std::unordered_map<int, float> smoothedYaw;
+    std::unordered_map<int, float> prevAngleErr;
     int    frameCount   = 0;
     float  fps          = 0;
 
@@ -423,6 +429,8 @@ int main(int argc, char* argv[]) {
 
         auto now = std::chrono::steady_clock::now();
         ++frameCount;
+        float controlDt = clampf(std::chrono::duration<float>(now - lastControlT).count(), 0.01f, 0.2f);
+        lastControlT = now;
 
         if (g_hubFd < 0 && std::chrono::duration<float>(now-lastHubRetry).count() >= 2.0f) {
             lastHubRetry = now;
@@ -465,6 +473,16 @@ int main(int argc, char* argv[]) {
             g_robotLastSeen[r.id] = now;   // feed the watchdog
         }
         std::sort(robotIds.begin(), robotIds.end());
+
+        // EMA-smooth yaw to reduce heading noise and lag-induced overshoot.
+        for (auto& [id, pose] : poseById) {
+            auto [it, fresh] = smoothedYaw.emplace(id, pose.yaw);
+            if (!fresh) {
+                float delta = normAngle(pose.yaw - it->second);
+                it->second = normAngle(it->second + YAW_ALPHA * delta);
+            }
+            pose.yaw = it->second;
+        }
 
         // Lock leader ID on first detection; never re-elect while a leader is set.
         // Resets when the user presses 's' (handled below).
@@ -564,8 +582,9 @@ int main(int argc, char* argv[]) {
             float maxSpd  = isFollower ? baseSpeed * FOLLOWER_SPD_FRAC : baseSpeed;
             float maxTurn = isFollower ? 15.0f : MAX_TURN;
 
-            float tgtAngle    = (float)(std::atan2(dy, dx) * 180.0 / M_PI);
-            float angleErr    = normAngle(tgtAngle - r.yaw);
+            float yaw       = poseById.count(r.id) ? poseById[r.id].yaw : r.yaw;
+            float tgtAngle  = (float)(std::atan2(dy, dx) * 180.0 / M_PI);
+            float angleErr  = normAngle(tgtAngle - yaw);
             float headingNorm  = clampf(fabsf(angleErr) / 90.0f, 0.0f, 1.0f);
             float headingScale = 1.0f - headingNorm * headingNorm;  // inverse quadratic
 
@@ -574,8 +593,17 @@ int main(int argc, char* argv[]) {
             // Prevents the P-controller from arriving at speed and overshooting.
             float brakingScale = clampf((dist - stopDist) / stopDist, 0.0f, 1.0f);
 
+            float dAngleErr = 0.f;
+            {
+                auto it = prevAngleErr.find(r.id);
+                if (it != prevAngleErr.end())
+                    dAngleErr = clampf(normAngle(angleErr - it->second) / controlDt,
+                                       -300.f, 300.f);
+                prevAngleErr[r.id] = angleErr;
+            }
+
             float forward = clampf(kDist * dist, 0.0f, maxSpd) * headingScale * brakingScale;
-            float turn    = clampf(K_ANGLE * angleErr, -maxTurn, maxTurn);
+            float turn    = clampf(K_ANGLE * angleErr + K_YAW_D * dAngleErr, -maxTurn, maxTurn);
             float rawL = forward + turn;
             float rawR = forward - turn;
             motors[r.id][0] = (int8_t)clampf(rawL, -100, 100);

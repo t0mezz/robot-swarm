@@ -8,12 +8,12 @@
     "win_max": 23,
     "win_step": 2,
     "thresh_c": 7.0,
-    "min_perim_rate": 0.03,
-    "poly_approx": 0.05,
+    "min_perim_rate": 0.06,
+    "poly_approx": 0.03,
     "pix_per_cell": 10,
     "cell_margin": 0.2,
-    "error_corr": 0.8,
-    "min_otsu_stddev": 5.0,
+    "error_corr": 0.95,
+    "min_otsu_stddev": 12.0,
     "corner_win": 5,
     "corner_max_iter": 30,
     "half_res_sweep": false,
@@ -26,8 +26,8 @@
     "roi_fail_max": 5,
     "roi_area_max": 0.4,
     "global_reset": 30,
-    "clahe_clip": 2.0,
+    "clahe_clip": 1.0,
     "clahe_tile": 8,
     "debug_overlay": 1,
-    "mirror_input": 1
+    "mirror_input": 0
 }

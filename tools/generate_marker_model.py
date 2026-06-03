@@ -160,6 +160,8 @@ def main():
     parser.add_argument("--dict",   type=str,   default="4x4_50",
                         choices=["4x4_50", "4x4_100", "4x4_250", "4x4_1000"],
                         help="ArUco dictionary to use")
+    parser.add_argument("--mirror", action="store_true",
+                        help="Mirror the marker horizontally (for printing on the reverse side)")
     parser.add_argument("-o", "--output", type=str, default=None,  metavar="FILE",
                         help="Output STL filename (default: marker_<id>.stl)")
 
@@ -175,7 +177,9 @@ def main():
 
     output = args.output or f"marker_{args.id}.stl"
 
-    grid      = get_marker_grid(args.id, args.dict)
+    grid = get_marker_grid(args.id, args.dict)
+    if args.mirror:
+        grid = [row[::-1] for row in grid]
     print_marker(grid, args.id, args.dict)
     print()
     n_cells   = len(grid)          # 6
@@ -196,6 +200,8 @@ def main():
 
     write_binary_stl(output, triangles)
 
+    if args.mirror:
+        print("  (mirrored)")
     print(f"Wrote '{output}'")
     print(f"  Dictionary : {args.dict}  |  ID : {args.id}")
     print(f"  Size       : {args.size} × {args.size} mm  |  Height : {args.height} mm")

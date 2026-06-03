@@ -4,7 +4,7 @@
 // To add/remove a parameter: edit kParams[] and the encode()/decode() bodies
 // (one entry each). Nothing else needs changing.
 
-#include "../aruco_tracker.h"
+#include "../ArucoTracker/aruco_tracker.h"
 #include <vector>
 #include <string>
 #include <algorithm>

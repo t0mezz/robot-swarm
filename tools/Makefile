@@ -2,6 +2,7 @@
 
 CXX      = g++
 CXXFLAGS = -std=c++17 -Wall -O2
+LIBDIR   = ../lib
 
 UNAME := $(shell uname)
 ifeq ($(UNAME), Darwin)
@@ -17,35 +18,44 @@ SFML_LIBS   := -L/opt/homebrew/opt/sfml@2/lib -lsfml-graphics -lsfml-window -lsf
 
 .PHONY: all clean calibrate
 
-all: swarm_hub swarm_terminal latency_plot swarm_controller game vision_controller circle_demo wingman calibrate
+all: swarm_hub swarm_terminal latency_plot swarm_controller game vision_controller circle_demo wingman shape_demo marker_eval calibrate
 
 calibrate:
 	$(MAKE) -C vision/calibration
 
-swarm_hub: swarm/swarm_hub.cpp
+swarm_hub: $(LIBDIR)/swarm/swarm_hub.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@ $(HUB_LDFLAGS)
 
-swarm_terminal: swarm/swarm_terminal.cpp
+swarm_terminal: $(LIBDIR)/swarm/swarm_terminal.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@
 
-latency_plot: swarm/latency_plot.cpp
+latency_plot: $(LIBDIR)/swarm/latency_plot.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@
 
-swarm_controller: swarm/swarm_controller.cpp
+swarm_controller: $(LIBDIR)/swarm/swarm_controller.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@ $(CONTROLLER_LDFLAGS)
 
 game: game.cpp
 	$(CXX) $(CXXFLAGS) $(SFML_CFLAGS) $< -o $@ $(SFML_LIBS)
 
-vision_controller: vision/vision_controller.cpp vision/aruco_tracker.h
-	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) -Ivision $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
+vision_controller: vision/vision_controller.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
 
-circle_demo: vision/circle_demo.cpp
-	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) -Ivision $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
+circle_demo: vision/circle_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
 
-wingman: vision/wingman.cpp vision/aruco_tracker.h
-	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) -Ivision $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
+wingman: vision/wingman.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
+
+shape_demo: vision/shape_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/SwarmClient/SwarmClient.h
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) \
+	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient \
+	    $< -o $@ $(OPENCV_LIBS) $(CONTROLLER_LDFLAGS)
+
+marker_eval: vision/marker_eval.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) -I$(LIBDIR)/ArucoTracker \
+	    $< -o $@ $(OPENCV_LIBS)
 
 clean:
-	rm -f swarm_hub swarm_terminal latency_plot swarm_controller game vision_controller circle_demo wingman
+	rm -f swarm_hub swarm_terminal latency_plot swarm_controller game vision_controller circle_demo wingman shape_demo
 	$(MAKE) -C vision/calibration clean
