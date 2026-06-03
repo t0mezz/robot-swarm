@@ -15,7 +15,7 @@ ifeq ($(UNAME), Darwin)
                      -I$(PYLON_DIR)/Headers -I$(PYLON_DIR)/Headers/GenICam \
                      -Wno-overloaded-virtual -Wno-unused-variable
     PYLON_LIBS     = -F$(dir $(PYLON_DIR)) -framework pylon \
-                     -Wl,-rpath,$(PYLON_DIR)/Libraries
+                     -Wl,-rpath,$(dir $(PYLON_DIR))
 else
     PYLON_CFLAGS   = $(shell pylon-config --cflags 2>/dev/null) \
                      -Wno-overloaded-virtual -Wno-unused-variable

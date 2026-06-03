@@ -13,7 +13,7 @@ ifeq ($(UNAME), Darwin)
                          -I$(PYLON_DIR)/Headers -I$(PYLON_DIR)/Headers/GenICam \
                          -Wno-overloaded-virtual -Wno-unused-variable
     PYLON_LIBS         = -F$(dir $(PYLON_DIR)) -framework pylon \
-                         -Wl,-rpath,$(PYLON_DIR)/Libraries
+                         -Wl,-rpath,$(dir $(PYLON_DIR))
     SFML_CFLAGS       := -I/opt/homebrew/opt/sfml@2/include
     SFML_LIBS         := -L/opt/homebrew/opt/sfml@2/lib -lsfml-graphics -lsfml-window -lsfml-system
 else
