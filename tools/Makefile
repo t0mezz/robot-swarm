@@ -8,19 +8,25 @@ UNAME := $(shell uname)
 ifeq ($(UNAME), Darwin)
     HUB_LDFLAGS        = -framework IOKit
     CONTROLLER_LDFLAGS = -framework CoreGraphics -framework CoreFoundation
+    PYLON_DIR         ?= /Library/Frameworks/pylon.framework
+    PYLON_CFLAGS       = -F$(dir $(PYLON_DIR)) \
+                         -I$(PYLON_DIR)/Headers -I$(PYLON_DIR)/Headers/GenICam \
+                         -Wno-overloaded-virtual -Wno-unused-variable
+    PYLON_LIBS         = -F$(dir $(PYLON_DIR)) -framework pylon \
+                         -Wl,-rpath,$(PYLON_DIR)/Libraries
+    SFML_CFLAGS       := -I/opt/homebrew/opt/sfml@2/include
+    SFML_LIBS         := -L/opt/homebrew/opt/sfml@2/lib -lsfml-graphics -lsfml-window -lsfml-system
+else
+    # Linux: pylon installs to /opt/pylon and ships a pylon-config query tool
+    PYLON_CFLAGS       = $(shell pylon-config --cflags 2>/dev/null) \
+                         -Wno-overloaded-virtual -Wno-unused-variable
+    PYLON_LIBS         = $(shell pylon-config --libs 2>/dev/null)
+    SFML_CFLAGS       := $(shell pkg-config --cflags sfml-all 2>/dev/null)
+    SFML_LIBS         := $(shell pkg-config --libs   sfml-all 2>/dev/null)
 endif
 
 OPENCV_CFLAGS := $(shell pkg-config --cflags opencv4 2>/dev/null || pkg-config --cflags opencv 2>/dev/null)
 OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config --libs   opencv 2>/dev/null)
-
-# Basler Pylon SDK — installed at /Library/Frameworks/pylon.framework on macOS
-PYLON_DIR     ?= /Library/Frameworks/pylon.framework
-PYLON_CFLAGS   = -F$(dir $(PYLON_DIR)) -I$(PYLON_DIR)/Headers -I$(PYLON_DIR)/Headers/GenICam \
-                 -Wno-overloaded-virtual -Wno-unused-variable
-PYLON_LIBS     = -F$(dir $(PYLON_DIR)) -framework pylon -Wl,-rpath,$(PYLON_DIR)/Libraries
-
-SFML_CFLAGS := -I/opt/homebrew/opt/sfml@2/include
-SFML_LIBS   := -L/opt/homebrew/opt/sfml@2/lib -lsfml-graphics -lsfml-window -lsfml-system
 
 .PHONY: all clean calibrate
 
