@@ -1,7 +1,8 @@
 // vision_controller.cpp — Vision-based swarm controller
-// Usage: ./vision_controller [--cam N] [--calibrate] [--marker-size MM]
+// Usage: ./vision_controller [--serial SN] [--ip IP] [--calibrate]
 // Controls: left-click = goal all, right-click = goal selected, 0-9 select,
-//           s stop, c calibrate, q/Esc quit
+//           s stop (unlock leader), c calibrate, +/- speed, WASD drive leader,
+//           q/Esc quit
 
 #ifdef __APPLE__
 #include <CoreGraphics/CoreGraphics.h>

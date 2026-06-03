@@ -1,10 +1,17 @@
-// marker_eval.cpp — Live ArUco marker read accuracy evaluator
-// Usage: ./marker_eval [--config JSON] [--cam N] [--expected 0,1,2] [--mirror]
+// marker_eval.cpp — Camera and ArUco detection benchmark
+// Usage: ./marker_eval [--config JSON] [--serial SN] [--ip IP]
+//                      [--expected 0,1,2] [--mirror]
 //
-// Opens the camera, auto-discovers markers as they appear, and starts an
-// accuracy rating the moment the first marker is seen.
-// When --expected is set, only those IDs are tracked; all others are ignored.
-// Keys: r = reset eval,  q / Esc = quit
+// Shows live camera feed with an overlay panel reporting:
+//   • Per-marker detection rate (% of frames each ID is found)
+//   • Rolling 2-second FPS and camera resolution
+//   • EMA-smoothed pipeline latency (grab + detect, ms)
+//
+// Auto-discovers markers on first detection; use --expected to restrict
+// tracking to specific IDs. Run this first to verify camera health and
+// ArUco config quality before launching any controller.
+//
+// Keys: r = reset counters,  q / Esc = print summary and quit
 
 #include "aruco_tracker.h"
 #include <cstdio>

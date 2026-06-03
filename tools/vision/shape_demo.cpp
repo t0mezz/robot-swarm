@@ -1,6 +1,6 @@
 // shape_demo.cpp — Draw shapes; robots slowly track the path.
 //
-// Usage: ./shape_demo [--cam N] [--calibrate] [--speed PCT]
+// Usage: ./shape_demo [--serial SN] [--ip IP] [--calibrate] [--speed PCT]
 //
 // Draw mode (default):
 //   l = line   r = rectangle   o = circle   f = freehand

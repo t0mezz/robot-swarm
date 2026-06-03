@@ -1,5 +1,5 @@
-// circle_demo.cpp — Circle formation swarm controller
-// Usage: ./circle_demo [--cam N] [--calibrate] [--marker-size MM]
+// circle_demo.cpp — Circle orbit formation controller
+// Usage: ./circle_demo [--serial SN] [--ip IP] [--calibrate]
 //                      [--radius MM] [--min-gap MM] [--orbit-speed DEG_S]
 //                      [--speed PCT]
 // Controls: left-click = set circle centre, s = stop, c = calibrate,
