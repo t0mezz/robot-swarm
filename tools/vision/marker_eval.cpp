@@ -13,6 +13,7 @@
 #include <vector>
 #include <set>
 #include <unordered_map>
+#include <deque>
 #include <chrono>
 #include <algorithm>
 
@@ -26,6 +27,15 @@ struct MarkerStats {
     float rate() const {
         return evalFrames > 0 ? (float)detectedFrames / evalFrames : 0.0f;
     }
+};
+
+// ── performance metrics ───────────────────────────────────────────────────────
+
+struct PerfMetrics {
+    float fps       = 0.f;   // rolling 2-second window
+    float latencyMs = 0.f;   // EMA of tracker.update() wall time
+    int   width     = 0;
+    int   height    = 0;
 };
 
 // ── overlay panel ─────────────────────────────────────────────────────────────
@@ -44,7 +54,8 @@ static cv::Scalar ratingColor(float rate) {
 static void drawPanel(cv::Mat& img,
                       const std::unordered_map<int, MarkerStats>& stats,
                       const std::set<int>& expected,
-                      int evalFrames, double evalSecs, bool started)
+                      int evalFrames, double evalSecs, bool started,
+                      const PerfMetrics& perf)
 {
     // ── measure content height ────────────────────────────────────────────────
     // rows: title(1) + divider + timer(1) + divider + N*(label+bar+pct) + divider + overall(1+bar)
@@ -108,9 +119,15 @@ static void drawPanel(cv::Mat& img,
         return;
     }
 
-    char tbuf[48];
-    snprintf(tbuf, sizeof(tbuf), "%.1fs   %d frames", evalSecs, evalFrames);
-    text(tbuf, 0.40f, {130, 130, 130}, 2);
+    char tbuf[64];
+    snprintf(tbuf, sizeof(tbuf), "%.1fs  %d frames  %.1f fps",
+             evalSecs, evalFrames, perf.fps);
+    text(tbuf, 0.38f, {130, 130, 130}, 4);
+
+    char rbuf[48];
+    snprintf(rbuf, sizeof(rbuf), "%dx%d   latency %.1f ms",
+             perf.width, perf.height, perf.latencyMs);
+    text(rbuf, 0.38f, {100, 160, 220}, 2);
     divider();
 
     std::vector<int> ids;
@@ -202,6 +219,11 @@ int main(int argc, char* argv[]) {
     Clock::time_point evalStart;
     bool hasExpected = !expectedIds.empty();
 
+    PerfMetrics perf;
+    perf.width  = tracker.frameSize().width;
+    perf.height = tracker.frameSize().height;
+    std::deque<Clock::time_point> fpsWindow;  // timestamps of recent frames (2s window)
+
     auto reset = [&]() {
         stats.clear();
         started    = false;
@@ -210,7 +232,22 @@ int main(int argc, char* argv[]) {
     };
 
     while (true) {
+        auto t0 = Clock::now();
         if (!tracker.update()) { cv::waitKey(1); continue; }
+        float measuredMs = std::chrono::duration<float, std::milli>(Clock::now() - t0).count();
+        perf.latencyMs = (perf.latencyMs == 0.f)
+                         ? measuredMs
+                         : 0.9f * perf.latencyMs + 0.1f * measuredMs;
+
+        // rolling FPS: keep timestamps within 2-second window
+        fpsWindow.push_back(Clock::now());
+        while (!fpsWindow.empty() &&
+               std::chrono::duration<float>(fpsWindow.back() - fpsWindow.front()).count() > 2.0f)
+            fpsWindow.pop_front();
+        if (fpsWindow.size() > 1) {
+            float span = std::chrono::duration<float>(fpsWindow.back() - fpsWindow.front()).count();
+            perf.fps = (float)(fpsWindow.size() - 1) / span;
+        }
 
         const auto& robots = tracker.robots();
 
@@ -243,11 +280,11 @@ int main(int argc, char* argv[]) {
             }
 
             cv::Mat frame = tracker.debugFrame().clone();
-            drawPanel(frame, stats, expectedIds, evalFrames, evalSecs, true);
+            drawPanel(frame, stats, expectedIds, evalFrames, evalSecs, true, perf);
             cv::imshow("Marker Eval", frame);
         } else {
             cv::Mat frame = tracker.debugFrame().clone();
-            drawPanel(frame, stats, expectedIds, 0, 0.0, false);
+            drawPanel(frame, stats, expectedIds, 0, 0.0, false, perf);
             cv::imshow("Marker Eval", frame);
         }
 
@@ -257,6 +294,8 @@ int main(int argc, char* argv[]) {
     }
 
     printf("\n════ FINAL SUMMARY ════\n");
+    printf("Resolution: %dx%d   Avg FPS: %.1f   Avg latency: %.1f ms\n",
+           perf.width, perf.height, perf.fps, perf.latencyMs);
     if (!started) {
         printf("No markers detected.\n");
     } else {
