@@ -12,6 +12,17 @@
 #include <cmath>
 #include <chrono>
 
+// ─── ICameraSource ────────────────────────────────────────────────────────────
+
+struct ArucoConfig;  // forward-declared so ICameraSource::open can reference it
+
+struct ICameraSource {
+    virtual ~ICameraSource() = default;
+    virtual bool     open(const ArucoConfig& cfg) = 0;
+    virtual bool     read(cv::Mat& frame) = 0;
+    virtual cv::Size size() const = 0;
+};
+
 // ─── RobotPose ────────────────────────────────────────────────────────────────
 
 struct RobotPose {
@@ -26,8 +37,10 @@ struct RobotPose {
 // aruco_tracker_config.json — missing keys fall back to the defaults below.
 
 struct ArucoConfig {
-    // Camera
-    int   camIndex = 0, width = 1920, height = 1080, fps = 30;
+    // Camera — Basler ace2 GigE
+    int         width = 1920, height = 1080, fps = 30;
+    std::string baslerSerial = "";  // empty = first available device
+    std::string baslerIp     = "";  // optional: filter by IP address
 
     // ArUco detector
     int   dictId        = cv::aruco::DICT_4X4_50;
@@ -73,10 +86,12 @@ inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
         fprintf(stderr, "[aruco] config '%s' not found — using defaults\n", path.c_str());
         return c;
     }
-    auto ri = [&](const char* k, int&   v) { if (!fs[k].empty()) fs[k] >> v; };
-    auto rf = [&](const char* k, float& v) { if (!fs[k].empty()) fs[k] >> v; };
-    auto rb = [&](const char* k, bool&  v) { int t = (int)v; if (!fs[k].empty()) { fs[k] >> t; v = (bool)t; } };
-    ri("cam_index",       c.camIndex);
+    auto ri = [&](const char* k, int&         v) { if (!fs[k].empty()) fs[k] >> v; };
+    auto rf = [&](const char* k, float&       v) { if (!fs[k].empty()) fs[k] >> v; };
+    auto rb = [&](const char* k, bool&        v) { int t = (int)v; if (!fs[k].empty()) { fs[k] >> t; v = (bool)t; } };
+    auto rs = [&](const char* k, std::string& v) { if (!fs[k].empty()) fs[k] >> v; };
+    rs("basler_serial",   c.baslerSerial);
+    rs("basler_ip",       c.baslerIp);
     ri("cam_width",       c.width);
     ri("cam_height",      c.height);
     ri("cam_fps",         c.fps);
@@ -156,6 +171,8 @@ private:
     bool    ready_ = false;
 };
 
+#include "basler_pylon_source.h"
+
 // ─── ArucoTracker ─────────────────────────────────────────────────────────────
 
 class ArucoTracker {
@@ -187,13 +204,11 @@ public:
     ~ArucoTracker() { stopCapture(); }
 
     bool open() {
-        cap_.open(cfg_.camIndex, cv::CAP_AVFOUNDATION);
-        if (!cap_.isOpened()) return false;
-        cap_.set(cv::CAP_PROP_FRAME_WIDTH,  cfg_.width);
-        cap_.set(cv::CAP_PROP_FRAME_HEIGHT, cfg_.height);
-        cap_.set(cv::CAP_PROP_FPS,          cfg_.fps);
-        fw_ = (float)cap_.get(cv::CAP_PROP_FRAME_WIDTH);
-        fh_ = (float)cap_.get(cv::CAP_PROP_FRAME_HEIGHT);
+        source_ = std::make_unique<BaslerPylonSource>();
+        if (!source_->open(cfg_)) { source_.reset(); return false; }
+        auto sz = source_->size();
+        fw_ = (float)sz.width;
+        fh_ = (float)sz.height;
         captureRunning_ = true;
         captureThread_  = std::thread(&ArucoTracker::captureLoop, this);
         return true;
@@ -408,7 +423,7 @@ public:
     const std::vector<RobotPose>& robots()    const { return robots_; }
     cv::Mat  debugFrame() const { return debug_; }
     cv::Size frameSize()  const { return {(int)fw_, (int)fh_}; }
-    bool     isOpen()     const { return cap_.isOpened(); }
+    bool     isOpen()     const { return source_ != nullptr; }
     float    fps()        const { return fps_; }
 
     // Convenience text helper (fontSize in points, matching the old freetype API)
@@ -478,7 +493,7 @@ private:
     void captureLoop() {
         while (captureRunning_) {
             cv::Mat f;
-            if (cap_.read(f) && !f.empty()) {
+            if (source_->read(f) && !f.empty()) {
                 std::unique_lock<std::mutex> lk(frameMutex_);
                 latestFrame_ = std::move(f);
             } else {
@@ -489,6 +504,7 @@ private:
     void stopCapture() {
         captureRunning_ = false;
         if (captureThread_.joinable()) captureThread_.join();
+        source_.reset();
     }
 
     void updateFps() {
@@ -544,7 +560,7 @@ private:
     ArucoConfig cfg_;
     float fw_ = 1920, fh_ = 1080;
 
-    cv::VideoCapture         cap_;
+    std::unique_ptr<ICameraSource>   source_;
     cv::aruco::ArucoDetector detector_;
 
     std::vector<std::unique_ptr<IPreprocessor>> preprocessors_;

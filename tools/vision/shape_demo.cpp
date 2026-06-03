@@ -24,7 +24,6 @@
 #include <set>
 #include <unordered_map>
 #include <chrono>
-#include <sstream>
 #include <thread>
 #include <algorithm>
 
@@ -379,66 +378,6 @@ static cv::Mat buildTelPanel(int width, const std::vector<RobotTelRow>& rows,
     return panel;
 }
 
-// ── GoPro auto-detection ──────────────────────────────────────────────────────
-
-static std::string pipeRead(const char* cmd) {
-    FILE* fp = popen(cmd, "r");
-    if (!fp) return {};
-    std::string out; char buf[256];
-    while (fgets(buf, sizeof(buf), fp)) out += buf;
-    pclose(fp);
-    return out;
-}
-
-static std::string jsonStrField(const std::string& json, const std::string& key,
-                                size_t from = 0) {
-    std::string needle = "\"" + key + "\"";
-    size_t kp = json.find(needle, from); if (kp == std::string::npos) return {};
-    size_t colon = json.find(':', kp + needle.size()); if (colon == std::string::npos) return {};
-    size_t q1 = json.find('"', colon+1); if (q1 == std::string::npos) return {};
-    size_t q2 = json.find('"', q1+1);   if (q2 == std::string::npos) return {};
-    return json.substr(q1+1, q2-q1-1);
-}
-
-static int findGoProIndex() {
-    std::string profOut = pipeRead("system_profiler SPCameraDataType -json 2>/dev/null");
-    std::string goProName;
-    size_t pos = 0;
-    while (true) {
-        size_t hp = profOut.find("HERO", pos);
-        if (hp == std::string::npos) break;
-        size_t ob = profOut.rfind('{', hp);
-        if (ob != std::string::npos) {
-            std::string n = jsonStrField(profOut, "_name", ob);
-            if (!n.empty()) { goProName = n; break; }
-        }
-        pos = hp + 4;
-    }
-    if (goProName.empty()) { fprintf(stderr, "[camera] No GoPro found.\n"); return -1; }
-    printf("[camera] GoPro: \"%s\"\n", goProName.c_str());
-
-    std::string ffOut = pipeRead("ffmpeg -f avfoundation -list_devices true -i '' 2>&1");
-    bool inVideo = false;
-    std::istringstream ss(ffOut);
-    std::string line;
-    while (std::getline(ss, line)) {
-        if (line.find("AVFoundation video devices") != std::string::npos) { inVideo = true;  continue; }
-        if (line.find("AVFoundation audio devices") != std::string::npos) { inVideo = false; continue; }
-        if (!inVideo) continue;
-        auto bracket = line.rfind('['), close = line.find(']', bracket);
-        if (bracket == std::string::npos || close == std::string::npos) continue;
-        std::string idxStr = line.substr(bracket+1, close-bracket-1);
-        if (idxStr.empty() || !std::isdigit((unsigned char)idxStr[0])) continue;
-        int idx = std::stoi(idxStr);
-        std::string name = line.substr(close+2);
-        while (!name.empty() && (name.back()=='\n'||name.back()=='\r'||name.back()==' '))
-            name.pop_back();
-        if (name == goProName) { printf("[camera] index %d\n", idx); return idx; }
-    }
-    fprintf(stderr, "[camera] \"%s\" not in AVFoundation list.\n", goProName.c_str());
-    return -1;
-}
-
 // ── Calibration ───────────────────────────────────────────────────────────────
 
 struct CalibState { std::vector<cv::Point2f> pixPts; bool done = false; };
@@ -493,12 +432,13 @@ int main(int argc, char* argv[]) {
     cv::setNumThreads((int)std::thread::hardware_concurrency());
     cv::setUseOptimized(true);
 
-    int   camIndex  = -1;
+    std::string serial, ip;
     float speedPct  = 40.f;
     bool  doCalib   = false;
 
     for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "--cam")       && i+1<argc) camIndex = atoi(argv[++i]);
+        if (!strcmp(argv[i], "--serial")    && i+1<argc) serial  = argv[++i];
+        if (!strcmp(argv[i], "--ip")        && i+1<argc) ip      = argv[++i];
         if (!strcmp(argv[i], "--speed")     && i+1<argc) speedPct = atof(argv[++i]);
         if (!strcmp(argv[i], "--calibrate"))              doCalib  = true;
     }
@@ -513,11 +453,6 @@ int main(int argc, char* argv[]) {
         return it != robotSpeedOverride.end() ? it->second : defaultSpeed;
     };
 
-    if (camIndex < 0) {
-        camIndex = findGoProIndex();
-        if (camIndex < 0) { fprintf(stderr, "GoPro not found. Pass --cam N.\n"); return 1; }
-    }
-
     // Hub
     SwarmClient swarm;
     if (swarm.connect()) printf("[hub] Connected.\n");
@@ -525,11 +460,12 @@ int main(int argc, char* argv[]) {
 
     // Tracker
     auto cfg = ArucoConfig::fromFile("vision/aruco_tracker_config.json");
-    cfg.camIndex     = camIndex;
+    if (!serial.empty()) cfg.baslerSerial = serial;
+    if (!ip.empty())     cfg.baslerIp     = ip;
     cfg.debugOverlay = true;
     ArucoTracker tracker(cfg);
-    if (!tracker.open()) { fprintf(stderr, "Camera %d failed.\n", camIndex); return 1; }
-    printf("Camera %d: %dx%d\n", camIndex,
+    if (!tracker.open()) { fprintf(stderr, "Could not open Basler camera.\n"); return 1; }
+    printf("Camera: %dx%d\n",
            tracker.frameSize().width, tracker.frameSize().height);
 
     if (!doCalib && tracker.loadHomography(HOMOGRAPHY_FILE)) {

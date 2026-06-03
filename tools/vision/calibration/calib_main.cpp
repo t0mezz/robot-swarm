@@ -48,7 +48,8 @@
 // ─── Argument parsing ─────────────────────────────────────────────────────────
 
 struct Args {
-    int         camIdx   = 0;
+    std::string baslerSerial = "";
+    std::string baslerIp     = "";
     bool        eval     = false;
     bool        useCache = false;
     std::string cacheDir = "/tmp/calib_frame_cache";
@@ -66,13 +67,14 @@ static Args parseArgs(int argc, char** argv) {
         if      (k == "--eval")      a.eval     = true;
         else if (k == "--use-cache") a.useCache = true;
         else if (i + 1 < argc) {
-            if      (k == "--camera" || k == "--cam") a.camIdx   = std::stoi(argv[++i]);
-            else if (k == "--cache-dir") a.cacheDir = argv[++i];
-            else if (k == "--ids")       a.idsMax   = std::stoi(argv[++i]);
-            else if (k == "--iters")     a.maxIter  = std::stoi(argv[++i]);
-            else if (k == "--sigma")     a.sigma0   = std::stod(argv[++i]);
-            else if (k == "--config")    a.config   = argv[++i];
-            else if (k == "--output")    a.output   = argv[++i];
+            if      (k == "--serial")    a.baslerSerial = argv[++i];
+            else if (k == "--ip")        a.baslerIp     = argv[++i];
+            else if (k == "--cache-dir") a.cacheDir     = argv[++i];
+            else if (k == "--ids")       a.idsMax       = std::stoi(argv[++i]);
+            else if (k == "--iters")     a.maxIter      = std::stoi(argv[++i]);
+            else if (k == "--sigma")     a.sigma0       = std::stod(argv[++i]);
+            else if (k == "--config")    a.config       = argv[++i];
+            else if (k == "--output")    a.output       = argv[++i];
             else fprintf(stderr, "Unknown option: %s\n", k.c_str());
         }
     }
@@ -124,18 +126,15 @@ static std::vector<cv::Mat> loadFrameCache(const std::string& dir) {
 // what the tracker sees); raw frames are stored so the flip is applied uniformly
 // during evaluation via preprocessGray.
 
-static std::vector<cv::Mat> captureInteractive(int camIdx, const ArucoConfig& cfg) {
-    cv::VideoCapture cap;
-    cap.open(camIdx, cv::CAP_AVFOUNDATION);
-    if (!cap.isOpened()) {
-        fprintf(stderr, "[calib] cannot open camera %d\n", camIdx);
+static std::vector<cv::Mat> captureInteractive(const ArucoConfig& cfg) {
+    BaslerPylonSource cam;
+    if (!cam.open(cfg)) {
+        fprintf(stderr, "[calib] cannot open Basler camera\n");
         return {};
     }
-    cap.set(cv::CAP_PROP_FRAME_WIDTH,  cfg.width);
-    cap.set(cv::CAP_PROP_FRAME_HEIGHT, cfg.height);
-    cap.set(cv::CAP_PROP_FPS,          cfg.fps);
 
-    for (int i = 0; i < 5; ++i) { cv::Mat tmp; cap.read(tmp); }
+    // Flush pipeline frames before interactive capture.
+    for (int i = 0; i < 5; ++i) { cv::Mat tmp; cam.read(tmp); }
 
     const char* WIN = "Calibration  —  SPACE: capture frame  |  ENTER / Q: done";
     cv::namedWindow(WIN, cv::WINDOW_NORMAL);
@@ -149,8 +148,7 @@ static std::vector<cv::Mat> captureInteractive(int camIdx, const ArucoConfig& cf
     cv::Mat frame;
 
     while (true) {
-        cap.read(frame);
-        if (frame.empty()) { cv::waitKey(10); continue; }
+        if (!cam.read(frame) || frame.empty()) { cv::waitKey(10); continue; }
 
         cv::Mat display = frame.clone();
         if (cfg.mirrorInput) cv::flip(display, display, 1);
@@ -171,7 +169,6 @@ static std::vector<cv::Mat> captureInteractive(int camIdx, const ArucoConfig& cf
     }
 
     cv::destroyWindow(WIN);
-    cap.release();
     return frames;
 }
 
@@ -211,7 +208,8 @@ int main(int argc, char** argv) {
 
     printf("=== ArUco Tracker Calibration (CMA-ES%s) ===\n",
            args.eval ? " / eval" : "");
-    printf("Camera: %d\n", args.camIdx);
+    if (!args.baslerSerial.empty()) printf("Serial: %s\n", args.baslerSerial.c_str());
+    if (!args.baslerIp.empty())     printf("IP:     %s\n", args.baslerIp.c_str());
     if (!args.eval)
         printf("MaxIter: %d  Sigma0: %.2f\n", args.maxIter, args.sigma0);
     printf("Base config:   %s\n", args.config.c_str());
@@ -219,7 +217,8 @@ int main(int argc, char** argv) {
     printf("Cache dir:     %s\n\n", args.cacheDir.c_str());
 
     ArucoConfig base  = ArucoConfig::fromFile(args.config);
-    base.camIndex     = args.camIdx;
+    if (!args.baslerSerial.empty()) base.baslerSerial = args.baslerSerial;
+    if (!args.baslerIp.empty())     base.baslerIp     = args.baslerIp;
     base.debugOverlay = false;
 
     std::vector<int> expectedIds;
@@ -242,7 +241,7 @@ int main(int argc, char** argv) {
         printf("[calib] Loaded %d frame(s) from cache: %s\n",
                (int)frames.size(), args.cacheDir.c_str());
     } else {
-        frames = captureInteractive(args.camIdx, base);
+        frames = captureInteractive(base);
         if (frames.empty()) {
             fprintf(stderr, "Error: no frames captured.\n");
             return 1;

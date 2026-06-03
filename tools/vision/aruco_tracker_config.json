@@ -1,5 +1,6 @@
 {
-    "cam_index": 0,
+    "basler_serial": "",
+    "basler_ip": "",
     "cam_width": 1920,
     "cam_height": 1080,
     "cam_fps": 30,

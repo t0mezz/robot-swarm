@@ -124,7 +124,8 @@ inline void writeConfig(const ArucoConfig& cfg, const std::string& path) {
         fprintf(stderr, "[calib] cannot write config to '%s'\n", path.c_str());
         return;
     }
-    fs << "cam_index"       << cfg.camIndex
+    fs << "basler_serial"   << cfg.baslerSerial
+       << "basler_ip"       << cfg.baslerIp
        << "cam_width"       << cfg.width
        << "cam_height"      << cfg.height
        << "cam_fps"         << cfg.fps

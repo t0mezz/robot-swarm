@@ -157,13 +157,14 @@ static void drawPanel(cv::Mat& img,
 int main(int argc, char* argv[]) {
     std::string configPath = "aruco_tracker_config.json";
     std::set<int> expectedIds;
-    int  camOverride = -1;
+    std::string serial, ip;
     bool cfg_mirror  = false;
 
     for (int i = 1; i < argc; i++) {
-        if      (!strcmp(argv[i], "--config")   && i+1<argc) configPath  = argv[++i];
-        else if (!strcmp(argv[i], "--cam")      && i+1<argc) camOverride = atoi(argv[++i]);
-        else if (!strcmp(argv[i], "--mirror"))              cfg_mirror = true;
+        if      (!strcmp(argv[i], "--config")   && i+1<argc) configPath = argv[++i];
+        else if (!strcmp(argv[i], "--serial")   && i+1<argc) serial     = argv[++i];
+        else if (!strcmp(argv[i], "--ip")       && i+1<argc) ip         = argv[++i];
+        else if (!strcmp(argv[i], "--mirror"))               cfg_mirror = true;
         else if (!strcmp(argv[i], "--expected") && i+1<argc) {
             char buf[512]; strncpy(buf, argv[++i], 511); buf[511] = 0;
             char* tok = strtok(buf, ",");
@@ -174,17 +175,18 @@ int main(int argc, char* argv[]) {
     }
 
     ArucoConfig cfg = ArucoConfig::fromFile(configPath);
-    if (camOverride >= 0) cfg.camIndex = camOverride;
+    if (!serial.empty()) cfg.baslerSerial = serial;
+    if (!ip.empty())     cfg.baslerIp     = ip;
     if (cfg_mirror) cfg.mirrorInput = true;
     cfg.debugOverlay = true;
 
     ArucoTracker tracker(cfg);
     if (!tracker.open()) {
-        fprintf(stderr, "[eval] failed to open camera %d\n", cfg.camIndex);
+        fprintf(stderr, "[eval] failed to open Basler camera\n");
         return 1;
     }
-    printf("[eval] camera %d  (%dx%d @ %d fps)\n",
-           cfg.camIndex, cfg.width, cfg.height, cfg.fps);
+    printf("[eval] camera open  (%dx%d @ %d fps)\n",
+           cfg.width, cfg.height, cfg.fps);
     if (!expectedIds.empty()) {
         printf("[eval] tracking only IDs: ");
         for (int id : expectedIds) printf("%d ", id);

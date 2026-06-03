@@ -7,6 +7,10 @@ LIBDIR   = ../../../lib
 OPENCV_CFLAGS := $(shell pkg-config --cflags opencv4 2>/dev/null || pkg-config --cflags opencv 2>/dev/null)
 OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config --libs   opencv 2>/dev/null)
 
+PYLON_DIR     ?= /Library/Frameworks/pylon.framework
+PYLON_CFLAGS   = -F$(dir $(PYLON_DIR)) -I$(PYLON_DIR)/Headers
+PYLON_LIBS     = -F$(dir $(PYLON_DIR)) -framework pylon -Wl,-rpath,$(PYLON_DIR)/Libraries
+
 UNAME := $(shell uname)
 ifeq ($(UNAME), Darwin)
     EXTRA_LDFLAGS = -framework CoreGraphics -framework CoreFoundation
@@ -22,10 +26,10 @@ LIBHDRS  = $(LIBDIR)/ArucoTracker/aruco_tracker.h \
 
 all: calibrate
 
-calibrate: calib_main.cpp $(LIBHDRS)
-	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) \
+calibrate: calib_main.cpp $(LIBHDRS) $(LIBDIR)/ArucoTracker/basler_pylon_source.h
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
 	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/Calibration \
-	    $< -o $@ $(OPENCV_LIBS) $(EXTRA_LDFLAGS)
+	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(EXTRA_LDFLAGS)
 
 clean:
 	rm -f calibrate
