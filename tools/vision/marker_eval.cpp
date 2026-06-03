@@ -13,11 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
-#include <deque>
-#include <chrono>
 #include <algorithm>
-
-using Clock = std::chrono::steady_clock;
 
 // ── panel ─────────────────────────────────────────────────────────────────────
 
@@ -142,40 +138,19 @@ int main(int argc, char* argv[]) {
 
     cv::namedWindow("Camera Eval", cv::WINDOW_NORMAL);
 
-    float latencyMs = 0.f;
-    std::deque<Clock::time_point> fpsWindow;
-
-    auto reset = [&]() {
-        latencyMs = 0.f;
-        fpsWindow.clear();
-        printf("[eval] reset\n");
-    };
-
     while (true) {
-        auto t0 = Clock::now();
-        if (!tracker.update()) { cv::waitKey(1); continue; }
-        float measured = std::chrono::duration<float, std::milli>(Clock::now() - t0).count();
-        latencyMs = (latencyMs == 0.f) ? measured : 0.9f * latencyMs + 0.1f * measured;
-
-        fpsWindow.push_back(Clock::now());
-        while (fpsWindow.size() > 1 &&
-               std::chrono::duration<float>(fpsWindow.back() - fpsWindow.front()).count() > 2.0f)
-            fpsWindow.pop_front();
-        float fps = (fpsWindow.size() > 1)
-            ? (float)(fpsWindow.size() - 1) /
-              std::chrono::duration<float>(fpsWindow.back() - fpsWindow.front()).count()
-            : 0.f;
-
-        cv::Mat frame = tracker.debugFrame().clone();
-        drawPanel(frame, fps, latencyMs,
-                  tracker.cameraTemperature(),
-                  sz.width, sz.height,
-                  (int)tracker.robots().size());
-        cv::imshow("Camera Eval", frame);
+        if (tracker.update()) {
+            cv::Mat frame = tracker.debugFrame();
+            drawPanel(frame, tracker.fps(), tracker.latencyMs(),
+                      tracker.cameraTemperature(),
+                      sz.width, sz.height,
+                      (int)tracker.robots().size());
+            cv::imshow("Camera Eval", frame);
+        }
 
         int key = cv::waitKey(1) & 0xFF;
         if (key == 'q' || key == 27) break;
-        if (key == 'r') reset();
+        if (key == 'r') tracker.requestStatsReset();
     }
 
     cv::destroyAllWindows();

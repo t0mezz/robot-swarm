@@ -7,14 +7,17 @@
 #include <unordered_map>
 #include <thread>
 #include <mutex>
+#include <condition_variable>
 #include <atomic>
 #include <future>
+#include <queue>
+#include <functional>
 #include <cmath>
 #include <chrono>
 
 // ─── ICameraSource ────────────────────────────────────────────────────────────
 
-struct ArucoConfig;  // forward-declared so ICameraSource::open can reference it
+struct ArucoConfig;
 
 struct ICameraSource {
     virtual ~ICameraSource() = default;
@@ -40,12 +43,12 @@ struct RobotPose {
 struct ArucoConfig {
     // Camera — Basler ace2 GigE
     int         width = 1920, height = 1080, fps = 30;
-    std::string baslerSerial = "";  // empty = first available device
-    std::string baslerIp     = "";  // optional: filter by IP address
+    std::string baslerSerial = "";
+    std::string baslerIp     = "";
 
     // ArUco detector
     int   dictId        = cv::aruco::DICT_4X4_50;
-    int   winMin        = 3, winMax = 23, winStep = 2;
+    int   winMin        = 3, winMax = 13, winStep = 4;  // tuned: fewer threshold passes
     float threshC       = 7.0f;
     float minPerimRate  = 0.02f;
     float polyApprox    = 0.05f;
@@ -53,30 +56,29 @@ struct ArucoConfig {
     float cellMargin    = 0.20f;
     float errorCorr     = 0.7f;
     float minOtsuStdDev = 5.0f;
-    int   cornerWin     = 5, cornerMaxIter = 30;
-    bool  halfResSweep  = true; // full-frame pass on 0.5× image (~4× fewer pixels)
+    int   cornerWin     = 5, cornerMaxIter = 10;        // tuned: refinement converges fast
+    bool  halfResSweep  = true;
 
     // Kalman filter (constant-velocity, per marker)
-    float kfProcPos = 1e-4f;  // position process noise
-    float kfProcVel = 1e-2f;  // velocity process noise (allow robot acceleration)
-    float kfMeas    = 4.0f;   // measurement noise (px²)
-    float kfInitCov = 100.0f; // initial error covariance (let first detections dominate)
+    float kfProcPos = 1e-4f;
+    float kfProcVel = 1e-2f;
+    float kfMeas    = 4.0f;
+    float kfInitCov = 100.0f;
 
     // ROI state machine
-    float roiPad      = 1.25f; // bbox half-size multiplier → LOCAL ROI
-    float roiGrow     = 1.20f; // per-frame expansion in EXPANDING state
-    int   roiFailMax  = 5;     // consecutive misses → GLOBAL
-    float roiAreaMax  = 0.40f; // ROI/frame area threshold → GLOBAL
-    int   globalReset = 30;    // GLOBAL frames before Kalman reset
+    float roiPad      = 1.25f;
+    float roiGrow     = 1.20f;
+    int   roiFailMax  = 5;
+    float roiAreaMax  = 0.40f;
+    int   globalReset = 30;
 
-    // CLAHE (pre-detection contrast enhancement; set claheClip=0 to disable)
+    // CLAHE — applied lazily (only to the image actually passed to detectMarkers)
     float claheClip = 2.0f;
     int   claheTile = 8;
 
     bool debugOverlay = false;
-    bool mirrorInput  = false; // flip frame horizontally before detection (mirrored markers)
+    bool mirrorInput  = false;
 
-    // Load from JSON; silently uses defaults for any missing key.
     static ArucoConfig fromFile(const std::string& path);
 };
 
@@ -127,16 +129,14 @@ inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
 }
 
 // ─── Preprocessor pipeline ────────────────────────────────────────────────────
-// Each stage receives the grayscale image and may modify it in-place.
-// Stages run in insertion order on every frame before ArUco detection.
-// Add stages via ArucoTracker::addPreprocessor() after construction.
 
 struct IPreprocessor {
     virtual ~IPreprocessor() = default;
     virtual void process(cv::Mat& gray) = 0;
 };
 
-// CLAHE contrast enhancement (good default for overhead cameras)
+// CLAHE is now applied lazily inside ArucoTracker — this struct remains available
+// for external use (e.g. calibration tools) or custom pipelines.
 struct CLAHEPreprocessor : IPreprocessor {
     explicit CLAHEPreprocessor(float clip = 2.0f, int tile = 8)
         : clahe_(cv::createCLAHE(clip, {tile, tile})) {}
@@ -145,7 +145,6 @@ private:
     cv::Ptr<cv::CLAHE> clahe_;
 };
 
-// Fisheye undistortion — load K/D from an OpenCV calibration YAML
 struct FisheyeUndistortPreprocessor : IPreprocessor {
     bool load(const std::string& calibYaml, cv::Size frameSize) {
         cv::FileStorage fs(calibYaml, cv::FileStorage::READ);
@@ -175,6 +174,15 @@ private:
 #include "basler_pylon_source.h"
 
 // ─── ArucoTracker ─────────────────────────────────────────────────────────────
+//
+// Threading model:
+//   captureThread_   — grabs frames from the camera as fast as it can
+//   detectionThread_ — consumes frames, runs ArUco + Kalman, publishes results
+//   main thread      — calls update() to swap in the latest result, then renders
+//
+// Detection and display are fully decoupled: display FPS and detection FPS are
+// independent. update() is non-blocking and returns false when no fresh result
+// is available yet.
 
 class ArucoTracker {
 public:
@@ -198,11 +206,10 @@ public:
         detector_ = cv::aruco::ArucoDetector(dict, params);
 
         if (cfg_.claheClip > 0)
-            preprocessors_.push_back(
-                std::make_unique<CLAHEPreprocessor>(cfg_.claheClip, cfg_.claheTile));
+            clahe_ = cv::createCLAHE(cfg_.claheClip, {cfg_.claheTile, cfg_.claheTile});
     }
 
-    ~ArucoTracker() { stopCapture(); }
+    ~ArucoTracker() { stopThreads(); }
 
     bool open() {
         source_ = std::make_unique<BaslerPylonSource>();
@@ -210,190 +217,28 @@ public:
         auto sz = source_->size();
         fw_ = (float)sz.width;
         fh_ = (float)sz.height;
-        captureRunning_ = true;
-        captureThread_  = std::thread(&ArucoTracker::captureLoop, this);
+        captureRunning_   = true;
+        detectionRunning_ = true;
+        captureThread_   = std::thread(&ArucoTracker::captureLoop,   this);
+        detectionThread_ = std::thread(&ArucoTracker::detectionLoop, this);
         return true;
     }
 
+    // Non-blocking. Returns true when a fresh detection result has been swapped in.
     bool update() {
-        try {
-            {
-                std::unique_lock<std::mutex> lk(frameMutex_);
-                if (latestFrame_.empty()) return false;
-                frame_ = std::move(latestFrame_); // clear so next call blocks until new frame
-            }
-            if (cfg_.mirrorInput)
-                cv::flip(frame_, frame_, 1);
-
-            cv::Mat gray;
-            cv::cvtColor(frame_, gray, cv::COLOR_BGR2GRAY);
-            for (auto& p : preprocessors_) p->process(gray);
-
-            cv::Mat sweep = gray;
-            if (cfg_.halfResSweep)
-                cv::resize(gray, sweep, {}, 0.5, 0.5, cv::INTER_AREA);
-
-            ++frameIdx_;
-            updateFps();
-
-            // ── Kalman predict ────────────────────────────────────────────────
-            for (auto& [id, ms] : markerStates_) {
-                if (!ms.kfInit) continue;
-                cv::Mat pred  = ms.kf.predict();
-                ms.center = ms.predicted = {pred.at<float>(0), pred.at<float>(1)};
-                if (ms.state != RoiState::GLOBAL) {
-                    float hw = ms.roi.width * 0.5f, hh = ms.roi.height * 0.5f;
-                    ms.roi = cv::Rect(
-                        (int)(ms.center.x - hw), (int)(ms.center.y - hh),
-                        ms.roi.width, ms.roi.height);
-                }
-            }
-
-            // ── Detection ─────────────────────────────────────────────────────
-            bool needGlobal = markerStates_.empty();
-            for (auto& [_, ms] : markerStates_)
-                if (ms.state == RoiState::GLOBAL) { needGlobal = true; break; }
-
-            struct Best { float perim; std::vector<cv::Point2f> c; };
-            std::unordered_map<int, Best> best;
-
-            auto merge = [&](int id, std::vector<cv::Point2f> c, float scale, cv::Point2f off) {
-                for (auto& pt : c) { pt = pt * scale + off; }
-                for (auto& pt : c) if (!std::isfinite(pt.x) || !std::isfinite(pt.y)) return;
-                float perim = 0;
-                for (int k = 0; k < 4; ++k) perim += (float)cv::norm(c[k] - c[(k+1)%4]);
-                if (perim < 1.0f) return;
-                if (!best.count(id) || perim > best[id].perim)
-                    best[id] = {perim, std::move(c)};
-            };
-
-            if (needGlobal) {
-                std::vector<std::vector<cv::Point2f>> cs; std::vector<int> ids;
-                std::vector<std::vector<cv::Point2f>> rej;
-                detector_.detectMarkers(sweep, cs, ids, rej);
-                float scale = cfg_.halfResSweep ? 2.0f : 1.0f;
-                for (int j = 0; j < (int)ids.size(); ++j)
-                    merge(ids[j], cs[j], scale, {0, 0});
-            }
-
-            // ROI crops in parallel — each crop targets a single known marker
-            using RoiHits = std::vector<std::pair<int, std::vector<cv::Point2f>>>;
-            std::vector<std::future<RoiHits>> futs;
-            for (auto& [sid, sms] : markerStates_) {
-                if (sms.state == RoiState::GLOBAL) continue;
-                futs.push_back(std::async(std::launch::async,
-                    [this, &gray, roi = sms.roi, id = sid]() -> RoiHits {
-                        RoiHits out;
-                        cv::Rect r = roi & cv::Rect(0, 0, gray.cols, gray.rows);
-                        if (r.area() < 100) return out;
-                        std::vector<std::vector<cv::Point2f>> cs; std::vector<int> ids;
-                        std::vector<std::vector<cv::Point2f>> rej;
-                        detector_.detectMarkers(gray(r), cs, ids, rej);
-                        for (int j = 0; j < (int)ids.size(); ++j) {
-                            if (ids[j] != id) continue;
-                            auto c = cs[j];
-                            for (auto& pt : c) pt += cv::Point2f((float)r.x, (float)r.y);
-                            out.push_back({id, std::move(c)});
-                        }
-                        return out;
-                    }));
-            }
-            for (auto& f : futs)
-                try { for (auto& [id, c] : f.get()) merge(id, std::move(c), 1.0f, {}); }
-                catch (...) {}
-
-            // ── ROI state machine update ───────────────────────────────────────
-            const float frameArea = fw_ * fh_;
-            for (auto& [id, ms] : markerStates_) {
-                if (best.count(id)) {
-                    applyDetection(ms, best[id].c);
-                } else {
-                    if (ms.kfInit) {
-                        ms.kf.statePost    = ms.kf.statePre;
-                        ms.kf.errorCovPost = ms.kf.errorCovPre;
-                        ms.center = {ms.kf.statePost.at<float>(0), ms.kf.statePost.at<float>(1)};
-                    }
-                    switch (ms.state) {
-                    case RoiState::LOCAL:
-                        ms.state = RoiState::EXPANDING;
-                        ms.failCount++;
-                        break;
-                    case RoiState::EXPANDING: {
-                        ms.failCount++;
-                        float cx = ms.roi.x + ms.roi.width  * 0.5f;
-                        float cy = ms.roi.y + ms.roi.height * 0.5f;
-                        float nw = ms.roi.width  * cfg_.roiGrow;
-                        float nh = ms.roi.height * cfg_.roiGrow;
-                        ms.roi = cv::Rect((int)(cx-nw*0.5f),(int)(cy-nh*0.5f),(int)nw,(int)nh);
-                        if ((float)ms.roi.area()/frameArea > cfg_.roiAreaMax
-                                || ms.failCount >= cfg_.roiFailMax) {
-                            ms.state = RoiState::GLOBAL;
-                            ms.failCount = 0;
-                        }
-                        break;
-                    }
-                    case RoiState::GLOBAL:
-                        if (++ms.globalFrames > cfg_.globalReset && ms.kfInit) {
-                            ms.kfInit = false;
-                            ms.globalFrames = 0;
-                        }
-                        break;
-                    }
-                }
-            }
-            for (auto& [id, b] : best)
-                if (!markerStates_.count(id)) applyDetection(markerStates_[id], b.c);
-
-            // ── Pose output ───────────────────────────────────────────────────
-            robots_.clear();
-            debug_ = frame_.clone();
-
-            for (auto& [id, b] : best) {
-                auto& c  = b.c;
-                auto& ms = markerStates_[id];
-                float pcx = ms.kfInit ? ms.center.x : centroid(c, 0);
-                float pcy = ms.kfInit ? ms.center.y : centroid(c, 1);
-                cv::Point2f fwd = (c[0] + c[1]) * 0.5f - cv::Point2f(pcx, pcy);
-
-                float wx, wy, wyaw;
-                if (hasH_) {
-                    std::vector<cv::Point2f> in{{pcx,pcy},{pcx+fwd.x,pcy+fwd.y}}, out;
-                    cv::perspectiveTransform(in, out, H_);
-                    wx = out[0].x; wy = out[0].y;
-                    cv::Point2f wfwd = out[1] - out[0];
-                    wyaw = (float)(std::atan2(wfwd.y, wfwd.x) * 180.0 / M_PI);
-                } else {
-                    wx = pcx; wy = pcy;
-                    wyaw = (float)(std::atan2(fwd.y, fwd.x) * 180.0 / M_PI);
-                }
-                robots_.push_back({id, wx, wy, wyaw, pcx, pcy});
-
-                for (int k = 0; k < 4; ++k)
-                    cv::line(debug_, c[k], c[(k+1)%4], {0,255,0}, 3);
-                cv::circle(debug_, {(int)pcx,(int)pcy}, 5, {0,0,255}, -1);
-                if (cv::norm(fwd) > 1.0f) {
-                    cv::Point2f tip(pcx + fwd.x*2, pcy + fwd.y*2);
-                    cv::arrowedLine(debug_, {(int)pcx,(int)pcy}, {(int)tip.x,(int)tip.y},
-                                   {0,255,255}, 2);
-                }
-                cv::putText(debug_, std::to_string(id), {(int)c[0].x, (int)c[0].y - 10},
-                            cv::FONT_HERSHEY_SIMPLEX, 1.2, {255,255,0}, 2);
-            }
-
-            if (cfg_.debugOverlay) drawDebugOverlay();
-            else cv::putText(debug_,
-                "tags:" + std::to_string(robots_.size()) + (hasH_ ? "  world" : "  px"),
-                {10, 28}, cv::FONT_HERSHEY_SIMPLEX, 0.7, {0,255,0}, 2);
-
-            return true;
-        } catch (const std::exception& e) {
-            throttledErr("[aruco] ", e.what()); return false;
-        } catch (...) {
-            throttledErr("[aruco] unknown exception", ""); return false;
-        }
+        std::unique_lock<std::mutex> lk(resultMutex_);
+        if (!latestResult_.fresh) return false;
+        robots_    = std::move(latestResult_.robots);
+        debug_     = std::move(latestResult_.debug);
+        fps_       = latestResult_.fps;
+        latencyMs_ = latestResult_.latencyMs;
+        latestResult_.fresh = false;
+        return true;
     }
 
-    // Homography: pixel → world (mm)
+    // Signal the detection thread to zero its FPS/latency accumulators.
+    void requestStatsReset() { statsReset_.store(true); }
+
     void setHomography(const std::vector<cv::Point2f>& pix,
                        const std::vector<cv::Point2f>& world) {
         H_ = cv::findHomography(pix, world);
@@ -412,11 +257,9 @@ public:
         fs << "H" << H_;
     }
 
-    // Prepend a preprocessor stage (inserted before any CLAHE added by the constructor)
     void prependPreprocessor(std::unique_ptr<IPreprocessor> p) {
         preprocessors_.insert(preprocessors_.begin(), std::move(p));
     }
-    // Append a preprocessor stage (runs after CLAHE)
     void addPreprocessor(std::unique_ptr<IPreprocessor> p) {
         preprocessors_.push_back(std::move(p));
     }
@@ -426,9 +269,9 @@ public:
     cv::Size frameSize()  const { return {(int)fw_, (int)fh_}; }
     bool     isOpen()     const { return source_ != nullptr; }
     float    fps()        const { return fps_; }
+    float    latencyMs()  const { return latencyMs_; }
     float    cameraTemperature() { return source_ ? source_->temperature() : -1.f; }
 
-    // Convenience text helper (fontSize in points, matching the old freetype API)
     static void drawText(cv::Mat& img, const std::string& text, cv::Point org,
                          int fontSize, cv::Scalar color) {
         if (img.empty()) return;
@@ -439,6 +282,49 @@ public:
     }
 
 private:
+    // ── Thread pool ───────────────────────────────────────────────────────────
+    // Fixed-size pool that lives for the tracker's lifetime, avoiding per-frame
+    // thread construction overhead from std::async.
+    struct ThreadPool {
+        explicit ThreadPool(int n) {
+            for (int i = 0; i < n; ++i)
+                workers_.emplace_back([this] {
+                    while (true) {
+                        std::function<void()> task;
+                        {
+                            std::unique_lock<std::mutex> lk(mtx_);
+                            cv_.wait(lk, [&]{ return stop_ || !queue_.empty(); });
+                            if (stop_ && queue_.empty()) return;
+                            task = std::move(queue_.front());
+                            queue_.pop();
+                        }
+                        task();
+                    }
+                });
+        }
+        ~ThreadPool() {
+            { std::unique_lock<std::mutex> lk(mtx_); stop_ = true; }
+            cv_.notify_all();
+            for (auto& t : workers_) t.join();
+        }
+        template<class F>
+        auto submit(F&& f) -> std::future<decltype(f())> {
+            using R = decltype(f());
+            auto task = std::make_shared<std::packaged_task<R()>>(std::forward<F>(f));
+            auto fut  = task->get_future();
+            { std::unique_lock<std::mutex> lk(mtx_); queue_.push([task]{ (*task)(); }); }
+            cv_.notify_one();
+            return fut;
+        }
+    private:
+        std::vector<std::thread>          workers_;
+        std::queue<std::function<void()>> queue_;
+        std::mutex                        mtx_;
+        std::condition_variable           cv_;
+        bool                              stop_ = false;
+    };
+
+    // ── Internal types ────────────────────────────────────────────────────────
     enum class RoiState { GLOBAL, LOCAL, EXPANDING };
 
     struct MarkerState {
@@ -452,6 +338,271 @@ private:
         std::chrono::steady_clock::time_point roiLastDetected =
             std::chrono::steady_clock::time_point::min();
     };
+
+    struct DetectionResult {
+        std::vector<RobotPose> robots;
+        cv::Mat                debug;
+        float                  fps       = 0.f;
+        float                  latencyMs = 0.f;
+        bool                   fresh     = false;
+    };
+
+    // ── Capture thread ────────────────────────────────────────────────────────
+    void captureLoop() {
+        while (captureRunning_) {
+            cv::Mat f;
+            if (source_->read(f) && !f.empty()) {
+                std::unique_lock<std::mutex> lk(frameMutex_);
+                latestFrame_ = std::move(f);
+                frameCv_.notify_one();
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+        }
+    }
+
+    // ── Detection thread ──────────────────────────────────────────────────────
+    void detectionLoop() {
+        using Clock = std::chrono::steady_clock;
+
+        // Pool sized to available cores minus the two dedicated threads
+        int poolSize = std::max(1, (int)std::thread::hardware_concurrency() - 2);
+        ThreadPool pool(poolSize);
+
+        int   fpsFrames  = 0;
+        float fps        = 0.f;
+        float emaLatency = 0.f;
+        Clock::time_point lastFpsTime;
+
+        while (true) {
+            // Wait for a new frame from the capture thread
+            cv::Mat frame;
+            {
+                std::unique_lock<std::mutex> lk(frameMutex_);
+                frameCv_.wait(lk, [&]{ return !latestFrame_.empty() || !detectionRunning_; });
+                if (!detectionRunning_ && latestFrame_.empty()) break;
+                frame = std::move(latestFrame_);
+            }
+
+            if (statsReset_.exchange(false)) {
+                emaLatency = 0.f; fps = 0.f; fpsFrames = 0;
+                printf("[aruco] stats reset\n");
+            }
+
+            auto t0 = Clock::now();
+
+            try {
+                if (cfg_.mirrorInput)
+                    cv::flip(frame, frame, 1);
+
+                cv::Mat gray;
+                cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+
+                // User-supplied preprocessors (not CLAHE — that's lazy below)
+                for (auto& p : preprocessors_) p->process(gray);
+
+                cv::Mat sweep = gray;
+                if (cfg_.halfResSweep)
+                    cv::resize(gray, sweep, {}, 0.5, 0.5, cv::INTER_AREA);
+
+                // ── FPS ───────────────────────────────────────────────────────
+                auto now = Clock::now();
+                if (fpsFrames++ == 0) lastFpsTime = now;
+                float el = std::chrono::duration<float>(now - lastFpsTime).count();
+                if (el >= 1.0f) { fps = fpsFrames / el; fpsFrames = 0; lastFpsTime = now; }
+
+                // ── Kalman predict ────────────────────────────────────────────
+                for (auto& [id, ms] : markerStates_) {
+                    if (!ms.kfInit) continue;
+                    cv::Mat pred = ms.kf.predict();
+                    ms.center = ms.predicted = {pred.at<float>(0), pred.at<float>(1)};
+                    if (ms.state != RoiState::GLOBAL) {
+                        float hw = ms.roi.width * 0.5f, hh = ms.roi.height * 0.5f;
+                        ms.roi = cv::Rect(
+                            (int)(ms.center.x - hw), (int)(ms.center.y - hh),
+                            ms.roi.width, ms.roi.height);
+                    }
+                }
+
+                // ── Global sweep — CLAHE only on the sweep image ──────────────
+                bool needGlobal = markerStates_.empty();
+                for (auto& [_, ms] : markerStates_)
+                    if (ms.state == RoiState::GLOBAL) { needGlobal = true; break; }
+
+                struct Best { float perim; std::vector<cv::Point2f> c; };
+                std::unordered_map<int, Best> best;
+
+                auto merge = [&](int id, std::vector<cv::Point2f> c, float scale, cv::Point2f off) {
+                    for (auto& pt : c) { pt = pt * scale + off; }
+                    for (auto& pt : c) if (!std::isfinite(pt.x) || !std::isfinite(pt.y)) return;
+                    float perim = 0;
+                    for (int k = 0; k < 4; ++k) perim += (float)cv::norm(c[k] - c[(k+1)%4]);
+                    if (perim < 1.0f) return;
+                    if (!best.count(id) || perim > best[id].perim)
+                        best[id] = {perim, std::move(c)};
+                };
+
+                if (needGlobal) {
+                    cv::Mat sweepImg = sweep;
+                    if (clahe_) { sweepImg = sweep.clone(); clahe_->apply(sweepImg, sweepImg); }
+                    std::vector<std::vector<cv::Point2f>> cs; std::vector<int> ids;
+                    std::vector<std::vector<cv::Point2f>> rej;
+                    detector_.detectMarkers(sweepImg, cs, ids, rej);
+                    float scale = cfg_.halfResSweep ? 2.0f : 1.0f;
+                    for (int j = 0; j < (int)ids.size(); ++j)
+                        merge(ids[j], cs[j], scale, {0, 0});
+                }
+
+                // ── ROI crops via thread pool — each crop gets its own CLAHE ──
+                using RoiHits = std::vector<std::pair<int, std::vector<cv::Point2f>>>;
+                std::vector<std::future<RoiHits>> futs;
+
+                const float claheClip = cfg_.claheClip;
+                const int   claheTile = cfg_.claheTile;
+                const bool  hasClahe  = (clahe_ != nullptr);
+
+                for (auto& [sid, sms] : markerStates_) {
+                    if (sms.state == RoiState::GLOBAL) continue;
+                    futs.push_back(pool.submit(
+                        [this, &gray, roi = sms.roi, id = sid,
+                         claheClip, claheTile, hasClahe]() -> RoiHits {
+                            RoiHits out;
+                            cv::Rect r = roi & cv::Rect(0, 0, gray.cols, gray.rows);
+                            if (r.area() < 100) return out;
+                            cv::Mat crop = gray(r).clone();
+                            if (hasClahe) {
+                                auto lc = cv::createCLAHE(claheClip, {claheTile, claheTile});
+                                lc->apply(crop, crop);
+                            }
+                            std::vector<std::vector<cv::Point2f>> cs; std::vector<int> ids;
+                            std::vector<std::vector<cv::Point2f>> rej;
+                            detector_.detectMarkers(crop, cs, ids, rej);
+                            for (int j = 0; j < (int)ids.size(); ++j) {
+                                if (ids[j] != id) continue;
+                                auto c = cs[j];
+                                for (auto& pt : c) pt += cv::Point2f((float)r.x, (float)r.y);
+                                out.push_back({id, std::move(c)});
+                            }
+                            return out;
+                        }));
+                }
+                for (auto& f : futs)
+                    try { for (auto& [id, c] : f.get()) merge(id, std::move(c), 1.0f, {}); }
+                    catch (...) {}
+
+                // ── ROI state machine ─────────────────────────────────────────
+                const float frameArea = fw_ * fh_;
+                for (auto& [id, ms] : markerStates_) {
+                    if (best.count(id)) {
+                        applyDetection(ms, best[id].c);
+                    } else {
+                        if (ms.kfInit) {
+                            ms.kf.statePost    = ms.kf.statePre;
+                            ms.kf.errorCovPost = ms.kf.errorCovPre;
+                            ms.center = {ms.kf.statePost.at<float>(0), ms.kf.statePost.at<float>(1)};
+                        }
+                        switch (ms.state) {
+                        case RoiState::LOCAL:
+                            ms.state = RoiState::EXPANDING;
+                            ms.failCount++;
+                            break;
+                        case RoiState::EXPANDING: {
+                            ms.failCount++;
+                            float cx = ms.roi.x + ms.roi.width  * 0.5f;
+                            float cy = ms.roi.y + ms.roi.height * 0.5f;
+                            float nw = ms.roi.width  * cfg_.roiGrow;
+                            float nh = ms.roi.height * cfg_.roiGrow;
+                            ms.roi = cv::Rect((int)(cx-nw*0.5f),(int)(cy-nh*0.5f),(int)nw,(int)nh);
+                            if ((float)ms.roi.area()/frameArea > cfg_.roiAreaMax
+                                    || ms.failCount >= cfg_.roiFailMax) {
+                                ms.state = RoiState::GLOBAL;
+                                ms.failCount = 0;
+                            }
+                            break;
+                        }
+                        case RoiState::GLOBAL:
+                            if (++ms.globalFrames > cfg_.globalReset && ms.kfInit) {
+                                ms.kfInit = false;
+                                ms.globalFrames = 0;
+                            }
+                            break;
+                        }
+                    }
+                }
+                for (auto& [id, b] : best)
+                    if (!markerStates_.count(id)) applyDetection(markerStates_[id], b.c);
+
+                // ── Pose output — draw directly onto frame (no extra clone) ───
+                std::vector<RobotPose> outRobots;
+                cv::Mat debug = std::move(frame); // reuse captured frame buffer
+
+                for (auto& [id, b] : best) {
+                    auto& c  = b.c;
+                    auto& ms = markerStates_[id];
+                    float pcx = ms.kfInit ? ms.center.x : centroid(c, 0);
+                    float pcy = ms.kfInit ? ms.center.y : centroid(c, 1);
+                    cv::Point2f fwd = (c[0] + c[1]) * 0.5f - cv::Point2f(pcx, pcy);
+
+                    float wx, wy, wyaw;
+                    if (hasH_) {
+                        std::vector<cv::Point2f> in{{pcx,pcy},{pcx+fwd.x,pcy+fwd.y}}, out;
+                        cv::perspectiveTransform(in, out, H_);
+                        wx = out[0].x; wy = out[0].y;
+                        cv::Point2f wfwd = out[1] - out[0];
+                        wyaw = (float)(std::atan2(wfwd.y, wfwd.x) * 180.0 / M_PI);
+                    } else {
+                        wx = pcx; wy = pcy;
+                        wyaw = (float)(std::atan2(fwd.y, fwd.x) * 180.0 / M_PI);
+                    }
+                    outRobots.push_back({id, wx, wy, wyaw, pcx, pcy});
+
+                    for (int k = 0; k < 4; ++k)
+                        cv::line(debug, c[k], c[(k+1)%4], {0,255,0}, 3);
+                    cv::circle(debug, {(int)pcx,(int)pcy}, 5, {0,0,255}, -1);
+                    if (cv::norm(fwd) > 1.0f) {
+                        cv::Point2f tip(pcx + fwd.x*2, pcy + fwd.y*2);
+                        cv::arrowedLine(debug, {(int)pcx,(int)pcy}, {(int)tip.x,(int)tip.y},
+                                       {0,255,255}, 2);
+                    }
+                    cv::putText(debug, std::to_string(id), {(int)c[0].x, (int)c[0].y - 10},
+                                cv::FONT_HERSHEY_SIMPLEX, 1.2, {255,255,0}, 2);
+                }
+
+                if (cfg_.debugOverlay) drawDebugOverlay(debug, fps, outRobots.size());
+                else cv::putText(debug,
+                    "tags:" + std::to_string(outRobots.size()) + (hasH_ ? "  world" : "  px"),
+                    {10, 28}, cv::FONT_HERSHEY_SIMPLEX, 0.7, {0,255,0}, 2);
+
+                // ── Latency EMA ───────────────────────────────────────────────
+                float ms_elapsed = std::chrono::duration<float, std::milli>(Clock::now() - t0).count();
+                emaLatency = (emaLatency == 0.f) ? ms_elapsed : 0.9f * emaLatency + 0.1f * ms_elapsed;
+
+                // ── Publish ───────────────────────────────────────────────────
+                {
+                    std::unique_lock<std::mutex> lk(resultMutex_);
+                    latestResult_.robots    = std::move(outRobots);
+                    latestResult_.debug     = std::move(debug);
+                    latestResult_.fps       = fps;
+                    latestResult_.latencyMs = emaLatency;
+                    latestResult_.fresh     = true;
+                }
+
+            } catch (const std::exception& e) {
+                throttledErr("[aruco] ", e.what());
+            } catch (...) {
+                throttledErr("[aruco] ", "unknown exception");
+            }
+        }
+    }
+
+    void stopThreads() {
+        captureRunning_   = false;
+        detectionRunning_ = false;
+        frameCv_.notify_all();
+        if (captureThread_.joinable())   captureThread_.join();
+        if (detectionThread_.joinable()) detectionThread_.join();
+        source_.reset();
+    }
 
     void applyDetection(MarkerState& ms, const std::vector<cv::Point2f>& c) {
         float xs[]={c[0].x,c[1].x,c[2].x,c[3].x}, ys[]={c[0].y,c[1].y,c[2].y,c[3].y};
@@ -492,37 +643,7 @@ private:
         kf.statePost = (cv::Mat_<float>(4,1) << x, y, 0.f, 0.f);
     }
 
-    void captureLoop() {
-        while (captureRunning_) {
-            cv::Mat f;
-            if (source_->read(f) && !f.empty()) {
-                std::unique_lock<std::mutex> lk(frameMutex_);
-                latestFrame_ = std::move(f);
-            } else {
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
-            }
-        }
-    }
-    void stopCapture() {
-        captureRunning_ = false;
-        if (captureThread_.joinable()) captureThread_.join();
-        source_.reset();
-    }
-
-    void updateFps() {
-        auto now = std::chrono::steady_clock::now();
-        if (fpsFrames_++ == 0) lastFpsTime_ = now;
-        float el = std::chrono::duration<float>(now - lastFpsTime_).count();
-        if (el >= 1.0f) { fps_ = fpsFrames_ / el; fpsFrames_ = 0; lastFpsTime_ = now; }
-    }
-
-    static float centroid(const std::vector<cv::Point2f>& c, int dim) {
-        float s = 0;
-        for (auto& pt : c) s += (dim == 0 ? pt.x : pt.y);
-        return s / 4.0f;
-    }
-
-    void drawDebugOverlay() {
+    void drawDebugOverlay(cv::Mat& debug, float fps, size_t robotCount) {
         auto now = std::chrono::steady_clock::now();
         for (auto& [id, ms] : markerStates_) {
             cv::Scalar col = ms.state == RoiState::LOCAL     ? cv::Scalar(0,255,0)
@@ -530,23 +651,23 @@ private:
                                                               : cv::Scalar(0,0,255);
             bool roiVisible = ms.roiLastDetected != std::chrono::steady_clock::time_point::min()
                            && std::chrono::duration<float>(now - ms.roiLastDetected).count() < 5.0f;
-            cv::Rect r = ms.roi & cv::Rect(0, 0, debug_.cols, debug_.rows);
-            if (r.area() > 0 && roiVisible) cv::rectangle(debug_, r, col, 1);
+            cv::Rect r = ms.roi & cv::Rect(0, 0, debug.cols, debug.rows);
+            if (r.area() > 0 && roiVisible) cv::rectangle(debug, r, col, 1);
             if (ms.kfInit) {
-                int px = std::clamp((int)ms.predicted.x, 6, debug_.cols-7);
-                int py = std::clamp((int)ms.predicted.y, 6, debug_.rows-7);
-                cv::line(debug_, {px-6,py},{px+6,py},{255,255,255},1);
-                cv::line(debug_, {px,py-6},{px,py+6},{255,255,255},1);
+                int px = std::clamp((int)ms.predicted.x, 6, debug.cols-7);
+                int py = std::clamp((int)ms.predicted.y, 6, debug.rows-7);
+                cv::line(debug, {px-6,py},{px+6,py},{255,255,255},1);
+                cv::line(debug, {px,py-6},{px,py+6},{255,255,255},1);
             }
         }
-        std::string hud = "FPS:" + std::to_string((int)fps_)
-                        + "  tags:" + std::to_string(robots_.size())
+        std::string hud = "FPS:" + std::to_string((int)fps)
+                        + "  tags:" + std::to_string(robotCount)
                         + (hasH_ ? "  world" : "  px");
         for (auto& [id, ms] : markerStates_)
             hud += "  " + std::to_string(id) + ":"
                 + (ms.state==RoiState::LOCAL ? "L" : ms.state==RoiState::EXPANDING ? "E" : "G");
-        cv::putText(debug_, hud, {10,28}, cv::FONT_HERSHEY_SIMPLEX, 0.7, {0,255,0}, 2);
-        cv::putText(debug_, "cross=pred  ring=corr  ROI: G=red E=yellow L=green",
+        cv::putText(debug, hud, {10,28}, cv::FONT_HERSHEY_SIMPLEX, 0.7, {0,255,0}, 2);
+        cv::putText(debug, "cross=pred  ring=corr  ROI: G=red E=yellow L=green",
                     {10,52}, cv::FONT_HERSHEY_SIMPLEX, 0.5, {180,180,180}, 1);
     }
 
@@ -559,26 +680,45 @@ private:
         }
     }
 
+    static float centroid(const std::vector<cv::Point2f>& c, int dim) {
+        float s = 0;
+        for (auto& pt : c) s += (dim == 0 ? pt.x : pt.y);
+        return s / 4.0f;
+    }
+
+    // ── Config & detector ─────────────────────────────────────────────────────
     ArucoConfig cfg_;
     float fw_ = 1920, fh_ = 1080;
 
-    std::unique_ptr<ICameraSource>   source_;
-    cv::aruco::ArucoDetector detector_;
+    std::unique_ptr<ICameraSource> source_;
+    cv::aruco::ArucoDetector       detector_;
+    cv::Ptr<cv::CLAHE>             clahe_;  // null if disabled; applied lazily per-crop
 
     std::vector<std::unique_ptr<IPreprocessor>> preprocessors_;
-    std::unordered_map<int, MarkerState>        markerStates_;
 
-    cv::Mat  frame_, debug_, H_;
-    bool     hasH_ = false;
+    cv::Mat H_;
+    bool    hasH_ = false;
 
+    // ── Capture thread ────────────────────────────────────────────────────────
+    std::thread             captureThread_;
+    std::atomic<bool>       captureRunning_{false};
+    std::mutex              frameMutex_;
+    std::condition_variable frameCv_;
+    cv::Mat                 latestFrame_;
+
+    // ── Detection thread ──────────────────────────────────────────────────────
+    std::thread                              detectionThread_;
+    std::atomic<bool>                        detectionRunning_{false};
+    std::atomic<bool>                        statsReset_{false};
+    std::unordered_map<int, MarkerState>     markerStates_; // detection thread only
+
+    // ── Result (detection → main thread, guarded by resultMutex_) ────────────
+    std::mutex      resultMutex_;
+    DetectionResult latestResult_;
+
+    // ── Main-thread-visible state (written only in update()) ──────────────────
     std::vector<RobotPose> robots_;
-
-    int   frameIdx_ = 0, fpsFrames_ = 0;
-    float fps_ = 0.0f;
-    std::chrono::steady_clock::time_point lastFpsTime_;
-
-    std::thread       captureThread_;
-    std::mutex        frameMutex_;
-    std::atomic<bool> captureRunning_{false};
-    cv::Mat           latestFrame_;
+    cv::Mat                debug_;
+    float                  fps_       = 0.f;
+    float                  latencyMs_ = 0.f;
 };

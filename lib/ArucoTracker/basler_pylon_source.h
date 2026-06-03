@@ -36,14 +36,22 @@ public:
             width_  = (int)Pylon::CIntegerParameter(nm, "Width").GetValue();
             height_ = (int)Pylon::CIntegerParameter(nm, "Height").GetValue();
 
+            // Set target frame rate so the camera doesn't produce more frames than
+            // the detection pipeline can consume. Not all firmware versions support
+            // this node, so failures are silently ignored.
+            try {
+                Pylon::CBooleanParameter(nm, "AcquisitionFrameRateEnable").SetValue(true);
+                Pylon::CFloatParameter(nm, "AcquisitionFrameRate").SetValue((double)cfg.fps);
+            } catch (...) {}
+
             converter_.OutputPixelFormat = Pylon::PixelType_BGR8packed;
 
             // LatestImageOnly: always return the newest frame, discard queued ones.
             camera_.StartGrabbing(Pylon::GrabStrategy_LatestImageOnly);
 
-            printf("[basler] open  serial=%s  %dx%d\n",
+            printf("[basler] open  serial=%s  %dx%d  fps=%d\n",
                    camera_.GetDeviceInfo().GetSerialNumber().c_str(),
-                   width_, height_);
+                   width_, height_, cfg.fps);
             return true;
         } catch (const Pylon::GenericException& e) {
             fprintf(stderr, "[basler] open failed: %s\n", e.GetDescription());
