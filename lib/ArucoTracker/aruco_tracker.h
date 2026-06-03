@@ -21,6 +21,7 @@ struct ICameraSource {
     virtual bool     open(const ArucoConfig& cfg) = 0;
     virtual bool     read(cv::Mat& frame) = 0;
     virtual cv::Size size() const = 0;
+    virtual float    temperature() const { return -1.f; } // °C, -1 = not available
 };
 
 // ─── RobotPose ────────────────────────────────────────────────────────────────
@@ -425,6 +426,7 @@ public:
     cv::Size frameSize()  const { return {(int)fw_, (int)fh_}; }
     bool     isOpen()     const { return source_ != nullptr; }
     float    fps()        const { return fps_; }
+    float    cameraTemperature() const { return source_ ? source_->temperature() : -1.f; }
 
     // Convenience text helper (fontSize in points, matching the old freetype API)
     static void drawText(cv::Mat& img, const std::string& text, cv::Point org,

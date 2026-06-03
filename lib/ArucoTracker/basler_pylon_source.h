@@ -70,8 +70,15 @@ public:
 
     cv::Size size() const override { return {width_, height_}; }
 
+    float temperature() const override {
+        try {
+            return (float)Pylon::CFloatParameter(
+                camera_.GetNodeMap(), "DeviceTemperature").GetValue();
+        } catch (...) { return -1.f; }
+    }
+
 private:
-    Pylon::CBaslerUniversalInstantCamera camera_;
+    mutable Pylon::CBaslerUniversalInstantCamera camera_;
     Pylon::CImageFormatConverter         converter_;
     int width_  = 0;
     int height_ = 0;

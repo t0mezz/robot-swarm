@@ -1,324 +1,181 @@
-// marker_eval.cpp — Camera and ArUco detection benchmark
-// Usage: ./marker_eval [--config JSON] [--serial SN] [--ip IP]
-//                      [--expected 0,1,2] [--mirror]
+// marker_eval.cpp — Camera telemetry display
+// Usage: ./marker_eval [--config JSON] [--serial SN] [--ip IP] [--mirror]
 //
-// Shows live camera feed with an overlay panel reporting:
-//   • Per-marker detection rate (% of frames each ID is found)
-//   • Rolling 2-second FPS and camera resolution
-//   • EMA-smoothed pipeline latency (grab + detect, ms)
+// Shows live camera feed with a telemetry panel:
+//   Resolution, FPS, pipeline latency, sensor temperature, marker count
 //
-// Auto-discovers markers on first detection; use --expected to restrict
-// tracking to specific IDs. Run this first to verify camera health and
-// ArUco config quality before launching any controller.
+// Run this first to verify camera health and detection quality
+// before launching any controller.
 //
-// Keys: r = reset counters,  q / Esc = print summary and quit
+// Keys: r = reset FPS/latency counters,  q / Esc = quit
 
 #include "aruco_tracker.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
-#include <vector>
-#include <set>
-#include <unordered_map>
 #include <deque>
 #include <chrono>
 #include <algorithm>
 
 using Clock = std::chrono::steady_clock;
 
-// ── per-marker tracking ───────────────────────────────────────────────────────
+// ── panel ─────────────────────────────────────────────────────────────────────
 
-struct MarkerStats {
-    int evalFrames    = 0;
-    int detectedFrames = 0;
-    float rate() const {
-        return evalFrames > 0 ? (float)detectedFrames / evalFrames : 0.0f;
-    }
-};
+static constexpr int kW   = 210;
+static constexpr int kPad = 12;
 
-// ── performance metrics ───────────────────────────────────────────────────────
-
-struct PerfMetrics {
-    float fps       = 0.f;   // rolling 2-second window
-    float latencyMs = 0.f;   // EMA of tracker.update() wall time
-    int   width     = 0;
-    int   height    = 0;
-};
-
-// ── overlay panel ─────────────────────────────────────────────────────────────
-
-static constexpr int kPanelW = 250;
-static constexpr int kPad    = 12;
-static constexpr int kBarH   = 6;
-
-static cv::Scalar ratingColor(float rate) {
-    if (rate >= 0.90f) return {50, 220,  70};  // green
-    if (rate >= 0.70f) return {30, 210, 255};  // yellow
-    if (rate >= 0.50f) return {30, 130, 255};  // orange
-    return                     {40,  60, 230}; // red
+static cv::Scalar tempColor(float t) {
+    if (t < 0.f)  return {110, 110, 110};  // unavailable
+    if (t < 60.f) return { 50, 220,  70};  // normal
+    if (t < 70.f) return { 30, 210, 255};  // warm
+    return               { 40,  60, 230};  // hot
 }
 
-static void drawPanel(cv::Mat& img,
-                      const std::unordered_map<int, MarkerStats>& stats,
-                      const std::set<int>& expected,
-                      int evalFrames, double evalSecs, bool started,
-                      const PerfMetrics& perf)
+static void drawPanel(cv::Mat& img, float fps, float latMs,
+                      float tempC, int w, int h, int markerCount)
 {
-    // ── measure content height ────────────────────────────────────────────────
-    // rows: title(1) + divider + timer(1) + divider + N*(label+bar+pct) + divider + overall(1+bar)
-    int nRows = (int)stats.size();
-    int contentH = 30          // title
-                 + 18          // divider
-                 + 20          // timer
-                 + 14          // divider
-                 + nRows * 54  // per-marker: label 22 + bar 14 + pct 18
-                 + (nRows > 0 ? 18 + 26 + 14 + 26 : 0)  // divider + overall label + bar + pct
-                 + 20;         // hint at bottom
-    int panelH = std::max(contentH, 80) + kPad * 2;
-    panelH = std::min(panelH, img.rows);
+    // panel height: title + divider + 5 data rows + divider + hint
+    constexpr int kPanelH = 36 + 14 + 5*26 + 14 + 22 + kPad * 2;
+    int panelH = std::min(kPanelH, img.rows);
 
-    // ── dark overlay on right edge ────────────────────────────────────────────
-    int px = img.cols - kPanelW;
-    cv::Mat roi = img(cv::Rect(px, 0, kPanelW, panelH));
-    cv::Mat dark = cv::Mat::zeros(roi.size(), roi.type());
-    cv::addWeighted(roi, 0.18, dark, 0.82, 0, roi);
+    int px = img.cols - kW;
+    cv::Mat roi = img(cv::Rect(px, 0, kW, panelH));
+    cv::addWeighted(roi, 0.15, cv::Mat::zeros(roi.size(), roi.type()), 0.85, 0, roi);
+    cv::line(img, {px, 0}, {px, panelH}, {70, 70, 70}, 1);
 
-    // thin left border
-    cv::line(img, {px, 0}, {px, panelH}, {80, 80, 80}, 1);
-
-    // ── drawing helpers ───────────────────────────────────────────────────────
     int x  = px + kPad;
-    int bw = kPanelW - kPad * 2;  // bar width
+    int bw = kW - kPad * 2;
     int y  = kPad;
 
-    // text: draws with black outline for legibility over any background
-    auto text = [&](const std::string& s, float sc, cv::Scalar col, int extraBelow = 0) {
-        int baseline = 0;
-        cv::Size sz = cv::getTextSize(s, cv::FONT_HERSHEY_SIMPLEX, sc, 1, &baseline);
-        y += sz.height;
-        cv::putText(img, s, {x, y}, cv::FONT_HERSHEY_SIMPLEX, sc, {0,0,0}, 3, cv::LINE_AA);
-        cv::putText(img, s, {x, y}, cv::FONT_HERSHEY_SIMPLEX, sc, col,   1, cv::LINE_AA);
-        y += baseline + extraBelow;
+    // draw a label on the left and a value right-aligned within bw
+    auto kv = [&](const std::string& label, const std::string& val,
+                  cv::Scalar valCol = {200, 200, 200}) {
+        constexpr float sc = 0.42f;
+        int base = 0;
+        int th = cv::getTextSize("A", cv::FONT_HERSHEY_SIMPLEX, sc, 1, &base).height;
+        y += th;
+        // label (dim)
+        cv::putText(img, label, {x, y}, cv::FONT_HERSHEY_SIMPLEX, sc, {0,0,0}, 2, cv::LINE_AA);
+        cv::putText(img, label, {x, y}, cv::FONT_HERSHEY_SIMPLEX, sc, {100,100,100}, 1, cv::LINE_AA);
+        // value — right-aligned
+        int vw = cv::getTextSize(val, cv::FONT_HERSHEY_SIMPLEX, sc, 1, &base).width;
+        int vx = px + kW - kPad - vw;
+        cv::putText(img, val, {vx, y}, cv::FONT_HERSHEY_SIMPLEX, sc, {0,0,0}, 2, cv::LINE_AA);
+        cv::putText(img, val, {vx, y}, cv::FONT_HERSHEY_SIMPLEX, sc, valCol,  1, cv::LINE_AA);
+        y += base + 8;
     };
 
-    auto divider = [&](int above = 8, int below = 8) {
+    auto divider = [&](int above = 6, int below = 6) {
         y += above;
-        cv::line(img, {x, y}, {x+bw, y}, {75, 75, 75}, 1);
+        cv::line(img, {x, y}, {x+bw, y}, {65, 65, 65}, 1);
         y += below;
     };
 
-    auto bar = [&](float rate, cv::Scalar col) {
-        y += 4;
-        cv::rectangle(img, {x, y}, {x+bw, y+kBarH}, {50,50,50}, -1);
-        int fill = (int)(bw * std::clamp(rate, 0.0f, 1.0f));
-        if (fill > 0) cv::rectangle(img, {x, y}, {x+fill, y+kBarH}, col, -1);
-        y += kBarH + 4;
-    };
-
-    // ── content ───────────────────────────────────────────────────────────────
-    text("MARKER EVAL", 0.55f, {240, 240, 240}, 2);
-    divider(4, 6);
-
-    if (!started) {
-        text("Waiting for first marker", 0.40f, {120, 120, 120}, 4);
-        divider(6, 6);
-        text("r=reset  q=quit", 0.36f, {75, 75, 75});
-        return;
+    // title
+    {
+        constexpr float sc = 0.52f;
+        int base = 0;
+        int th = cv::getTextSize("A", cv::FONT_HERSHEY_SIMPLEX, sc, 1, &base).height;
+        y += th;
+        cv::putText(img, "CAMERA", {x, y}, cv::FONT_HERSHEY_SIMPLEX, sc, {0,0,0},     2, cv::LINE_AA);
+        cv::putText(img, "CAMERA", {x, y}, cv::FONT_HERSHEY_SIMPLEX, sc, {220,220,220}, 1, cv::LINE_AA);
+        y += base + 4;
     }
 
-    char tbuf[64];
-    snprintf(tbuf, sizeof(tbuf), "%.1fs  %d frames  %.1f fps",
-             evalSecs, evalFrames, perf.fps);
-    text(tbuf, 0.38f, {130, 130, 130}, 4);
+    divider(4, 8);
 
-    char rbuf[48];
-    snprintf(rbuf, sizeof(rbuf), "%dx%d   latency %.1f ms",
-             perf.width, perf.height, perf.latencyMs);
-    text(rbuf, 0.38f, {100, 160, 220}, 2);
-    divider();
+    // data rows
+    char buf[48];
 
-    std::vector<int> ids;
-    for (auto& [id, _] : stats) ids.push_back(id);
-    std::sort(ids.begin(), ids.end());
+    snprintf(buf, sizeof(buf), "%d × %d px", w, h);
+    kv("Resolution", buf);
 
-    for (int id : ids) {
-        auto& st   = stats.at(id);
-        float rate = st.rate();
-        cv::Scalar col = ratingColor(rate);
+    snprintf(buf, sizeof(buf), "%.1f", fps);
+    kv("FPS", buf);
 
-        char label[32], pct[32];
-        snprintf(label, sizeof(label), "ID %d", id);
-        snprintf(pct,   sizeof(pct),   "%.0f%%  (%d/%d fr)",
-                 rate * 100, st.detectedFrames, st.evalFrames);
+    snprintf(buf, sizeof(buf), "%.1f ms", latMs);
+    kv("Latency", buf);
 
-        text(label, 0.46f, col, 0);
-        bar(rate, col);
-        text(pct, 0.38f, col, 6);
-    }
+    if (tempC >= 0.f) snprintf(buf, sizeof(buf), "%.1f °C", tempC);
+    else              snprintf(buf, sizeof(buf), "n/a");
+    kv("Temp", buf, tempColor(tempC));
 
-    if (!ids.empty()) {
-        float sum = 0;
-        for (auto& [_, st] : stats) sum += st.rate();
-        float overall = sum / (float)stats.size();
-        cv::Scalar col = ratingColor(overall);
+    snprintf(buf, sizeof(buf), "%d", markerCount);
+    kv("Markers", buf, markerCount > 0 ? cv::Scalar{50,220,70} : cv::Scalar{110,110,110});
 
-        divider();
-        text("Overall", 0.50f, col, 0);
-        bar(overall, col);
-        char obuf[16];
-        snprintf(obuf, sizeof(obuf), "%.0f%%", overall * 100);
-        text(obuf, 0.50f, col, 4);
-    }
+    divider(6, 6);
 
-    // hint pinned to bottom of panel
     cv::putText(img, "r=reset  q=quit",
-                {x, panelH - 6},
-                cv::FONT_HERSHEY_SIMPLEX, 0.36f, {75, 75, 75}, 1, cv::LINE_AA);
+                {x, panelH - kPad},
+                cv::FONT_HERSHEY_SIMPLEX, 0.34f, {75, 75, 75}, 1, cv::LINE_AA);
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
-    std::string configPath = "aruco_tracker_config.json";
-    std::set<int> expectedIds;
+    std::string configPath = "vision/aruco_tracker_config.json";
     std::string serial, ip;
-    bool cfg_mirror  = false;
+    bool cfg_mirror = false;
 
     for (int i = 1; i < argc; i++) {
-        if      (!strcmp(argv[i], "--config")   && i+1<argc) configPath = argv[++i];
-        else if (!strcmp(argv[i], "--serial")   && i+1<argc) serial     = argv[++i];
-        else if (!strcmp(argv[i], "--ip")       && i+1<argc) ip         = argv[++i];
-        else if (!strcmp(argv[i], "--mirror"))               cfg_mirror = true;
-        else if (!strcmp(argv[i], "--expected") && i+1<argc) {
-            char buf[512]; strncpy(buf, argv[++i], 511); buf[511] = 0;
-            char* tok = strtok(buf, ",");
-            while (tok) { expectedIds.insert(atoi(tok)); tok = strtok(nullptr, ","); }
-        } else {
-            fprintf(stderr, "[eval] unknown arg '%s'\n", argv[i]);
-        }
+        if      (!strcmp(argv[i], "--config") && i+1<argc) configPath = argv[++i];
+        else if (!strcmp(argv[i], "--serial") && i+1<argc) serial     = argv[++i];
+        else if (!strcmp(argv[i], "--ip")     && i+1<argc) ip         = argv[++i];
+        else if (!strcmp(argv[i], "--mirror"))              cfg_mirror = true;
+        else fprintf(stderr, "[eval] unknown arg '%s'\n", argv[i]);
     }
 
     ArucoConfig cfg = ArucoConfig::fromFile(configPath);
     if (!serial.empty()) cfg.baslerSerial = serial;
     if (!ip.empty())     cfg.baslerIp     = ip;
-    if (cfg_mirror) cfg.mirrorInput = true;
+    if (cfg_mirror)      cfg.mirrorInput  = true;
     cfg.debugOverlay = true;
 
     ArucoTracker tracker(cfg);
     if (!tracker.open()) {
-        fprintf(stderr, "[eval] failed to open Basler camera\n");
+        fprintf(stderr, "[eval] failed to open camera\n");
         return 1;
     }
-    printf("[eval] camera open  (%dx%d @ %d fps)\n",
-           cfg.width, cfg.height, cfg.fps);
-    if (!expectedIds.empty()) {
-        printf("[eval] tracking only IDs: ");
-        for (int id : expectedIds) printf("%d ", id);
-        printf("\n");
-    }
-    printf("[eval] r=reset  q=quit\n");
 
-    cv::namedWindow("Marker Eval", cv::WINDOW_NORMAL);
+    auto sz = tracker.frameSize();
+    printf("[eval] %dx%d  r=reset  q=quit\n", sz.width, sz.height);
 
-    std::unordered_map<int, MarkerStats> stats;
-    bool  started    = false;
-    int   evalFrames = 0;
-    Clock::time_point evalStart;
-    bool hasExpected = !expectedIds.empty();
+    cv::namedWindow("Camera Eval", cv::WINDOW_NORMAL);
 
-    PerfMetrics perf;
-    perf.width  = tracker.frameSize().width;
-    perf.height = tracker.frameSize().height;
-    std::deque<Clock::time_point> fpsWindow;  // timestamps of recent frames (2s window)
+    float latencyMs = 0.f;
+    std::deque<Clock::time_point> fpsWindow;
 
     auto reset = [&]() {
-        stats.clear();
-        started    = false;
-        evalFrames = 0;
+        latencyMs = 0.f;
+        fpsWindow.clear();
         printf("[eval] reset\n");
     };
 
     while (true) {
         auto t0 = Clock::now();
         if (!tracker.update()) { cv::waitKey(1); continue; }
-        float measuredMs = std::chrono::duration<float, std::milli>(Clock::now() - t0).count();
-        perf.latencyMs = (perf.latencyMs == 0.f)
-                         ? measuredMs
-                         : 0.9f * perf.latencyMs + 0.1f * measuredMs;
+        float measured = std::chrono::duration<float, std::milli>(Clock::now() - t0).count();
+        latencyMs = (latencyMs == 0.f) ? measured : 0.9f * latencyMs + 0.1f * measured;
 
-        // rolling FPS: keep timestamps within 2-second window
         fpsWindow.push_back(Clock::now());
-        while (!fpsWindow.empty() &&
+        while (fpsWindow.size() > 1 &&
                std::chrono::duration<float>(fpsWindow.back() - fpsWindow.front()).count() > 2.0f)
             fpsWindow.pop_front();
-        if (fpsWindow.size() > 1) {
-            float span = std::chrono::duration<float>(fpsWindow.back() - fpsWindow.front()).count();
-            perf.fps = (float)(fpsWindow.size() - 1) / span;
-        }
+        float fps = (fpsWindow.size() > 1)
+            ? (float)(fpsWindow.size() - 1) /
+              std::chrono::duration<float>(fpsWindow.back() - fpsWindow.front()).count()
+            : 0.f;
 
-        const auto& robots = tracker.robots();
-
-        // filter to expected IDs when set
-        std::set<int> detectedNow;
-        for (auto& r : robots) {
-            if (!hasExpected || expectedIds.count(r.id))
-                detectedNow.insert(r.id);
-        }
-
-        // start eval on first relevant detection
-        if (!started && !detectedNow.empty()) {
-            started   = true;
-            evalStart = Clock::now();
-            printf("[eval] first marker seen — eval started\n");
-        }
-
-        if (started) {
-            evalFrames++;
-            double evalSecs = std::chrono::duration<double>(Clock::now()-evalStart).count();
-
-            for (auto& [id, st] : stats) st.evalFrames++;
-            for (int id : detectedNow) {
-                if (!stats.count(id)) {
-                    stats[id] = {};
-                    printf("[eval] discovered ID %d\n", id);
-                } else {
-                    stats[id].detectedFrames++;
-                }
-            }
-
-            cv::Mat frame = tracker.debugFrame().clone();
-            drawPanel(frame, stats, expectedIds, evalFrames, evalSecs, true, perf);
-            cv::imshow("Marker Eval", frame);
-        } else {
-            cv::Mat frame = tracker.debugFrame().clone();
-            drawPanel(frame, stats, expectedIds, 0, 0.0, false, perf);
-            cv::imshow("Marker Eval", frame);
-        }
+        cv::Mat frame = tracker.debugFrame().clone();
+        drawPanel(frame, fps, latencyMs,
+                  tracker.cameraTemperature(),
+                  sz.width, sz.height,
+                  (int)tracker.robots().size());
+        cv::imshow("Camera Eval", frame);
 
         int key = cv::waitKey(1) & 0xFF;
         if (key == 'q' || key == 27) break;
         if (key == 'r') reset();
-    }
-
-    printf("\n════ FINAL SUMMARY ════\n");
-    printf("Resolution: %dx%d   Avg FPS: %.1f   Avg latency: %.1f ms\n",
-           perf.width, perf.height, perf.fps, perf.latencyMs);
-    if (!started) {
-        printf("No markers detected.\n");
-    } else {
-        printf("Eval frames: %d\n", evalFrames);
-        std::vector<int> ids;
-        for (auto& [id, _] : stats) ids.push_back(id);
-        std::sort(ids.begin(), ids.end());
-        float sum = 0;
-        for (int id : ids) {
-            auto& st = stats[id];
-            printf("  ID %-2d  %.1f%%  (%d / %d frames)\n",
-                   id, st.rate()*100, st.detectedFrames, st.evalFrames);
-            sum += st.rate();
-        }
-        if (!ids.empty())
-            printf("Overall: %.1f%%\n", sum / ids.size() * 100);
     }
 
     cv::destroyAllWindows();
