@@ -37,12 +37,11 @@ static constexpr float DEFAULT_MIN_GAP_MM     = 0.0f;   // min arc-chord distanc
 static constexpr float DEFAULT_ORBIT_SPEED    = 30.0f;  // deg/s, default orbit speed in tracking mode
 
 static constexpr float K_DIST    = 0.40f;
-//static constexpr float K_ANGLE   = 0.22f;   // heading P-gain
-static constexpr float K_ANGLE   = 0.5f;   // heading P-gain
-static constexpr float K_YAW_D   = 0.08f;   // heading D-gain: dampens oscillation
-static constexpr float K_RAD     = 0.20f;   // radial correction gain (mm/s per mm of error)
-static constexpr float MAX_SPEED = 51.7f;   // +10% from 47
-static constexpr float MAX_TURN  = 16.0f;
+static constexpr float K_ANGLE   = 0.65f;   // heading P-gain
+static constexpr float K_YAW_D   = 0.11f;   // heading D-gain: dampens oscillation
+static constexpr float K_RAD     = 0.30f;   // radial correction gain (mm/s per mm of error)
+static constexpr float MAX_SPEED = 100.0f;  // full motor range for high-speed testing
+static constexpr float MAX_TURN  = 24.0f;
 static constexpr float ARRIVAL_MM       = 60.0f;   // stop when within this distance of slot
 static constexpr float SEND_INTERVAL_S  = 0.05f;
 // Yaw EMA: lower α = smoother but more lag; higher α = faster tracking, less overshoot.
@@ -348,7 +347,7 @@ static void onMouse(int event, int x, int y, int, void*) {
 
 // ── Per-robot speed ───────────────────────────────────────────────────────────
 
-static float g_defaultSpeedMult = 0.70f;                   // set by --speed; default -30%
+static float g_defaultSpeedMult = 0.40f;                   // set by --speed; lower default since MAX_SPEED is now 100
 // g_robotSpeed declared above (needed by saveCircle/loadCircle)
 static int   g_selectedRobot = -1;                         // -1 = none selected
 static bool  g_allSelected   = false;                      // '.' = all selected → +/- changes default speed
