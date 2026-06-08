@@ -37,8 +37,9 @@ static constexpr float DEFAULT_MIN_GAP_MM     = 0.0f;   // min arc-chord distanc
 static constexpr float DEFAULT_ORBIT_SPEED    = 30.0f;  // deg/s, default orbit speed in tracking mode
 
 static constexpr float K_DIST    = 0.40f;
-static constexpr float K_ANGLE   = 0.65f;   // heading P-gain
-static constexpr float K_YAW_D   = 0.11f;   // heading D-gain: dampens oscillation
+static constexpr float K_ANGLE   = 0.45f;   // heading P-gain — corrects residual error only; orbit feedforward carries the steady turn
+static constexpr float K_YAW_D   = 0.15f;   // heading D-gain: damps transient overshoot
+static constexpr float K_FF_YAW  = 1.00f;   // orbit-mode yaw feedforward, turn-units per deg/s of required yaw rate — tune empirically (see orbit control below)
 static constexpr float K_RAD     = 0.30f;   // radial correction gain (mm/s per mm of error)
 static constexpr float MAX_SPEED = 100.0f;  // full motor range for high-speed testing
 static constexpr float MAX_TURN  = 24.0f;
@@ -445,8 +446,11 @@ int main(int argc, char* argv[]) {
     // Per-robot EMA-smoothed yaw.  Seeded on first detection; updated only when
     // the robot is visible.  Handles angle wrap via normAngle delta.
     std::unordered_map<int, float> smoothedYaw;
-    // Previous heading error per robot — used to compute the D term of the PD controller.
+    // Previous heading error per robot — used to compute the D term of the position-mode PD controller.
     std::unordered_map<int, float> prevAngleErr;
+    // Previous (smoothed) yaw per robot — orbit mode measures actual yaw rate
+    // from this for the feedforward/D-term (see orbit control loop below).
+    std::unordered_map<int, float> prevYaw;
 
     printf("\nLeft-click = centre  +/- = radius  . = select all (then +/- = speed)  0-9 = select robot\nt = orbit  [ / ] = orbit speed  s = stop  c = calibrate  q = quit\n\n");
 
@@ -539,6 +543,7 @@ int main(int argc, char* argv[]) {
                     persistentSlots.erase(id);
                     smoothedYaw.erase(id);
                     prevAngleErr.erase(id);
+                    prevYaw.erase(id);
                     for (auto& [rid, sidx] : robotSlotIndex)
                         if (sidx > evicted) sidx--;
                     registeredCount--;
@@ -656,17 +661,50 @@ int main(int argc, char* argv[]) {
                 float headingN   = clampf(fabsf(angleErr) / 90.f, 0.f, 1.f);
                 float headingSc  = 1.f - headingN * headingN;
 
-                float dAngleErr = 0.f;
+                // ── Yaw feedforward + feedback ─────────────────────────────────
+                //
+                // Why pure-feedback PD oscillates here: tracking a circle means
+                // desHeading itself continuously rotates — it's the tangent
+                // direction, which advances at exactly the rate the robot is
+                // actually moving around the circle. A P-term can only produce
+                // a *sustained* turning output from a *sustained* error, so the
+                // faster the orbit, the larger the steady heading lag has to be
+                // to drive enough turn. Raise K_ANGLE to shrink that lag and the
+                // loop overshoots/rings instead; back it off and the robot just
+                // trails the path — exactly the "oscillate or lag" dead end.
+                //
+                // The fix: stop asking feedback to manufacture the entire steady
+                // turning effort — feed the required yaw rate forward directly
+                // so feedback only has to correct the residual (noise, slip,
+                // model mismatch). Required rate = v / R. We use the *actual*
+                // commanded tangential speed vTan (after MAX_SPEED capping, the
+                // per-robot multiplier, and min-gap throttling) rather than the
+                // nominal orbitSpeed, so the feedforward stays honest about what
+                // the robot can really do — the nominal product (omegaRad ×
+                // radius) routinely exceeds MAX_SPEED, and feeding *that*
+                // forward would overdrive the turn and reintroduce oscillation.
+                float dirSign    = (circle.orbitSpeed >= 0.f) ? 1.f : -1.f;
+                float ffOmegaDeg = dirSign * (vTan / circle.radius) * (180.f / (float)M_PI);
+                float turnFF     = K_FF_YAW * ffOmegaDeg;
+
+                // D-term: (ffOmegaDeg − yawRate) is the analytic d(angleErr)/dt
+                // — the same quantity the old code numerically differenced out
+                // of the atan2-derived (and therefore noisy) angleErr, but here
+                // built from one clean measurement (yawRate, itself riding on
+                // the already EMA-smoothed yaw) instead of finite-differencing
+                // two noisy signals. Less noise reaching the D-term means less
+                // of the high-frequency jitter that forced the gains down.
+                float yawRate = 0.f;
                 {
-                    auto it = prevAngleErr.find(id);
-                    if (it != prevAngleErr.end())
-                        dAngleErr = clampf(normAngle(angleErr - it->second) / controlDt,
-                                           -300.f, 300.f);
-                    prevAngleErr[id] = angleErr;
+                    auto it = prevYaw.find(id);
+                    if (it != prevYaw.end())
+                        yawRate = normAngle(pose.yaw - it->second) / controlDt;
+                    prevYaw[id] = pose.yaw;
                 }
+                float dAngleErr = clampf(ffOmegaDeg - yawRate, -300.f, 300.f);
 
                 float forward = clampf(vMag, 0.f, MAX_SPEED) * headingSc;
-                float turn    = clampf(K_ANGLE * angleErr + K_YAW_D * dAngleErr,
+                float turn    = clampf(turnFF + K_ANGLE * angleErr + K_YAW_D * dAngleErr,
                                        -MAX_TURN, MAX_TURN);
 
                 motors[id][0] = (int8_t)clampf(forward + turn, -100, 100);
