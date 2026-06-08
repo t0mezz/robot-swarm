@@ -23,6 +23,8 @@ else
     PYLON_LIBS         = $(shell pylon-config --libs 2>/dev/null)
     SFML_CFLAGS       := $(shell pkg-config --cflags sfml-all 2>/dev/null)
     SFML_LIBS         := $(shell pkg-config --libs   sfml-all 2>/dev/null)
+    # X11 for multi-key WASD polling (vision_controller, wingman, swarm_controller)
+    CONTROLLER_LDFLAGS = $(shell pkg-config --libs x11 2>/dev/null || echo -lX11)
 endif
 
 OPENCV_CFLAGS := $(shell pkg-config --cflags opencv4 2>/dev/null || pkg-config --cflags opencv 2>/dev/null)
@@ -30,7 +32,7 @@ OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config -
 
 .PHONY: all clean calibrate
 
-all: swarm_hub swarm_terminal latency_plot swarm_controller game vision_controller circle_demo wingman shape_demo marker_eval calibrate
+all: swarm_hub swarm_terminal latency_plot swarm_controller game vision_controller circle_demo wingman shape_demo drag_drop_demo marker_eval calibrate
 
 calibrate:
 	$(MAKE) -C vision/calibration
@@ -60,6 +62,11 @@ wingman: vision/wingman.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/Aru
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
 shape_demo: vision/shape_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
+	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient \
+	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
+
+drag_drop_demo: vision/drag_drop_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
 	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)

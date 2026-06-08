@@ -26,10 +26,13 @@
 //   +/-        Formation spacing ±25 mm
 //   q / ESC    Quit
 
-// Must come before aruco_tracker.h: pylon's api_autoconf.h defines `interface`
-// as a macro which corrupts CoreGraphics/IOHIDTypes.h struct members.
+// Must come before aruco_tracker.h on macOS: pylon's api_autoconf.h defines
+// `interface` as a macro which corrupts CoreGraphics/IOHIDTypes.h struct members.
 #ifdef __APPLE__
 #include <CoreGraphics/CoreGraphics.h>
+#else
+#include <X11/Xlib.h>
+#include <X11/keysym.h>
 #endif
 
 #include "aruco_tracker.h"
@@ -419,13 +422,10 @@ static bool runCalibration(ArucoTracker& tracker) {
 //
 // Requires Accessibility permission (System Preferences → Privacy → Accessibility).
 
-#ifdef __APPLE__
-
 static std::atomic<bool> g_keyW{false}, g_keyA{false};
 static std::atomic<bool> g_keyS{false}, g_keyD{false};
 
 // Recompute leader motors from current key state and send immediately.
-// Called from the CGEventTap callback thread on every key change.
 static void applyLeaderMotors() {
     int lid = g_leaderId;
     if (lid < 0) return;
@@ -449,6 +449,8 @@ static void applyLeaderMotors() {
 
     sendLeader(lid, (int8_t)L, (int8_t)R);
 }
+
+#ifdef __APPLE__
 
 static CGEventRef keyTapCallback(CGEventTapProxy /*proxy*/,
                                   CGEventType    type,
@@ -528,6 +530,34 @@ static void runEventTap() {
     CFRunLoopRemoveSource(CFRunLoopGetCurrent(), src, kCFRunLoopDefaultMode);
     CFRelease(src);
     CFRelease(tap);
+}
+
+#else  // Linux: X11 polling, 2 ms interval — functionally equivalent to the macOS fallback
+
+static void runEventTap() {
+    Display* xdpy = XOpenDisplay(nullptr);
+    if (!xdpy) {
+        fprintf(stderr, "[input] XOpenDisplay failed — WASD disabled.\n");
+        return;
+    }
+    auto queryKey = [&](KeySym sym) -> bool {
+        KeyCode kc = XKeysymToKeycode(xdpy, sym);
+        if (!kc) return false;
+        char keys[32] = {};
+        XQueryKeymap(xdpy, keys);
+        return (keys[kc / 8] >> (kc % 8)) & 1;
+    };
+    while (g_running) {
+        bool w = queryKey(XK_w);
+        bool a = queryKey(XK_a);
+        bool s = queryKey(XK_s);
+        bool d = queryKey(XK_d);
+        bool changed = (w != g_keyW.exchange(w)) | (a != g_keyA.exchange(a)) |
+                       (s != g_keyS.exchange(s)) | (d != g_keyD.exchange(d));
+        if (changed) applyLeaderMotors();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    XCloseDisplay(xdpy);
 }
 
 #endif  // __APPLE__
@@ -611,9 +641,7 @@ int main(int argc, char* argv[]) {
     // ── Start input + heartbeat threads ──────────────────────────────────────
     // eventTapThread: CGEventTap fires immediately on key-down/up → zero latency.
     // heartbeatThread: sends a swarm frame every 50 ms to keep the watchdog alive.
-#ifdef __APPLE__
     std::thread eventTapThread(runEventTap);
-#endif
     std::thread heartbeatThread(runHeartbeat);
 
     while (g_running) {
@@ -868,9 +896,7 @@ int main(int argc, char* argv[]) {
     }
 
     // ── Shutdown ──────────────────────────────────────────────────────────────
-#ifdef __APPLE__
     eventTapThread.join();
-#endif
     heartbeatThread.join();
     { std::lock_guard<std::mutex> lk(g_motorMutex); memset(g_motors, 0, sizeof(g_motors)); }
     sendSwarm();

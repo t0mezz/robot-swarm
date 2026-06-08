@@ -41,13 +41,30 @@
 
 #ifdef __APPLE__
 #include <CoreGraphics/CoreGraphics.h>
-// ANSI key codes (kVK_* from Carbon/Events.h, duplicated here to avoid Carbon dependency)
-static constexpr CGKeyCode kKey_A = 0x00;
-static constexpr CGKeyCode kKey_S = 0x01;
-static constexpr CGKeyCode kKey_D = 0x02;
-static constexpr CGKeyCode kKey_W = 0x0D;
-static inline bool keyDown(CGKeyCode code) {
+using KeyHandle = CGKeyCode;
+static constexpr KeyHandle kKey_A = 0x00;
+static constexpr KeyHandle kKey_S = 0x01;
+static constexpr KeyHandle kKey_D = 0x02;
+static constexpr KeyHandle kKey_W = 0x0D;
+static inline bool keyDown(KeyHandle code) {
     return CGEventSourceKeyState(kCGEventSourceStateHIDSystemState, code);
+}
+#else
+#include <X11/Xlib.h>
+#include <X11/keysym.h>
+using KeyHandle = KeySym;
+static constexpr KeyHandle kKey_A = XK_a;
+static constexpr KeyHandle kKey_S = XK_s;
+static constexpr KeyHandle kKey_D = XK_d;
+static constexpr KeyHandle kKey_W = XK_w;
+static Display* g_xDisplay = nullptr;
+static inline bool keyDown(KeyHandle sym) {
+    if (!g_xDisplay) return false;
+    KeyCode kc = XKeysymToKeycode(g_xDisplay, sym);
+    if (!kc) return false;
+    char keys[32] = {};
+    XQueryKeymap(g_xDisplay, keys);
+    return (keys[kc / 8] >> (kc % 8)) & 1;
 }
 #endif
 
@@ -449,7 +466,6 @@ static constexpr int8_t CTRL_SPEED = 30;  // 30% of full range (100)
 //   S+A / S+D  →  arc reverse left / right
 static int8_t g_wasdL = 0, g_wasdR = 0;  // last commanded values (change-detection)
 
-#ifdef __APPLE__
 static void pollWASD(int fd) {
     if (g_test.running) return;
 
@@ -479,7 +495,6 @@ static void pollWASD(int fd) {
     }
     sendSwarm(fd);
 }
-#endif
 
 static void stopSelected() {
     if (g_selectedRobot < 0) {
@@ -600,7 +615,7 @@ static bool handleInput(int fd) {
             g_selectedRobot = -1;
             break;
 
-        // WASD is handled by pollWASD() via CGEventSourceKeyState — ignored here.
+        // WASD is handled by pollWASD() via multi-key polling — ignored here.
         case 'w': case 'a': case 's': case 'd': break;
 
         case ' ':
@@ -645,6 +660,10 @@ int main(int argc, char* argv[]) {
 
     rawMode();
 
+#ifndef __APPLE__
+    g_xDisplay = XOpenDisplay(nullptr);  // nullptr OK — pollWASD checks for nullptr
+#endif
+
     using Clock = std::chrono::steady_clock;
     auto lastSwarm = Clock::now();
     auto lastDraw  = Clock::now();
@@ -657,9 +676,7 @@ int main(int argc, char* argv[]) {
 
         if (handleInput(fd)) break;
 
-#ifdef __APPLE__
         pollWASD(fd);
-#endif
 
         auto now = Clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSwarm).count() >= 50) {
@@ -697,6 +714,9 @@ int main(int argc, char* argv[]) {
     sendSwarm(fd);
     close(fd);
     normalMode();
+#ifndef __APPLE__
+    if (g_xDisplay) { XCloseDisplay(g_xDisplay); g_xDisplay = nullptr; }
+#endif
     printf("\033[2J\033[H\033[0m");
     printf("Stopped.\n");
     return 0;

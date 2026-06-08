@@ -6,6 +6,9 @@
 
 #ifdef __APPLE__
 #include <CoreGraphics/CoreGraphics.h>
+#else
+#include <X11/Xlib.h>
+#include <X11/keysym.h>
 #endif
 
 #include "aruco_tracker.h"
@@ -31,12 +34,28 @@
 #include <glob.h>
 
 #ifdef __APPLE__
-static constexpr CGKeyCode kKey_A = 0x00;
-static constexpr CGKeyCode kKey_S = 0x01;
-static constexpr CGKeyCode kKey_D = 0x02;
-static constexpr CGKeyCode kKey_W = 0x0D;
-static inline bool keyDown(CGKeyCode code) {
+using KeyHandle = CGKeyCode;
+static constexpr KeyHandle kKey_A = 0x00;
+static constexpr KeyHandle kKey_S = 0x01;
+static constexpr KeyHandle kKey_D = 0x02;
+static constexpr KeyHandle kKey_W = 0x0D;
+static inline bool keyDown(KeyHandle code) {
     return CGEventSourceKeyState(kCGEventSourceStateHIDSystemState, code);
+}
+#else
+using KeyHandle = KeySym;
+static constexpr KeyHandle kKey_A = XK_a;
+static constexpr KeyHandle kKey_S = XK_s;
+static constexpr KeyHandle kKey_D = XK_d;
+static constexpr KeyHandle kKey_W = XK_w;
+static Display* g_xDisplay = nullptr;
+static inline bool keyDown(KeyHandle sym) {
+    if (!g_xDisplay) return false;
+    KeyCode kc = XKeysymToKeycode(g_xDisplay, sym);
+    if (!kc) return false;
+    char keys[32] = {};
+    XQueryKeymap(g_xDisplay, keys);
+    return (keys[kc / 8] >> (kc % 8)) & 1;
 }
 #endif
 
@@ -244,8 +263,14 @@ static bool runCalibration(ArucoTracker& tracker) {
 
 // ── WASD thread — isolated 2 ms loop, zero-latency direct send ───────────────
 
-#ifdef __APPLE__
 static void wasdControlLoop() {
+#ifndef __APPLE__
+    g_xDisplay = XOpenDisplay(nullptr);
+    if (!g_xDisplay) {
+        fprintf(stderr, "[wasd] XOpenDisplay failed — WASD disabled\n");
+        return;
+    }
+#endif
     int8_t lastL = 0, lastR = 0;
     while (g_running) {
         bool w = keyDown(kKey_W);
@@ -294,8 +319,11 @@ static void wasdControlLoop() {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
-}
+#ifndef __APPLE__
+    XCloseDisplay(g_xDisplay);
+    g_xDisplay = nullptr;
 #endif
+}
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
@@ -350,9 +378,7 @@ int main(int argc, char* argv[]) {
 
     printf("\nLeft-click=goal all  Right-click=goal selected  0-9=select  s=stop  c=calibrate  q=quit\n\n");
 
-#ifdef __APPLE__
     std::thread wasdThread(wasdControlLoop);
-#endif
 
     while (g_running) {
         if (!tracker.update()) {
@@ -659,9 +685,7 @@ int main(int argc, char* argv[]) {
     }
 
     g_running = false;
-#ifdef __APPLE__
     wasdThread.join();
-#endif
     memset(motors, 0, sizeof(motors));
     sendSwarm(motors);
     if (g_hubFd >= 0) close(g_hubFd);

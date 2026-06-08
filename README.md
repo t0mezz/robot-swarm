@@ -32,7 +32,7 @@ robot-swarm/
 │   ├── Calibration/            # CMA-ES detector tuning (cmaes.h, param_space.h, objective*.h)
 │   └── swarm/                  # PC-side host tools (swarm_hub, swarm_terminal, swarm_controller, latency_plot)
 ├── tools/
-│   ├── Makefile                # Builds all PC tools (macOS arm64 + Linux x86_64)
+│   ├── Makefile                # Builds all PC tools (macOS arm64 + Ubuntu x86_64)
 │   ├── game.cpp                # SFML game pad controller
 │   └── vision/
 │       ├── vision_controller.cpp  # Main vision-based swarm controller
@@ -50,17 +50,77 @@ robot-swarm/
 
 ## Prerequisites
 
-### Firmware
+### Firmware (all platforms)
+
 - [PlatformIO](https://platformio.org/) (CLI or VS Code extension)
 
-### PC tools (macOS)
-- Xcode Command Line Tools
-- Homebrew: `brew install opencv pkg-config sfml@2`
-- [Basler pylon 8.1.0](https://www.baslerweb.com/en/software/pylon/) — install the macOS Universal Binary package
+---
 
-### PC tools (Linux x86_64)
-- `apt install libopencv-dev pkg-config`
-- [Basler pylon](https://www.baslerweb.com/en/software/pylon/) — install to `/opt/pylon/`
+### PC Tools — macOS (Apple Silicon)
+
+**1. Command Line Tools**
+```bash
+xcode-select --install
+```
+
+**2. Homebrew dependencies**
+```bash
+brew install opencv pkg-config sfml@2
+```
+
+**3. Basler pylon 8.1.0**
+
+Download the macOS Universal Binary from [baslerweb.com](https://www.baslerweb.com/en/software/pylon/) and install. The framework will land at `/Library/Frameworks/pylon.framework`.
+
+**4. WASD keyboard input**
+
+Vision tools (`vision_controller`, `wingman`) and `swarm_controller` use WASD for direct leader control. On macOS this uses CoreGraphics; grant **Accessibility** permission when prompted (System Preferences → Privacy & Security → Accessibility).
+
+---
+
+### PC Tools — Ubuntu 22.04 / 24.04 (x86\_64)
+
+**1. System packages**
+```bash
+sudo apt update
+sudo apt install g++ make pkg-config \
+                 libopencv-dev \
+                 libsfml-dev \
+                 libx11-dev
+```
+
+> `libx11-dev` is required for multi-key WASD input in vision tools and `swarm_controller`.
+
+**2. Add yourself to the `dialout` group** (required for USB serial access)
+```bash
+sudo usermod -aG dialout $USER
+# Log out and back in, or run: newgrp dialout
+```
+
+**3. Basler pylon 8.1.0**
+
+Download the Ubuntu amd64 `.deb` from [baslerweb.com](https://www.baslerweb.com/en/software/pylon/) and install:
+```bash
+sudo apt install ./pylon_8.1.0.*_amd64.deb
+```
+
+Pylon installs to `/opt/pylon/`. Add its `bin/` to your PATH so the Makefile's `pylon-config` queries work:
+```bash
+echo 'export PATH=/opt/pylon/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**4. GigE camera NIC setup** (if using a Basler camera)
+```bash
+# Set NIC MTU to 9000 for jumbo frames (replace eth1 with your camera NIC)
+sudo ip link set eth1 mtu 9000
+# Set a static IP on the same subnet as the camera (default 169.254.x.x)
+sudo ip addr add 169.254.1.1/16 dev eth1
+```
+
+**5. WASD keyboard input**
+
+WASD works when a graphical session is active (`DISPLAY` is set). It uses `XQueryKeymap` under X11 or XWayland — no extra configuration needed.
 
 ---
 
@@ -88,15 +148,29 @@ cd tools
 make
 ```
 
-### 4. Run
+### 4. Find the dongle serial port
 
-Start the hub (bridges USB serial to a Unix socket):
-
+**macOS:**
 ```bash
-./swarm_hub /dev/tty.usbmodem*
+ls /dev/tty.usbmodem*
 ```
 
-Then launch any controller (see below).
+**Ubuntu:**
+```bash
+ls /dev/ttyACM* /dev/ttyUSB*
+```
+
+### 5. Run the hub
+
+```bash
+# macOS
+./swarm_hub /dev/tty.usbmodem*
+
+# Ubuntu
+./swarm_hub /dev/ttyACM0
+```
+
+Then launch any controller (see below). Vision tools auto-launch the hub if a dongle is detected.
 
 ---
 
@@ -106,8 +180,9 @@ Then launch any controller (see below).
 Serial ↔ Unix socket bridge. All other tools connect to it via `/tmp/swarm_hub.sock`. Launched automatically by vision tools if a USB dongle is detected.
 
 ```bash
-./swarm_hub /dev/tty.usbmodem*
-./swarm_hub --daemon /dev/tty.usbmodem*
+./swarm_hub /dev/tty.usbmodem*    # macOS
+./swarm_hub /dev/ttyACM0          # Ubuntu
+./swarm_hub --daemon /dev/ttyACM0
 ```
 
 ---
@@ -122,7 +197,7 @@ Terminal UI showing all registered robots with RSSI, latency, battery, and motor
 ---
 
 ### `swarm_controller`
-Interactive keyboard controller and test suite. Drive individual robots or run automated test sequences.
+Interactive keyboard controller and test suite. Drive individual robots or run automated test sequences. WASD drives robots (requires a graphical session on Ubuntu).
 
 ```bash
 ./swarm_controller
@@ -140,7 +215,7 @@ Live ASCII latency plot for a specific robot. Shows round-trip ping time in µs.
 ---
 
 ### `vision_controller`
-Main vision-based controller. Overhead camera tracks ArUco markers; click to set movement goals. WASD drives the leader robot (macOS).
+Main vision-based controller. Overhead camera tracks ArUco markers; click to set movement goals. WASD drives the leader robot (requires graphical session).
 
 ```bash
 ./vision_controller [--serial SN] [--ip IP] [--calibrate]
@@ -154,7 +229,7 @@ Main vision-based controller. Overhead camera tracks ArUco markers; click to set
 | `s` | Stop all, unlock leader |
 | `c` | Re-run homography calibration |
 | `+` / `-` | Speed ±10% |
-| `WASD` | Drive leader directly (macOS) |
+| `WASD` | Drive leader directly |
 | `q` / Esc | Quit |
 
 ---
@@ -173,6 +248,9 @@ V-formation controller. Leader is driven with WASD; all other robots autonomousl
 | `s` | Stop all |
 | `c` | Re-calibrate |
 | `q` / Esc | Quit |
+
+> **macOS:** `wingman` uses a CGEventTap and requires Accessibility permission.  
+> **Ubuntu:** Uses X11 `XQueryKeymap` polling — works in any X11 or XWayland session.
 
 ---
 
