@@ -9,6 +9,13 @@
 #else
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
+// X11 macros collide with Pylon SDK identifiers (e.g. "Status", "True", "False",
+// "None" appear as enum/member names in the pylon headers pulled in below).
+#undef Status
+#undef Bool
+#undef True
+#undef False
+#undef None
 #endif
 
 #include "aruco_tracker.h"

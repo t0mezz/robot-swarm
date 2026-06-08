@@ -90,6 +90,12 @@ sudo apt install g++ make pkg-config \
 ```
 
 > `libx11-dev` is required for multi-key WASD input in vision tools and `swarm_controller`.
+>
+> **Note:** X11's `<Xlib.h>` `#define`s `Status`, `Bool`, `True`, `False`, and `None` as
+> plain ints, which collides with identically-named members in the Basler pylon SDK
+> headers. The vision tools that mix X11 and pylon (e.g. `vision_controller`) `#undef`
+> these macros right after including `<X11/Xlib.h>` to avoid build errors like
+> "invalid cast to abstract class type 'Pylon::CEnumParameter'".
 
 **2. Add yourself to the `dialout` group** (required for USB serial access)
 ```bash
