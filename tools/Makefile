@@ -14,13 +14,18 @@ ifeq ($(UNAME), Darwin)
                          -Wno-overloaded-virtual -Wno-unused-variable
     PYLON_LIBS         = -F$(dir $(PYLON_DIR)) -framework pylon \
                          -Wl,-rpath,$(dir $(PYLON_DIR))
-    SFML_CFLAGS       := -I/opt/homebrew/opt/sfml@2/include
-    SFML_LIBS         := -L/opt/homebrew/opt/sfml@2/lib -lsfml-graphics -lsfml-window -lsfml-system
+    # game.cpp targets the SFML 3 API; Homebrew's unversioned "sfml" formula
+    # is SFML 3 (sfml@2 is the old pinned formula and won't compile this code).
+    SFML_CFLAGS       := -I/opt/homebrew/opt/sfml/include
+    SFML_LIBS         := -L/opt/homebrew/opt/sfml/lib -lsfml-graphics -lsfml-window -lsfml-system
 else
     # Linux: pylon installs to /opt/pylon and ships a pylon-config query tool
     PYLON_CFLAGS       = $(shell pylon-config --cflags 2>/dev/null) \
                          -Wno-overloaded-virtual -Wno-unused-variable
-    PYLON_LIBS         = $(shell pylon-config --libs 2>/dev/null)
+    # pylon-config only emits -L/opt/pylon/lib (a link-time path); without an
+    # rpath the binaries can't find libpylonbase.so.10 etc. at runtime since
+    # /opt/pylon/lib isn't registered with ldconfig.
+    PYLON_LIBS         = $(shell pylon-config --libs 2>/dev/null) -Wl,-rpath,/opt/pylon/lib
     SFML_CFLAGS       := $(shell pkg-config --cflags sfml-all 2>/dev/null)
     SFML_LIBS         := $(shell pkg-config --libs   sfml-all 2>/dev/null)
     # X11 for multi-key WASD polling (vision_controller, wingman, swarm_controller)
@@ -32,7 +37,7 @@ OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config -
 
 .PHONY: all clean calibrate
 
-all: swarm_hub swarm_terminal latency_plot swarm_controller game vision_controller circle_demo wingman shape_demo drag_drop_demo marker_eval calibrate
+all: swarm_hub swarm_terminal latency_plot swarm_controller game vision_controller circle_demo wingman shape_demo marker_eval calibrate
 
 calibrate:
 	$(MAKE) -C vision/calibration
@@ -62,11 +67,6 @@ wingman: vision/wingman.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/Aru
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
 shape_demo: vision/shape_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h
-	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
-	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient \
-	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
-
-drag_drop_demo: vision/drag_drop_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
 	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)

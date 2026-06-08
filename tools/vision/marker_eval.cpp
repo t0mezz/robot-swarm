@@ -136,7 +136,10 @@ int main(int argc, char* argv[]) {
     auto sz = tracker.frameSize();
     printf("[eval] %dx%d  r=reset  q=quit\n", sz.width, sz.height);
 
-    cv::namedWindow("Camera Eval", cv::WINDOW_NORMAL);
+    // Qt-based HighGUI (Linux build here) adds a toolbar/statusbar around the
+    // image by default; WINDOW_GUI_NORMAL suppresses that so the window looks
+    // like the plain Cocoa HighGUI window on macOS.
+    cv::namedWindow("Camera Eval", cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
 
     while (true) {
         if (tracker.update()) {

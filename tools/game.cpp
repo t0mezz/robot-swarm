@@ -25,6 +25,7 @@
 #include <iostream>
 #include <vector>
 #include <deque>
+#include <optional>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -369,7 +370,7 @@ static void draw_tacho(sf::RenderWindow& win, sf::Font& font,
     win.draw(needle);
 
     sf::CircleShape hub(6);
-    hub.setOrigin(6, 6);
+    hub.setOrigin(sf::Vector2f(6, 6));
     hub.setPosition(center);
     hub.setFillColor(C::hotPink);
     win.draw(hub);
@@ -378,24 +379,24 @@ static void draw_tacho(sf::RenderWindow& win, sf::Font& font,
     int displaySpeed = (int)(v.speed * 100);
     char buf[8];
     snprintf(buf, sizeof(buf), "%d", displaySpeed);
-    sf::Text spd(buf, font, 34);
-    spd.setOrigin(spd.getLocalBounds().width / 2, spd.getLocalBounds().height);
-    spd.setPosition(center.x, center.y + radius * 0.28f);
+    sf::Text spd(font, buf, 34);
+    spd.setOrigin(sf::Vector2f(spd.getLocalBounds().size.x / 2, spd.getLocalBounds().size.y));
+    spd.setPosition(sf::Vector2f(center.x, center.y + radius * 0.28f));
     bool overdrive = v.speed > 1.0f;
     spd.setFillColor(overdrive ? C::orangeHot : (v.boosting ? C::orange : C::textBright));
     win.draw(spd);
 
-    sf::Text unit("SPD", font, 10);
-    unit.setOrigin(unit.getLocalBounds().width / 2, 0);
-    unit.setPosition(center.x, center.y + radius * 0.32f);
+    sf::Text unit(font, "SPD", 10);
+    unit.setOrigin(sf::Vector2f(unit.getLocalBounds().size.x / 2, 0));
+    unit.setPosition(sf::Vector2f(center.x, center.y + radius * 0.32f));
     unit.setFillColor(C::textDim);
     win.draw(unit);
 
     // Brake Indikator
     if (v.braking) {
-        sf::Text brk("BRAKE", font, 10);
-        brk.setOrigin(brk.getLocalBounds().width / 2, 0);
-        brk.setPosition(center.x, center.y + radius * 0.52f);
+        sf::Text brk(font, "BRAKE", 10);
+        brk.setOrigin(sf::Vector2f(brk.getLocalBounds().size.x / 2, 0));
+        brk.setPosition(sf::Vector2f(center.x, center.y + radius * 0.52f));
         brk.setFillColor(C::red);
         win.draw(brk);
     }
@@ -417,7 +418,7 @@ static void draw_boost(sf::RenderWindow& win, sf::Font& font,
     float fill = v.boost * (w - 4);
     if (fill > 1.f) {
         sf::RectangleShape bar({fill, h - 4});
-        bar.setPosition(pos.x + 2, pos.y + 2);
+        bar.setPosition(sf::Vector2f(pos.x + 2, pos.y + 2));
         sf::Color col = C::orange;
         if (v.boost < 0.25f) col = C::red;
         if (v.boosting) col = C::lerp(col, C::yellow, 0.4f);
@@ -426,14 +427,14 @@ static void draw_boost(sf::RenderWindow& win, sf::Font& font,
     }
 
     if (v.boosting) {
-        sf::Text fb("NITRO!", font, 10);
-        fb.setPosition(pos.x + w + 10, pos.y);
+        sf::Text fb(font, "NITRO!", 10);
+        fb.setPosition(sf::Vector2f(pos.x + w + 10, pos.y));
         fb.setFillColor(C::orangeHot);
         win.draw(fb);
     }
 
-    sf::Text lbl("BOOST  [SPACE]", font, 9);
-    lbl.setPosition(pos.x, pos.y - 16);
+    sf::Text lbl(font, "BOOST  [SPACE]", 9);
+    lbl.setPosition(sf::Vector2f(pos.x, pos.y - 16));
     lbl.setFillColor(C::textDim);
     win.draw(lbl);
 }
@@ -442,7 +443,7 @@ static void draw_boost(sf::RenderWindow& win, sf::Font& font,
 static void draw_gforce(sf::RenderWindow& win, sf::Font& font,
                           const Vehicle& v, sf::Vector2f center, float radius) {
     sf::CircleShape ring(radius);
-    ring.setOrigin(radius, radius);
+    ring.setOrigin(sf::Vector2f(radius, radius));
     ring.setPosition(center);
     ring.setFillColor(C::surface);
     ring.setOutlineThickness(1.5f);
@@ -451,7 +452,7 @@ static void draw_gforce(sf::RenderWindow& win, sf::Font& font,
 
     for (int i = 0; i < 2; i++) {
         sf::RectangleShape line(i == 0 ? sf::Vector2f{radius*1.4f, 1} : sf::Vector2f{1, radius*1.4f});
-        line.setOrigin(line.getSize().x/2, line.getSize().y/2);
+        line.setOrigin(sf::Vector2f(line.getSize().x/2, line.getSize().y/2));
         line.setPosition(center);
         line.setFillColor(C::grid);
         win.draw(line);
@@ -463,20 +464,20 @@ static void draw_gforce(sf::RenderWindow& win, sf::Font& font,
     sf::Vector2f ballPos = center + sf::Vector2f(gx, gy) * (radius * 0.7f);
 
     sf::CircleShape glow(10);
-    glow.setOrigin(10, 10);
+    glow.setOrigin(sf::Vector2f(10, 10));
     glow.setPosition(ballPos);
     glow.setFillColor(C::alpha(mag > 0.5f ? C::hotPink : C::cyan, 30));
     win.draw(glow);
 
     sf::CircleShape ball(5);
-    ball.setOrigin(5, 5);
+    ball.setOrigin(sf::Vector2f(5, 5));
     ball.setPosition(ballPos);
     ball.setFillColor(mag > 0.5f ? C::hotPink : C::cyan);
     win.draw(ball);
 
-    sf::Text lbl("G-FORCE", font, 8);
-    lbl.setOrigin(lbl.getLocalBounds().width/2, lbl.getLocalBounds().height);
-    lbl.setPosition(center.x, center.y - radius - 8);
+    sf::Text lbl(font, "G-FORCE", 8);
+    lbl.setOrigin(sf::Vector2f(lbl.getLocalBounds().size.x/2, lbl.getLocalBounds().size.y));
+    lbl.setPosition(sf::Vector2f(center.x, center.y - radius - 8));
     lbl.setFillColor(C::textDim);
     win.draw(lbl);
 }
@@ -488,7 +489,7 @@ static void draw_trail(sf::RenderWindow& win, sf::Font& font, const Vehicle& v,
 
     // Retro-Grid Hintergrund
     sf::RectangleShape panel({scale * 2.4f, scale * 2.4f});
-    panel.setOrigin(scale * 1.2f, scale * 1.2f);
+    panel.setOrigin(sf::Vector2f(scale * 1.2f, scale * 1.2f));
     panel.setPosition(center);
     panel.setFillColor(C::bgAlt);
     panel.setOutlineThickness(1.5f);
@@ -499,13 +500,13 @@ static void draw_trail(sf::RenderWindow& win, sf::Font& font, const Vehicle& v,
     for (int i = -2; i <= 2; i++) {
         float off = i * scale * 0.4f;
         sf::RectangleShape h({scale * 2.2f, 1});
-        h.setOrigin(scale * 1.1f, 0);
-        h.setPosition(center.x, center.y + off);
+        h.setOrigin(sf::Vector2f(scale * 1.1f, 0));
+        h.setPosition(sf::Vector2f(center.x, center.y + off));
         h.setFillColor(C::grid);
         win.draw(h);
         sf::RectangleShape vl({1, scale * 2.2f});
-        vl.setOrigin(0, scale * 1.1f);
-        vl.setPosition(center.x + off, center.y);
+        vl.setOrigin(sf::Vector2f(0, scale * 1.1f));
+        vl.setPosition(sf::Vector2f(center.x + off, center.y));
         vl.setFillColor(C::grid);
         win.draw(vl);
     }
@@ -527,29 +528,29 @@ static void draw_trail(sf::RenderWindow& win, sf::Font& font, const Vehicle& v,
         sf::Color col = v.drifting ? C::alpha(C::hotPink, a) : C::alpha(C::cyan, a);
 
         sf::Vertex line[] = {
-            sf::Vertex(center + pts[i], col),
-            sf::Vertex(center + pts[i+1], C::alpha(col, a / 3))
+            {center + pts[i], col},
+            {center + pts[i+1], C::alpha(col, a / 3)}
         };
-        win.draw(line, 2, sf::Lines);
+        win.draw(line, 2, sf::PrimitiveType::Lines);
     }
 
     // Roboter-Punkt
     sf::CircleShape dot(5);
-    dot.setOrigin(5, 5);
+    dot.setOrigin(sf::Vector2f(5, 5));
     dot.setPosition(center);
     dot.setFillColor(v.drifting ? C::hotPink : C::cyan);
     win.draw(dot);
 
     // Glow
     sf::CircleShape dotGlow(9);
-    dotGlow.setOrigin(9, 9);
+    dotGlow.setOrigin(sf::Vector2f(9, 9));
     dotGlow.setPosition(center);
     dotGlow.setFillColor(C::alpha(v.drifting ? C::hotPink : C::cyan, 40));
     win.draw(dotGlow);
 
-    sf::Text lbl("TRAIL", font, 8);
-    lbl.setOrigin(lbl.getLocalBounds().width/2, lbl.getLocalBounds().height);
-    lbl.setPosition(center.x, center.y - scale * 1.2f - 8);
+    sf::Text lbl(font, "TRAIL", 8);
+    lbl.setOrigin(sf::Vector2f(lbl.getLocalBounds().size.x/2, lbl.getLocalBounds().size.y));
+    lbl.setPosition(sf::Vector2f(center.x, center.y - scale * 1.2f - 8));
     lbl.setFillColor(C::textDim);
     win.draw(lbl);
 }
@@ -560,7 +561,7 @@ static void draw_motor(sf::RenderWindow& win, sf::Font& font,
     float bh = 110.f, bw = 22.f;
 
     sf::RectangleShape bg({bw, bh});
-    bg.setOrigin(bw/2, bh/2);
+    bg.setOrigin(sf::Vector2f(bw/2, bh/2));
     bg.setPosition(pos);
     bg.setFillColor(C::surface);
     bg.setOutlineThickness(1.f);
@@ -570,21 +571,21 @@ static void draw_motor(sf::RenderWindow& win, sf::Font& font,
     float fill = std::abs(value) * (bh/2 - 2);
     if (fill > 0.5f) {
         sf::RectangleShape bar({bw - 6, fill});
-        bar.setOrigin((bw-6)/2, 0);
-        bar.setPosition(pos.x, value >= 0 ? pos.y - fill : pos.y);
+        bar.setOrigin(sf::Vector2f((bw-6)/2, 0));
+        bar.setPosition(sf::Vector2f(pos.x, value >= 0 ? pos.y - fill : pos.y));
         bar.setFillColor(value >= 0 ? C::green : C::red);
         win.draw(bar);
     }
 
     sf::RectangleShape mid({bw+4, 1});
-    mid.setOrigin((bw+4)/2, 0);
+    mid.setOrigin(sf::Vector2f((bw+4)/2, 0));
     mid.setPosition(pos);
     mid.setFillColor(C::border);
     win.draw(mid);
 
-    sf::Text lbl(label, font, 10);
-    lbl.setOrigin(lbl.getLocalBounds().width/2, 0);
-    lbl.setPosition(pos.x, pos.y + bh/2 + 6);
+    sf::Text lbl(font, label, 10);
+    lbl.setOrigin(sf::Vector2f(lbl.getLocalBounds().size.x/2, 0));
+    lbl.setPosition(sf::Vector2f(pos.x, pos.y + bh/2 + 6));
     lbl.setFillColor(C::textDim);
     win.draw(lbl);
 }
@@ -594,16 +595,16 @@ static void draw_key(sf::RenderWindow& win, sf::Font& font,
                       sf::Vector2f pos, const std::string& key, bool active,
                       sf::Color col, float w = 32.f, float h = 32.f) {
     sf::RectangleShape bg({w, h});
-    bg.setOrigin(w/2, h/2);
+    bg.setOrigin(sf::Vector2f(w/2, h/2));
     bg.setPosition(pos);
     bg.setFillColor(active ? C::alpha(col, 35) : C::surface);
     bg.setOutlineThickness(active ? 2.f : 1.f);
     bg.setOutlineColor(active ? col : C::border);
     win.draw(bg);
 
-    sf::Text txt(key, font, key.size() > 2 ? 8 : 12);
+    sf::Text txt(font, key, key.size() > 2 ? 8 : 12);
     sf::FloatRect tb = txt.getLocalBounds();
-    txt.setOrigin(tb.left + tb.width/2, tb.top + tb.height/2);
+    txt.setOrigin(sf::Vector2f(tb.position.x + tb.size.x/2, tb.position.y + tb.size.y/2));
     txt.setPosition(pos);
     txt.setFillColor(active ? col : C::textDim);
     win.draw(txt);
@@ -615,16 +616,16 @@ static void draw_drift_badge(sf::RenderWindow& win, sf::Font& font,
     if (!drifting) return;
 
     sf::RectangleShape badge({64, 22});
-    badge.setOrigin(32, 11);
+    badge.setOrigin(sf::Vector2f(32, 11));
     badge.setPosition(pos);
     badge.setFillColor(C::alpha(C::hotPink, 30));
     badge.setOutlineThickness(1.5f);
     badge.setOutlineColor(C::hotPink);
     win.draw(badge);
 
-    sf::Text txt("DRIFT!", font, 11);
-    txt.setOrigin(txt.getLocalBounds().width/2, txt.getLocalBounds().height/2);
-    txt.setPosition(pos.x, pos.y - 1);
+    sf::Text txt(font, "DRIFT!", 11);
+    txt.setOrigin(sf::Vector2f(txt.getLocalBounds().size.x/2, txt.getLocalBounds().size.y/2));
+    txt.setPosition(sf::Vector2f(pos.x, pos.y - 1));
     txt.setFillColor(C::hotPink);
     win.draw(txt);
 }
@@ -659,14 +660,14 @@ int main(int argc, char* argv[]) {
     std::cout << "F11: Fullscreen  |  ESC: Exit\n";
 
     sf::ContextSettings settings;
-    settings.antialiasingLevel = 8;
+    settings.antiAliasingLevel = 8;
 
     sf::VideoMode desktopMode = sf::VideoMode::getDesktopMode();
-    sf::VideoMode windowedMode(800, 520);
+    sf::VideoMode windowedMode({800u, 520u});
     bool fullscreen = false;
 
-    sf::RenderWindow win(windowedMode, "ROBOT RACER", 
-                        sf::Style::Default, settings); // Default statt Titlebar|Close
+    sf::RenderWindow win(windowedMode, "ROBOT RACER",
+                        sf::Style::Default, sf::State::Windowed, settings); // Default statt Titlebar|Close
     win.setFramerateLimit(60);
 
     auto recreateWindow = [&]() {
@@ -674,23 +675,23 @@ int main(int argc, char* argv[]) {
         if (fullscreen) {
             // Wir nehmen die Desktop-Auflösung
             sf::VideoMode mode = sf::VideoMode::getDesktopMode();
-            win.create(mode, "ROBOT RACER", sf::Style::Fullscreen, settings);
+            win.create(mode, "ROBOT RACER", sf::Style::None, sf::State::Fullscreen, settings);
         } else {
-            win.create(windowedMode, "ROBOT RACER", sf::Style::Default, settings);
+            win.create(windowedMode, "ROBOT RACER", sf::Style::Default, sf::State::Windowed, settings);
         }
 
         // WICHTIG: View manuell auf die tatsächliche Fenstergröße (in Pixeln) setzen
         sf::Vector2u size = win.getSize();
-        sf::View view(sf::FloatRect(0.f, 0.f, static_cast<float>(size.x), static_cast<float>(size.y)));
+        sf::View view(sf::FloatRect({0.f, 0.f}, {static_cast<float>(size.x), static_cast<float>(size.y)}));
         win.setView(view);
 
         win.setFramerateLimit(60);
     };
 
     sf::Font font;
-    bool hf = font.loadFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf");
-    if (!hf) hf = font.loadFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
-    if (!hf) hf = font.loadFromFile("/System/Library/Fonts/Helvetica.ttc");
+    bool hf = font.openFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf");
+    if (!hf) hf = font.openFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+    if (!hf) hf = font.openFromFile("/System/Library/Fonts/Helvetica.ttc");
 
     Vehicle car;
     sf::Clock frameClock, sendClock;
@@ -700,20 +701,20 @@ int main(int argc, char* argv[]) {
         if (dt > 0.1f) dt = 0.1f;
 
 
-        sf::Event ev;
-        while (win.pollEvent(ev)) {
-            if (ev.type == sf::Event::Closed) win.close();
-            
+        while (const std::optional<sf::Event> ev = win.pollEvent()) {
+            if (ev->is<sf::Event::Closed>()) win.close();
+
             // Hinzufügen: Wenn das Fenster seine Größe ändert (z.B. beim Übergang in Fullscreen)
-            if (ev.type == sf::Event::Resized) {
-                sf::FloatRect visibleArea(0, 0, ev.size.width, ev.size.height);
+            if (const auto* resized = ev->getIf<sf::Event::Resized>()) {
+                sf::FloatRect visibleArea({0.f, 0.f},
+                    {static_cast<float>(resized->size.x), static_cast<float>(resized->size.y)});
                 win.setView(sf::View(visibleArea));
             }
-            
-            if (ev.type == sf::Event::KeyPressed) {
-                if (ev.key.code == sf::Keyboard::F11) { 
-                    fullscreen = !fullscreen; 
-                    recreateWindow(); 
+
+            if (const auto* keyPressed = ev->getIf<sf::Event::KeyPressed>()) {
+                if (keyPressed->code == sf::Keyboard::Key::F11) {
+                    fullscreen = !fullscreen;
+                    recreateWindow();
                 }
                 // ... restliche Keys ...
             }
@@ -727,12 +728,12 @@ int main(int argc, char* argv[]) {
         auto S = [&](float x, float y) -> sf::Vector2f { return {ox + x*sc, oy + y*sc}; };
         auto Sf = [&](float v) -> float { return v * sc; };
 
-        bool w     = sf::Keyboard::isKeyPressed(sf::Keyboard::W);
-        bool s     = sf::Keyboard::isKeyPressed(sf::Keyboard::S);
-        bool a     = sf::Keyboard::isKeyPressed(sf::Keyboard::A);
-        bool d     = sf::Keyboard::isKeyPressed(sf::Keyboard::D);
-        bool space = sf::Keyboard::isKeyPressed(sf::Keyboard::Space);
-        bool shift = sf::Keyboard::isKeyPressed(sf::Keyboard::LShift);
+        bool w     = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::W);
+        bool s     = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S);
+        bool a     = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A);
+        bool d     = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D);
+        bool space = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space);
+        bool shift = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift);
 
         car.update(w, s, a, d, space, shift, dt);
 
@@ -747,7 +748,7 @@ int main(int argc, char* argv[]) {
         // Dezente Scanlines fuer Retro-Feeling
         for (int y = 0; y < (int)ws.y; y += 4) {
             sf::RectangleShape scanline({(float)ws.x, 1});
-            scanline.setPosition(0, y);
+            scanline.setPosition(sf::Vector2f(0, y));
             scanline.setFillColor(sf::Color(0, 0, 0, 12));
             win.draw(scanline);
         }
@@ -761,7 +762,7 @@ int main(int argc, char* argv[]) {
 
             // Motor Output
             sf::RectangleShape sep({Sf(1.5f), Sf(300.f)});
-            sep.setOrigin(0, Sf(150.f));
+            sep.setOrigin(sf::Vector2f(0, Sf(150.f)));
             sep.setPosition(S(710.f, 260.f));
             sep.setFillColor(C::border);
             win.draw(sep);
@@ -769,8 +770,8 @@ int main(int argc, char* argv[]) {
             draw_motor(win, font, car.leftMotor,  S(740.f, 220.f), "L");
             draw_motor(win, font, car.rightMotor,  S(775.f, 220.f), "R");
 
-            sf::Text oLbl("OUTPUT", font, 9);
-            oLbl.setOrigin(oLbl.getLocalBounds().width/2, oLbl.getLocalBounds().height);
+            sf::Text oLbl(font, "OUTPUT", 9);
+            oLbl.setOrigin(sf::Vector2f(oLbl.getLocalBounds().size.x/2, oLbl.getLocalBounds().size.y));
             oLbl.setPosition(S(757.f, 140.f));
             oLbl.setFillColor(C::textDim);
             win.draw(oLbl);
@@ -785,31 +786,31 @@ int main(int argc, char* argv[]) {
             draw_key(win, font, S(kx+148, ky),   "SHF", shift, C::hotPink, 50, 32);
 
             // Status
-            sf::Text addr("swarm_hub", font, 9);
+            sf::Text addr(font, "swarm_hub", 9);
             addr.setPosition(S(12.f, 10.f));
             addr.setFillColor(C::textDim);
             win.draw(addr);
 
             sf::CircleShape dot(4);
-            dot.setOrigin(4, 4);
-            dot.setPosition(S(12.f, 10.f).x + addr.getLocalBounds().width + 12, S(0.f, 17.f).y);
+            dot.setOrigin(sf::Vector2f(4, 4));
+            dot.setPosition(sf::Vector2f(S(12.f, 10.f).x + addr.getLocalBounds().size.x + 12, S(0.f, 17.f).y));
             dot.setFillColor(hub.is_open() ? C::green : C::red);
             win.draw(dot);
 
             char info[64];
             snprintf(info, sizeof(info), "%dms   ID:%d   60B", send_ms, robot_id);
-            sf::Text inf(info, font, 9);
-            inf.setPosition(dot.getPosition().x + 12, S(0.f, 10.f).y);
+            sf::Text inf(font, info, 9);
+            inf.setPosition(sf::Vector2f(dot.getPosition().x + 12, S(0.f, 10.f).y));
             inf.setFillColor(C::textDim);
             win.draw(inf);
 
-            sf::Text title("ROBOT RACER", font, 14);
-            title.setPosition(S(800.f, 8.f).x - title.getLocalBounds().width - 14, S(0.f, 8.f).y);
+            sf::Text title(font, "ROBOT RACER", 14);
+            title.setPosition(sf::Vector2f(S(800.f, 8.f).x - title.getLocalBounds().size.x - 14, S(0.f, 8.f).y));
             title.setFillColor(C::hotPink);
             win.draw(title);
 
-            sf::Text fsHint("F11: Fullscreen", font, 8);
-            fsHint.setPosition(S(800.f, 8.f).x - fsHint.getLocalBounds().width - 14, S(0.f, 26.f).y);
+            sf::Text fsHint(font, "F11: Fullscreen", 8);
+            fsHint.setPosition(sf::Vector2f(S(800.f, 8.f).x - fsHint.getLocalBounds().size.x - 14, S(0.f, 26.f).y));
             fsHint.setFillColor(C::alpha(C::textDim, 120));
             win.draw(fsHint);
         }

@@ -65,8 +65,11 @@ xcode-select --install
 
 **2. Homebrew dependencies**
 ```bash
-brew install opencv pkg-config sfml@2
+brew install opencv pkg-config sfml
 ```
+
+> `game.cpp` targets the SFML 3 API (Homebrew's unversioned `sfml` formula). The
+> older pinned `sfml@2` formula will not compile it.
 
 **3. Basler pylon 8.1.0**
 
@@ -90,6 +93,7 @@ sudo apt install g++ make pkg-config \
 ```
 
 > `libx11-dev` is required for multi-key WASD input in vision tools and `swarm_controller`.
+> Ubuntu 22.04/24.04's `libsfml-dev` provides SFML 3, which is the API `game.cpp` targets.
 >
 > **Note:** X11's `<Xlib.h>` `#define`s `Status`, `Bool`, `True`, `False`, and `None` as
 > plain ints, which collides with identically-named members in the Basler pylon SDK
@@ -115,6 +119,12 @@ Pylon installs to `/opt/pylon/`. Add its `bin/` to your PATH so the Makefile's `
 echo 'export PATH=/opt/pylon/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc
 ```
+
+> `pylon-config --libs` only emits a link-time `-L/opt/pylon/lib`, and `/opt/pylon/lib`
+> is not registered with `ldconfig`. Without an rpath the built binaries fail at
+> runtime with `error while loading shared libraries: libpylonbase.so.10: cannot
+> open shared object file`. The Makefile adds `-Wl,-rpath,/opt/pylon/lib` to
+> `PYLON_LIBS` on Linux to fix this.
 
 **4. GigE camera NIC setup** (if using a Basler camera)
 ```bash

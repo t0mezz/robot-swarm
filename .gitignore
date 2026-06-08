@@ -20,6 +20,9 @@ tools/latency_plot
 tools/vision_controller
 tools/circle_demo
 tools/wingman
+tools/game
+tools/marker_eval
+tools/shape_demo
 tools/vision/calibration/calibrate
 lib/SwarmProtocol/robot_id_cfg.h
 *.o
