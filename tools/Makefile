@@ -28,8 +28,9 @@ else
     PYLON_LIBS         = $(shell pylon-config --libs 2>/dev/null) -Wl,-rpath,/opt/pylon/lib
     SFML_CFLAGS       := $(shell pkg-config --cflags sfml-all 2>/dev/null)
     SFML_LIBS         := $(shell pkg-config --libs   sfml-all 2>/dev/null)
-    # X11 for multi-key WASD polling (vision_controller, wingman, swarm_controller)
-    CONTROLLER_LDFLAGS = $(shell pkg-config --libs x11 2>/dev/null || echo -lX11)
+    # WASD multi-key polling reads /dev/input/eventN directly (see lib/swarm/evdev_keys.h);
+    # no extra link flags needed beyond libc.
+    CONTROLLER_LDFLAGS =
 endif
 
 OPENCV_CFLAGS := $(shell pkg-config --cflags opencv4 2>/dev/null || pkg-config --cflags opencv 2>/dev/null)
@@ -57,14 +58,14 @@ swarm_controller: $(LIBDIR)/swarm/swarm_controller.cpp
 game: game.cpp
 	$(CXX) $(CXXFLAGS) $(SFML_CFLAGS) $< -o $@ $(SFML_LIBS)
 
-vision_controller: vision/vision_controller.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h
-	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
+vision_controller: vision/vision_controller.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/swarm/evdev_keys.h
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/swarm $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
 circle_demo: vision/circle_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-wingman: vision/wingman.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h
-	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
+wingman: vision/wingman.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/swarm/evdev_keys.h
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/swarm $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
 shape_demo: vision/shape_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \

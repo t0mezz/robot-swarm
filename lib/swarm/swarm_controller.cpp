@@ -50,21 +50,15 @@ static inline bool keyDown(KeyHandle code) {
     return CGEventSourceKeyState(kCGEventSourceStateHIDSystemState, code);
 }
 #else
-#include <X11/Xlib.h>
-#include <X11/keysym.h>
-using KeyHandle = KeySym;
-static constexpr KeyHandle kKey_A = XK_a;
-static constexpr KeyHandle kKey_S = XK_s;
-static constexpr KeyHandle kKey_D = XK_d;
-static constexpr KeyHandle kKey_W = XK_w;
-static Display* g_xDisplay = nullptr;
-static inline bool keyDown(KeyHandle sym) {
-    if (!g_xDisplay) return false;
-    KeyCode kc = XKeysymToKeycode(g_xDisplay, sym);
-    if (!kc) return false;
-    char keys[32] = {};
-    XQueryKeymap(g_xDisplay, keys);
-    return (keys[kc / 8] >> (kc % 8)) & 1;
+#include "evdev_keys.h"
+using KeyHandle = int;
+static constexpr KeyHandle kKey_A = KEY_A;
+static constexpr KeyHandle kKey_S = KEY_S;
+static constexpr KeyHandle kKey_D = KEY_D;
+static constexpr KeyHandle kKey_W = KEY_W;
+static EvdevKeyboard g_keyboard;
+static inline bool keyDown(KeyHandle code) {
+    return g_keyboard.down(code);
 }
 #endif
 
@@ -454,7 +448,7 @@ static bool g_testMenu      = false;
 
 static constexpr int8_t CTRL_SPEED = 30;  // 30% of full range (100)
 
-// Differential-drive WASD polling (macOS only).
+// Differential-drive WASD polling (CoreGraphics on macOS, evdev on Linux).
 // All four keys are sampled simultaneously each loop tick so combined
 // inputs (e.g. W+D = forward-right arc) work naturally.
 // Mixing:  L = throttle + steer,  R = throttle - steer
@@ -661,7 +655,10 @@ int main(int argc, char* argv[]) {
     rawMode();
 
 #ifndef __APPLE__
-    g_xDisplay = XOpenDisplay(nullptr);  // nullptr OK — pollWASD checks for nullptr
+    if (g_keyboard.open() == 0)
+        fprintf(stderr, "[wasd] no readable keyboard in /dev/input — WASD disabled. "
+                        "Add yourself to the 'input' group (sudo usermod -aG input $USER, "
+                        "then log out and back in).\n");
 #endif
 
     using Clock = std::chrono::steady_clock;
@@ -715,7 +712,7 @@ int main(int argc, char* argv[]) {
     close(fd);
     normalMode();
 #ifndef __APPLE__
-    if (g_xDisplay) { XCloseDisplay(g_xDisplay); g_xDisplay = nullptr; }
+    g_keyboard.close();
 #endif
     printf("\033[2J\033[H\033[0m");
     printf("Stopped.\n");

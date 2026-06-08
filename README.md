@@ -88,24 +88,28 @@ Vision tools (`vision_controller`, `wingman`) and `swarm_controller` use WASD fo
 sudo apt update
 sudo apt install g++ make pkg-config \
                  libopencv-dev \
-                 libsfml-dev \
-                 libx11-dev
+                 libsfml-dev
 ```
 
-> `libx11-dev` is required for multi-key WASD input in vision tools and `swarm_controller`.
 > Ubuntu 22.04/24.04's `libsfml-dev` provides SFML 3, which is the API `game.cpp` targets.
->
-> **Note:** X11's `<Xlib.h>` `#define`s `Status`, `Bool`, `True`, `False`, and `None` as
-> plain ints, which collides with identically-named members in the Basler pylon SDK
-> headers. The vision tools that mix X11 and pylon (e.g. `vision_controller`) `#undef`
-> these macros right after including `<X11/Xlib.h>` to avoid build errors like
-> "invalid cast to abstract class type 'Pylon::CEnumParameter'".
 
-**2. Add yourself to the `dialout` group** (required for USB serial access)
+**2. Add yourself to the `dialout` and `input` groups**
 ```bash
-sudo usermod -aG dialout $USER
-# Log out and back in, or run: newgrp dialout
+sudo usermod -aG dialout,input $USER
+# Log out and back in, or run: newgrp dialout && newgrp input
 ```
+
+> * `dialout` is required for USB serial access to the robots/dongle.
+> * `input` is required for multi-key WASD input in `vision_controller`, `wingman`,
+>   and `swarm_controller`. They poll `/dev/input/eventN` directly via evdev
+>   (`lib/swarm/evdev_keys.h`) rather than the X11 `XQueryKeymap`, because
+>   `XQueryKeymap` only reflects keys delivered to an X11 surface — under a
+>   Wayland session (the Ubuntu default) it silently reports nothing pressed,
+>   since XWayland never receives input meant for native Wayland clients like
+>   the terminal these tools run in. evdev reads the kernel input layer
+>   directly, so it works under X11, XWayland, and Wayland alike. Without
+>   `input` group membership these tools print a warning and run with WASD
+>   disabled — `/dev/input/eventN` is `root:input 0660` by default.
 
 **3. Basler pylon 8.1.0**
 
@@ -136,7 +140,9 @@ sudo ip addr add 169.254.1.1/16 dev eth1
 
 **5. WASD keyboard input**
 
-WASD works when a graphical session is active (`DISPLAY` is set). It uses `XQueryKeymap` under X11 or XWayland — no extra configuration needed.
+WASD reads `/dev/input/eventN` directly via evdev — see the `input` group note in
+step 2 above. No graphical session or `DISPLAY` is required; this also means it
+works the same over SSH as it does locally.
 
 ---
 
@@ -213,7 +219,7 @@ Terminal UI showing all registered robots with RSSI, latency, battery, and motor
 ---
 
 ### `swarm_controller`
-Interactive keyboard controller and test suite. Drive individual robots or run automated test sequences. WASD drives robots (requires a graphical session on Ubuntu).
+Interactive keyboard controller and test suite. Drive individual robots or run automated test sequences. WASD drives robots (requires `input` group membership on Ubuntu — see Prerequisites).
 
 ```bash
 ./swarm_controller
@@ -231,7 +237,7 @@ Live ASCII latency plot for a specific robot. Shows round-trip ping time in µs.
 ---
 
 ### `vision_controller`
-Main vision-based controller. Overhead camera tracks ArUco markers; click to set movement goals. WASD drives the leader robot (requires graphical session).
+Main vision-based controller. Overhead camera tracks ArUco markers; click to set movement goals. WASD drives the leader robot (requires `input` group membership on Ubuntu — see Prerequisites).
 
 ```bash
 ./vision_controller [--serial SN] [--ip IP] [--calibrate]
@@ -266,7 +272,8 @@ V-formation controller. Leader is driven with WASD; all other robots autonomousl
 | `q` / Esc | Quit |
 
 > **macOS:** `wingman` uses a CGEventTap and requires Accessibility permission.  
-> **Ubuntu:** Uses X11 `XQueryKeymap` polling — works in any X11 or XWayland session.
+> **Ubuntu:** Polls `/dev/input/eventN` directly via evdev — requires `input` group
+> membership (see Prerequisites above). Works under X11, XWayland, and Wayland alike.
 
 ---
 

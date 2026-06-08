@@ -31,15 +31,7 @@
 #ifdef __APPLE__
 #include <CoreGraphics/CoreGraphics.h>
 #else
-#include <X11/Xlib.h>
-#include <X11/keysym.h>
-// X11 macros collide with Pylon SDK / OpenCV identifiers (e.g. "Status", "True",
-// "False", "None" appear as enum/member names in the headers pulled in below).
-#undef Status
-#undef Bool
-#undef True
-#undef False
-#undef None
+#include "evdev_keys.h"
 #endif
 
 #include "aruco_tracker.h"
@@ -72,6 +64,12 @@ static constexpr CGKeyCode kKey_A = 0x00;
 static constexpr CGKeyCode kKey_S = 0x01;
 static constexpr CGKeyCode kKey_D = 0x02;
 static constexpr CGKeyCode kKey_W = 0x0D;
+#else
+static constexpr int kKey_A = KEY_A;
+static constexpr int kKey_S = KEY_S;
+static constexpr int kKey_D = KEY_D;
+static constexpr int kKey_W = KEY_W;
+static EvdevKeyboard g_keyboard;
 #endif
 
 // ── Tunables ──────────────────────────────────────────────────────────────────
@@ -539,32 +537,29 @@ static void runEventTap() {
     CFRelease(tap);
 }
 
-#else  // Linux: X11 polling, 2 ms interval — functionally equivalent to the macOS fallback
+#else  // Linux: evdev polling, 2 ms interval — functionally equivalent to the macOS fallback
+       // (XQueryKeymap only sees keys delivered to an X11 surface, which a Wayland
+       // session never does for native clients like the terminal wingman runs in;
+       // evdev reads the kernel input layer directly and works under both).
 
 static void runEventTap() {
-    Display* xdpy = XOpenDisplay(nullptr);
-    if (!xdpy) {
-        fprintf(stderr, "[input] XOpenDisplay failed — WASD disabled.\n");
+    if (g_keyboard.open() == 0) {
+        fprintf(stderr, "[input] no readable keyboard in /dev/input — WASD disabled. "
+                        "Add yourself to the 'input' group (sudo usermod -aG input $USER, "
+                        "then log out and back in).\n");
         return;
     }
-    auto queryKey = [&](KeySym sym) -> bool {
-        KeyCode kc = XKeysymToKeycode(xdpy, sym);
-        if (!kc) return false;
-        char keys[32] = {};
-        XQueryKeymap(xdpy, keys);
-        return (keys[kc / 8] >> (kc % 8)) & 1;
-    };
     while (g_running) {
-        bool w = queryKey(XK_w);
-        bool a = queryKey(XK_a);
-        bool s = queryKey(XK_s);
-        bool d = queryKey(XK_d);
+        bool w = g_keyboard.down(kKey_W);
+        bool a = g_keyboard.down(kKey_A);
+        bool s = g_keyboard.down(kKey_S);
+        bool d = g_keyboard.down(kKey_D);
         bool changed = (w != g_keyW.exchange(w)) | (a != g_keyA.exchange(a)) |
                        (s != g_keyS.exchange(s)) | (d != g_keyD.exchange(d));
         if (changed) applyLeaderMotors();
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
-    XCloseDisplay(xdpy);
+    g_keyboard.close();
 }
 
 #endif  // __APPLE__

@@ -7,15 +7,7 @@
 #ifdef __APPLE__
 #include <CoreGraphics/CoreGraphics.h>
 #else
-#include <X11/Xlib.h>
-#include <X11/keysym.h>
-// X11 macros collide with Pylon SDK identifiers (e.g. "Status", "True", "False",
-// "None" appear as enum/member names in the pylon headers pulled in below).
-#undef Status
-#undef Bool
-#undef True
-#undef False
-#undef None
+#include "evdev_keys.h"
 #endif
 
 #include "aruco_tracker.h"
@@ -50,19 +42,14 @@ static inline bool keyDown(KeyHandle code) {
     return CGEventSourceKeyState(kCGEventSourceStateHIDSystemState, code);
 }
 #else
-using KeyHandle = KeySym;
-static constexpr KeyHandle kKey_A = XK_a;
-static constexpr KeyHandle kKey_S = XK_s;
-static constexpr KeyHandle kKey_D = XK_d;
-static constexpr KeyHandle kKey_W = XK_w;
-static Display* g_xDisplay = nullptr;
-static inline bool keyDown(KeyHandle sym) {
-    if (!g_xDisplay) return false;
-    KeyCode kc = XKeysymToKeycode(g_xDisplay, sym);
-    if (!kc) return false;
-    char keys[32] = {};
-    XQueryKeymap(g_xDisplay, keys);
-    return (keys[kc / 8] >> (kc % 8)) & 1;
+using KeyHandle = int;
+static constexpr KeyHandle kKey_A = KEY_A;
+static constexpr KeyHandle kKey_S = KEY_S;
+static constexpr KeyHandle kKey_D = KEY_D;
+static constexpr KeyHandle kKey_W = KEY_W;
+static EvdevKeyboard g_keyboard;
+static inline bool keyDown(KeyHandle code) {
+    return g_keyboard.down(code);
 }
 #endif
 
@@ -272,9 +259,10 @@ static bool runCalibration(ArucoTracker& tracker) {
 
 static void wasdControlLoop() {
 #ifndef __APPLE__
-    g_xDisplay = XOpenDisplay(nullptr);
-    if (!g_xDisplay) {
-        fprintf(stderr, "[wasd] XOpenDisplay failed — WASD disabled\n");
+    if (g_keyboard.open() == 0) {
+        fprintf(stderr, "[wasd] no readable keyboard in /dev/input — WASD disabled. "
+                        "Add yourself to the 'input' group (sudo usermod -aG input $USER, "
+                        "then log out and back in).\n");
         return;
     }
 #endif
@@ -327,8 +315,7 @@ static void wasdControlLoop() {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
 #ifndef __APPLE__
-    XCloseDisplay(g_xDisplay);
-    g_xDisplay = nullptr;
+    g_keyboard.close();
 #endif
 }
 
