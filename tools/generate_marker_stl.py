@@ -153,7 +153,7 @@ def main():
     )
     parser.add_argument("--id",     type=int,   default=0,         metavar="ID",
                         help="Marker ID")
-    parser.add_argument("--size",   type=float, default=50.0,      metavar="MM",
+    parser.add_argument("--size",   type=float, default=65.0,      metavar="MM",
                         help="Total marker size in mm")
     parser.add_argument("--height", type=float, default=1.0,       metavar="MM",
                         help="Extrusion height (thickness) in mm")
