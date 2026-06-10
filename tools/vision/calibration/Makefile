@@ -3,6 +3,7 @@
 CXX      = g++
 CXXFLAGS = -std=c++17 -Wall -O2
 LIBDIR   = ../../../lib
+BUILD_DIR = ../../build
 
 OPENCV_CFLAGS := $(shell pkg-config --cflags opencv4 2>/dev/null || pkg-config --cflags opencv 2>/dev/null)
 OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config --libs   opencv 2>/dev/null)
@@ -30,12 +31,15 @@ LIBHDRS  = $(LIBDIR)/ArucoTracker/aruco_tracker.h \
 
 .PHONY: all clean
 
-all: calibrate
+all: $(BUILD_DIR)/calibrate
 
-calibrate: calib_main.cpp $(LIBHDRS) $(LIBDIR)/ArucoTracker/basler_pylon_source.h
+$(BUILD_DIR):
+	mkdir -p $@
+
+$(BUILD_DIR)/calibrate: calib_main.cpp $(LIBHDRS) $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
 	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/Calibration \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(EXTRA_LDFLAGS)
 
 clean:
-	rm -f calibrate
+	rm -f $(BUILD_DIR)/calibrate

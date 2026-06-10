@@ -186,10 +186,10 @@ ls /dev/ttyACM* /dev/ttyUSB*
 
 ```bash
 # macOS
-./swarm_hub /dev/tty.usbmodem*
+./build/swarm_hub /dev/tty.usbmodem*
 
 # Ubuntu
-./swarm_hub /dev/ttyACM0
+./build/swarm_hub /dev/ttyACM0
 ```
 
 Then launch any controller (see below). Vision tools auto-launch the hub if a dongle is detected.
@@ -202,9 +202,9 @@ Then launch any controller (see below). Vision tools auto-launch the hub if a do
 Serial ↔ Unix socket bridge. All other tools connect to it via `/tmp/swarm_hub.sock`. Launched automatically by vision tools if a USB dongle is detected.
 
 ```bash
-./swarm_hub /dev/tty.usbmodem*    # macOS
-./swarm_hub /dev/ttyACM0          # Ubuntu
-./swarm_hub --daemon /dev/ttyACM0
+./build/swarm_hub /dev/tty.usbmodem*    # macOS
+./build/swarm_hub /dev/ttyACM0          # Ubuntu
+./build/swarm_hub --daemon /dev/ttyACM0
 ```
 
 ---
@@ -213,7 +213,7 @@ Serial ↔ Unix socket bridge. All other tools connect to it via `/tmp/swarm_hub
 Terminal UI showing all registered robots with RSSI, latency, battery, and motor state.
 
 ```bash
-./swarm_terminal
+./build/swarm_terminal
 ```
 
 ---
@@ -222,7 +222,7 @@ Terminal UI showing all registered robots with RSSI, latency, battery, and motor
 Interactive keyboard controller and test suite. Drive individual robots or run automated test sequences. WASD drives robots (requires `input` group membership on Ubuntu — see Prerequisites).
 
 ```bash
-./swarm_controller
+./build/swarm_controller
 ```
 
 ---
@@ -231,7 +231,7 @@ Interactive keyboard controller and test suite. Drive individual robots or run a
 Live ASCII latency plot for a specific robot. Shows round-trip ping time in µs.
 
 ```bash
-./latency_plot <robot_id>
+./build/latency_plot <robot_id>
 ```
 
 ---
@@ -240,7 +240,7 @@ Live ASCII latency plot for a specific robot. Shows round-trip ping time in µs.
 Main vision-based controller. Overhead camera tracks ArUco markers; click to set movement goals. WASD drives the leader robot (requires `input` group membership on Ubuntu — see Prerequisites).
 
 ```bash
-./vision_controller [--serial SN] [--ip IP] [--calibrate]
+./build/vision_controller [--serial SN] [--ip IP] [--calibrate]
 ```
 
 | Key | Action |
@@ -260,7 +260,7 @@ Main vision-based controller. Overhead camera tracks ArUco markers; click to set
 V-formation controller. Leader is driven with WASD; all other robots autonomously hold positions in a V behind it.
 
 ```bash
-./wingman [--serial SN] [--ip IP] [--spacing MM] [--dist MM] [--speed PCT]
+./build/wingman [--serial SN] [--ip IP] [--spacing MM] [--dist MM] [--speed PCT]
 ```
 
 | Key | Action |
@@ -281,7 +281,7 @@ V-formation controller. Leader is driven with WASD; all other robots autonomousl
 Robots orbit a point you click. Speed, radius, and orbit direction are adjustable live.
 
 ```bash
-./circle_demo [--serial SN] [--ip IP] [--radius MM] [--min-gap MM]
+./build/circle_demo [--serial SN] [--ip IP] [--radius MM] [--min-gap MM]
               [--orbit-speed DEG_S] [--speed PCT]
 ```
 
@@ -301,7 +301,7 @@ Robots orbit a point you click. Speed, radius, and orbit direction are adjustabl
 Draw shapes on the camera view; robots slowly trace the path.
 
 ```bash
-./shape_demo [--serial SN] [--ip IP] [--speed PCT]
+./build/shape_demo [--serial SN] [--ip IP] [--speed PCT]
 ```
 
 | Key / Action | Effect |
@@ -320,7 +320,7 @@ Draw shapes on the camera view; robots slowly trace the path.
 Camera and detection benchmark. Shows per-marker detection rate, live FPS, resolution, and pipeline latency. Run this first to verify the camera and ArUco config are working correctly.
 
 ```bash
-./marker_eval [--config JSON] [--serial SN] [--ip IP]
+./build/marker_eval [--config JSON] [--serial SN] [--ip IP]
               [--expected 0,1,2] [--mirror]
 ```
 
@@ -337,8 +337,8 @@ CMA-ES optimiser that tunes `aruco_tracker_config.json` for the current lighting
 ```bash
 cd vision/calibration
 
-./calibrate             # static: markers held still
-./calibrate --motion    # motion: robots driving at operating speed
+../../build/calibrate             # static: markers held still
+../../build/calibrate --motion    # motion: robots driving at operating speed
 ```
 
 See `vision/calibration/README.md` for full flag reference and scoring details.
@@ -367,4 +367,4 @@ All frames: `[0xAA][0x55][type][len][payload…][CRC-8]`
 2. Set the NIC to a static IP on the same subnet as the camera (default: `169.254.x.x`).
 3. Set MTU to 9000 (jumbo frames) for maximum throughput.
 4. Pass `--serial SN` or `--ip IP` to any vision tool, or set `baslerSerial` / `baslerIp` in `aruco_tracker_config.json`.
-5. Run `./marker_eval` to verify FPS and detection before using a controller.
+5. Run `./build/marker_eval` to verify FPS and detection before using a controller.

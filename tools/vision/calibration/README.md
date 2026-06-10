@@ -11,10 +11,10 @@ cd tools/calibration
 make
 
 # Static — tune for still markers (good baseline, run first)
-./calibrate
+../../build/calibrate
 
 # Motion — tune for moving robots
-./calibrate --motion
+../../build/calibrate --motion
 ```
 
 ## How it works

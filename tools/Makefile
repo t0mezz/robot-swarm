@@ -3,6 +3,7 @@
 CXX      = g++
 CXXFLAGS = -std=c++17 -Wall -O2
 LIBDIR   = ../lib
+BUILD_DIR = build
 
 UNAME := $(shell uname)
 ifeq ($(UNAME), Darwin)
@@ -38,44 +39,51 @@ OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config -
 
 .PHONY: all clean calibrate
 
-all: swarm_hub swarm_terminal latency_plot swarm_controller game vision_controller circle_demo wingman shape_demo marker_eval calibrate
+all: $(BUILD_DIR)/swarm_hub $(BUILD_DIR)/swarm_terminal $(BUILD_DIR)/latency_plot $(BUILD_DIR)/swarm_controller $(BUILD_DIR)/game $(BUILD_DIR)/vision_controller $(BUILD_DIR)/circle_demo $(BUILD_DIR)/wingman $(BUILD_DIR)/shape_demo $(BUILD_DIR)/drag_drop_demo $(BUILD_DIR)/marker_eval calibrate
 
-calibrate:
+$(BUILD_DIR):
+	mkdir -p $@
+
+calibrate: | $(BUILD_DIR)
 	$(MAKE) -C vision/calibration
 
-swarm_hub: $(LIBDIR)/swarm/swarm_hub.cpp
+$(BUILD_DIR)/swarm_hub: $(LIBDIR)/swarm/swarm_hub.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $< -o $@ $(HUB_LDFLAGS)
 
-swarm_terminal: $(LIBDIR)/swarm/swarm_terminal.cpp
+$(BUILD_DIR)/swarm_terminal: $(LIBDIR)/swarm/swarm_terminal.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $< -o $@
 
-latency_plot: $(LIBDIR)/swarm/latency_plot.cpp
+$(BUILD_DIR)/latency_plot: $(LIBDIR)/swarm/latency_plot.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $< -o $@
 
-swarm_controller: $(LIBDIR)/swarm/swarm_controller.cpp
+$(BUILD_DIR)/swarm_controller: $(LIBDIR)/swarm/swarm_controller.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $< -o $@ $(CONTROLLER_LDFLAGS)
 
-game: game.cpp
+$(BUILD_DIR)/game: game.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(SFML_CFLAGS) $< -o $@ $(SFML_LIBS)
 
-vision_controller: vision/vision_controller.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/swarm/evdev_keys.h
+$(BUILD_DIR)/vision_controller: vision/vision_controller.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/swarm/evdev_keys.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/swarm $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-circle_demo: vision/circle_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h
+$(BUILD_DIR)/circle_demo: vision/circle_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-wingman: vision/wingman.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/swarm/evdev_keys.h
+$(BUILD_DIR)/wingman: vision/wingman.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/swarm/evdev_keys.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/swarm $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-shape_demo: vision/shape_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h
+$(BUILD_DIR)/shape_demo: vision/shape_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
 	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-marker_eval: vision/marker_eval.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h
+$(BUILD_DIR)/drag_drop_demo: vision/drag_drop_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
+	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient \
+	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
+
+$(BUILD_DIR)/marker_eval: vision/marker_eval.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS)
 
 clean:
-	rm -f swarm_hub swarm_terminal latency_plot swarm_controller game vision_controller circle_demo wingman shape_demo
-	$(MAKE) -C vision/calibration clean
+	rm -rf $(BUILD_DIR)
