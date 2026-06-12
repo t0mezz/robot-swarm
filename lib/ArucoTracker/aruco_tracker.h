@@ -41,6 +41,10 @@ struct RobotPose {
 // aruco_tracker_config.json — missing keys fall back to the defaults below.
 
 struct ArucoConfig {
+    // Default location of aruco_tracker_config.json, relative to tools/build/
+    // (where the demo binaries are run from).
+    static constexpr const char* kDefaultConfigPath = "../vision/aruco_tracker_config.json";
+
     // Camera — Basler ace2 GigE
     int         width = 1920, height = 1080, fps = 30;
     std::string baslerSerial = "";
@@ -79,7 +83,7 @@ struct ArucoConfig {
     bool debugOverlay = false;
     bool mirrorInput  = false;
 
-    static ArucoConfig fromFile(const std::string& path);
+    static ArucoConfig fromFile(const std::string& path = kDefaultConfigPath);
 };
 
 inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
@@ -660,7 +664,7 @@ private:
                 cv::line(debug, {px,py-6},{px,py+6},{255,255,255},1);
             }
         }
-        std::string hud = "FPS:" + std::to_string((int)fps)
+        std::string hud = "cam_fps:" + std::to_string((int)fps)
                         + "  tags:" + std::to_string(robotCount)
                         + (hasH_ ? "  world" : "  px");
         for (auto& [id, ms] : markerStates_)

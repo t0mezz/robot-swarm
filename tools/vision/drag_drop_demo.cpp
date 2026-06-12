@@ -382,7 +382,7 @@ int main(int argc, char* argv[]) {
     if (swarm.connect()) printf("[hub] Connected.\n");
     else                  printf("[hub] Not available — will retry.\n");
 
-    auto cfg = ArucoConfig::fromFile("vision/aruco_tracker_config.json");
+    auto cfg = ArucoConfig::fromFile();
     if (!serial.empty()) cfg.baslerSerial = serial;
     if (!ip.empty())     cfg.baslerIp     = ip;
     cfg.debugOverlay = true;
@@ -397,7 +397,8 @@ int main(int argc, char* argv[]) {
     }
 
     const char* WIN = "Drag-Drop Demo";
-    cv::namedWindow(WIN, cv::WINDOW_NORMAL);
+    cv::namedWindow(WIN, cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
+    cv::resizeWindow(WIN, tracker.frameSize().width, tracker.frameSize().height);
     cv::setMouseCallback(WIN, onMouse, nullptr);
     if (doCalib) runCalibration(tracker, WIN);
 

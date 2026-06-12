@@ -109,7 +109,7 @@ static void drawPanel(cv::Mat& img, float fps, float latMs,
 // ── main ─────────────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
-    std::string configPath = "vision/aruco_tracker_config.json";
+    std::string configPath = ArucoConfig::kDefaultConfigPath;
     std::string serial, ip;
     bool cfg_mirror = false;
 
@@ -140,6 +140,7 @@ int main(int argc, char* argv[]) {
     // image by default; WINDOW_GUI_NORMAL suppresses that so the window looks
     // like the plain Cocoa HighGUI window on macOS.
     cv::namedWindow("Camera Eval", cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
+    cv::resizeWindow("Camera Eval", sz.width, sz.height);
 
     while (true) {
         if (tracker.update()) {

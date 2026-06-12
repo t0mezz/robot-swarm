@@ -1,9 +1,9 @@
 {
     "basler_serial": "",
     "basler_ip": "",
-    "cam_width": 1224,
-    "cam_height": 1024,
-    "cam_fps": 30,
+    "cam_width": 1492,
+    "cam_height": 1248,
+    "cam_fps": 115, // keep at 115
     "aruco_dict": 0,
     "win_min": 3,
     "win_max": 23,
@@ -17,7 +17,7 @@
     "min_otsu_stddev": 12.0,
     "corner_win": 5,
     "corner_max_iter": 30,
-    "half_res_sweep": false,
+    "half_res_sweep": true,
     "kf_proc_pos": 10e-05,
     "kf_proc_vel": 0.063,
     "kf_meas": 20.0,

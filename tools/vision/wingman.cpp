@@ -386,7 +386,8 @@ static bool runCalibration(ArucoTracker& tracker) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     cv::Mat frame = tracker.debugFrame().clone();
-    cv::namedWindow("Calibration", cv::WINDOW_NORMAL);
+    cv::namedWindow("Calibration", cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
+    cv::resizeWindow("Calibration", frame.cols, frame.rows);
     CalibState cs;
     cv::setMouseCallback("Calibration", onCalibMouse, &cs);
 
@@ -599,7 +600,7 @@ int main(int argc, char* argv[]) {
     if (tryHub()) printf("[hub] Connected.\n");
     else          printf("[hub] Not available — will retry.\n");
 
-    auto cfg = ArucoConfig::fromFile("vision/aruco_tracker_config.json");
+    auto cfg = ArucoConfig::fromFile();
     if (!serial.empty()) cfg.baslerSerial = serial;
     if (!ip.empty())     cfg.baslerIp     = ip;
     ArucoTracker tracker(cfg);
@@ -618,7 +619,8 @@ int main(int argc, char* argv[]) {
     if (doCalib && !runCalibration(tracker)) printf("Calibration skipped.\n");
 
     const char* WIN = "Wingman";
-    cv::namedWindow(WIN, cv::WINDOW_NORMAL);
+    cv::namedWindow(WIN, cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
+    cv::resizeWindow(WIN, tracker.frameSize().width, tracker.frameSize().height);
 
     std::unordered_map<int, std::chrono::steady_clock::time_point> robotLastSeen;
     auto lastHubRetry = std::chrono::steady_clock::now() - std::chrono::seconds(10);
@@ -846,7 +848,7 @@ int main(int argc, char* argv[]) {
                 {10, y}, 17, {180, 180, 180});
             y += 22;
 
-            char fpsBuf[32]; snprintf(fpsBuf, sizeof(fpsBuf), "FPS: %.1f", fps);
+            char fpsBuf[32]; snprintf(fpsBuf, sizeof(fpsBuf), "loop_fps: %.1f", fps);
             tracker.drawText(disp, fpsBuf, {10, y}, 17, {100, 200, 100}); y += 22;
 
             tracker.drawText(disp, "Hub: " + std::string(g_hubFd >= 0 ? "OK" : "DISCONNECTED"),

@@ -225,7 +225,8 @@ static bool runCalibration(ArucoTracker& tracker) {
     }
     cv::Mat frame = tracker.debugFrame().clone();
 
-    cv::namedWindow("Calibration", cv::WINDOW_NORMAL);
+    cv::namedWindow("Calibration", cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
+    cv::resizeWindow("Calibration", frame.cols, frame.rows);
     CalibState cs;
     cv::setMouseCallback("Calibration", onCalibMouse, &cs);
 
@@ -339,7 +340,7 @@ int main(int argc, char* argv[]) {
     else          printf("[hub] Not available — will retry every 2s. "
                          "Start manually: ./swarm_hub /dev/tty.usbmodem*\n");
 
-    auto cfg = ArucoConfig::fromFile("vision/aruco_tracker_config.json");
+    auto cfg = ArucoConfig::fromFile();
     if (!serial.empty()) cfg.baslerSerial = serial;
     if (!ip.empty())     cfg.baslerIp     = ip;
     ArucoTracker tracker(cfg);
@@ -356,7 +357,8 @@ int main(int argc, char* argv[]) {
     if (doCalibrate && !runCalibration(tracker)) printf("Calibration skipped.\n");
 
     const char* WIN = "Vision Controller";
-    cv::namedWindow(WIN, cv::WINDOW_NORMAL);
+    cv::namedWindow(WIN, cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
+    cv::resizeWindow(WIN, tracker.frameSize().width, tracker.frameSize().height);
     cv::setMouseCallback(WIN, onMouse, nullptr);
 
     int8_t motors[MAX_ROBOTS][2] = {};
@@ -647,7 +649,7 @@ int main(int argc, char* argv[]) {
         }
 
         char hud[160];
-        snprintf(hud, sizeof(hud), "FPS:%.0f  Robots:%d  Sel:%s  %s  HUB:%s  Speed:%d(%.2fx)  WASD:%s",
+        snprintf(hud, sizeof(hud), "loop_fps:%.0f  Robots:%d  Sel:%s  %s  HUB:%s  Speed:%d(%.2fx)  WASD:%s",
                  fps, (int)tracker.robots().size(),
                  g_selectedRobot < 0 ? "all" : std::to_string(g_selectedRobot).c_str(),
                  g_hasH ? "world" : "pixels",

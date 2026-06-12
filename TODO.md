@@ -42,6 +42,24 @@
   reproduzierbar)
 - Unit-Tests für reine Funktionen: CRC-8 Framing (SwarmProtocol), Formation-Mathematik
   nach Extraktion
+- Generalisiertes DEBUG-Util: gemeinsame Overlay/HUD-Komponente für cam_fps,
+  loop_fps, Latenz, Batterie-Prozent etc. über alle PC-Tools (circle_demo,
+  shape_demo, vision_controller, wingman, ...), statt jedes Tool sein eigenes
+  Ad-hoc-HUD baut. Erster Schritt schon gemacht: die beiden FPS-Werte heißen
+  jetzt überall "cam_fps" (Capture/Detection-Thread, aruco_tracker.h-Overlay)
+  und "loop_fps" (jeweilige Main/Render-Loop des Tools).
+- Default-Fenster-Framework: gemeinsame Basis für Fenstererstellung über alle
+  PC-Tools (aktuell dupliziert jedes Tool sein eigenes namedWindow/
+  resizeWindow/setMouseCallback/imshow-Boilerplate, siehe der einzelne
+  resizeWindow-Fix vom 2026-06-12). Soll generalisiertes Drawing (Overlays,
+  Marker, HUD), ein Debug-Menü unter dem DEBUG-Util oben sowie generalisierte
+  Window-Properties/Designs (Default-Größe passend zur Kamera-Auflösung,
+  Theme/Layout) bereitstellen.
+
+## Performance: loop_fps vs cam_fps (circle_demo)
+~~Gelöst (2026-06-12)~~ - loop_fps liegt jetzt bei ~115-117, praktisch
+identisch mit cam_fps (115). Details siehe "Erledigt (2026-06-12)" unten und
+PERFORMANCE.md.
 
 ## Hardware
 - Bessere Aruco-Code Halterung bauen
@@ -52,6 +70,16 @@
       CoreGraphics, /dev/tty* Serial-Globs, /tmp/swarm_hub.sock
     - Niedrige Priorität - nach den Refactors oben (Grundlagen + Interface) deutlich
       einfacher umzusetzen
+
+## Erledigt (2026-06-12)
+- loop_fps-vs-cam_fps-Lücke (circle_demo) geschlossen: Ursache war ein
+  `sleep_for(30ms)`-Poll in der Main-Loop (`if (!tracker.update()) {
+  sleep_for(30ms); continue; }`), der bei jedem "noch kein frisches Ergebnis"
+  voll in "other" landete - bei ~115fps-Kamera (8.7ms/Frame) ein massiver
+  Overhead. Fix: 30ms -> 1ms. loop_fps jetzt ~115-117 (≈ cam_fps), unter
+  jedem cpufreq-Governor/EPP. Die komplette Governor/EPP/Throttling/
+  Fan-Curve-Untersuchung in PERFORMANCE.md war dadurch ein Red Herring -
+  Details und Vorher/Nachher-Zahlen dort.
 
 ## Erledigt (2026-06-10)
 - Build-Artefakte aus tools/ in tools/build/ verschoben (ein gemeinsames

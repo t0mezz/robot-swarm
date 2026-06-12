@@ -60,6 +60,8 @@ static EvdevKeyboard g_keyboard;
 static inline bool keyDown(KeyHandle code) {
     return g_keyboard.down(code);
 }
+static int g_kbDeviceCount = -1;  // # evdev devices opened — surfaced in the debug line below
+
 #endif
 
 // ═══════════════════════════════════════════════════════════════
@@ -537,6 +539,20 @@ static void drawUI() {
            g_test.running ? "33" : "90", g_test.status);
     printf("\033[90m────────────────────────────────────────────────────────────────\033[0m\n\n");
 
+    // WASD debug — raw key states straight from keyDown(), so input issues
+    // (wrong device grabbed, missing 'input' group, etc.) are visible at a glance.
+    {
+        bool w = keyDown(kKey_W), a = keyDown(kKey_A), s = keyDown(kKey_S), d = keyDown(kKey_D);
+        char kw = w ? 'W' : '_', ka = a ? 'A' : '_', ks = s ? 'S' : '_', kd = d ? 'D' : '_';
+#ifndef __APPLE__
+        printf("\033[36m  [wasd debug] kbd devices: %d   raw keys: %c %c %c %c   →  out L:%+4d R:%+4d\033[0m\n",
+               g_kbDeviceCount, kw, ka, ks, kd, (int)g_wasdL, (int)g_wasdR);
+#else
+        printf("\033[36m  [wasd debug] raw keys: %c %c %c %c   →  out L:%+4d R:%+4d\033[0m\n",
+               kw, ka, ks, kd, (int)g_wasdL, (int)g_wasdR);
+#endif
+    }
+
     if (g_testMenu) {
         // Test menu overlay
         printf("\033[1;37m  TEST MENU\033[0m\n");
@@ -655,7 +671,8 @@ int main(int argc, char* argv[]) {
     rawMode();
 
 #ifndef __APPLE__
-    if (g_keyboard.open() == 0)
+    g_kbDeviceCount = g_keyboard.open();
+    if (g_kbDeviceCount == 0)
         fprintf(stderr, "[wasd] no readable keyboard in /dev/input — WASD disabled. "
                         "Add yourself to the 'input' group (sudo usermod -aG input $USER, "
                         "then log out and back in).\n");

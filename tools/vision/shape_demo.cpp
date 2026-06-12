@@ -37,11 +37,11 @@ static constexpr float K_ANGLE         = 0.50f;
 static constexpr float K_YAW_D         = 0.08f;
 static constexpr float MAX_SPEED       = 51.7f;
 static constexpr float MAX_TURN        = 16.0f;
-static constexpr float ARRIVAL_MM      = 55.0f;
+static constexpr float ARRIVAL_MM      = 40.0f;
 static constexpr float SEND_INT_S      = 0.05f;
 static constexpr float YAW_ALPHA       = 0.25f;
 static constexpr float EVICT_S         = 5.0f;
-static constexpr float WAYPOINT_STEP   = 50.0f;  // mm between sampled waypoints
+static constexpr float WAYPOINT_STEP   = 25.0f;  // mm between sampled waypoints
 static constexpr int   MAX_ROBOTS      = 32;
 static constexpr int   TEL_HEIGHT      = 200;
 
@@ -327,12 +327,12 @@ static cv::Mat buildTelPanel(int width, const std::vector<RobotTelRow>& rows,
     char sum[300];
     if (mode == Mode::DRAW)
         snprintf(sum, sizeof(sum),
-            "FPS:%.0f  Robots:%d/%d  Path:%.0fmm  Speed:%.0f%%  MODE:DRAW  TOOL:%s  HUB:%s",
+            "loop_fps:%.0f  Robots:%d/%d  Path:%.0fmm  Speed:%.0f%%  MODE:DRAW  TOOL:%s  HUB:%s",
             fps, visible, registered, pathMm, speedPct,
             TOOL_NAMES[(int)tool], hubOk ? "OK" : "OFFLINE");
     else
         snprintf(sum, sizeof(sum),
-            "FPS:%.0f  Robots:%d/%d  Path:%.0fmm  Speed:%.0f%%  MODE:TRACK  HUB:%s",
+            "loop_fps:%.0f  Robots:%d/%d  Path:%.0fmm  Speed:%.0f%%  MODE:TRACK  HUB:%s",
             fps, visible, registered, pathMm, speedPct, hubOk ? "OK" : "OFFLINE");
     ArucoTracker::drawText(panel, sum, {8, 22}, 17, hubOk ? COL_OK : COL_BAD);
     cv::line(panel, {0,30}, {width,30}, {45,45,45}, 1);
@@ -459,7 +459,7 @@ int main(int argc, char* argv[]) {
     else                  printf("[hub] Not available — will retry.\n");
 
     // Tracker
-    auto cfg = ArucoConfig::fromFile("vision/aruco_tracker_config.json");
+    auto cfg = ArucoConfig::fromFile();
     if (!serial.empty()) cfg.baslerSerial = serial;
     if (!ip.empty())     cfg.baslerIp     = ip;
     cfg.debugOverlay = true;
@@ -475,7 +475,8 @@ int main(int argc, char* argv[]) {
     }
 
     const char* WIN = "Shape Demo";
-    cv::namedWindow(WIN, cv::WINDOW_NORMAL);
+    cv::namedWindow(WIN, cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
+    cv::resizeWindow(WIN, tracker.frameSize().width, tracker.frameSize().height);
     cv::setMouseCallback(WIN, onMouse, nullptr);
     if (doCalib) runCalibration(tracker, WIN);
 
