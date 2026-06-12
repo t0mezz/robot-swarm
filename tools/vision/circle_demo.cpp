@@ -1,7 +1,7 @@
 // circle_demo.cpp — Circle orbit formation controller
 // Usage: ./circle_demo [--serial SN] [--ip IP] [--calibrate]
 //                      [--radius MM] [--min-gap MM] [--orbit-speed DEG_S]
-//                      [--speed PCT]
+//                      [--speed PCT] [--log-perf] [--log-score]
 // Controls: left-click = set circle centre, s = stop, c = calibrate,
 //           0-9 = select robot (again to deselect),
 //           +/- = radius ±25mm  (or robot speed ±10% when robot selected),
@@ -37,16 +37,46 @@ static constexpr float DEFAULT_MIN_GAP_MM     = 0.0f;   // min arc-chord distanc
 static constexpr float DEFAULT_ORBIT_SPEED    = 30.0f;  // deg/s, default orbit speed in tracking mode
 
 static constexpr float K_DIST    = 0.40f;
-static constexpr float K_ANGLE   = 0.45f;   // heading P-gain — corrects residual error only; orbit feedforward carries the steady turn
-static constexpr float K_YAW_D   = 0.15f;   // heading D-gain: damps transient overshoot
+static constexpr float K_ANGLE   = 0.45f;  // heading P-gain — corrects residual error only; orbit feedforward carries the steady turn
+static constexpr float K_YAW_D   = 0.15f;  // heading D-gain: damps transient overshoot
 static constexpr float K_FF_YAW  = 1.00f;   // orbit-mode yaw feedforward, turn-units per deg/s of required yaw rate — tune empirically (see orbit control below)
 static constexpr float K_RAD     = 0.30f;   // radial correction gain (mm/s per mm of error)
 static constexpr float MAX_SPEED = 100.0f;  // full motor range for high-speed testing
-static constexpr float MAX_TURN  = 24.0f;
-static constexpr float ARRIVAL_MM       = 60.0f;   // stop when within this distance of slot
+static constexpr float MAX_TURN  = 40.0f;
+// Slew-rate limit on the commanded turn differential, applied at the final
+// output stage. This is the actuator-side counterpart to the D-term
+// windowing below: whatever measurement noise survives upstream, this caps
+// d(turn)/dt directly — by construction the controller score's `jerk` term
+// can never exceed MAX_TURN_RATE. 200 units/s = full -40..+40 swing in 0.4s;
+// tune up if corrections feel sluggish, down if still buzzing.
+static constexpr float MAX_TURN_RATE = 120.0f;  // turn-units/s
+static constexpr float ARRIVAL_MM       = 40.0f;   // stop when within this distance of slot
 static constexpr float SEND_INTERVAL_S  = 0.05f;
-// Yaw EMA: lower α = smoother but more lag; higher α = faster tracking, less overshoot.
-static constexpr float YAW_ALPHA = 0.25f;
+
+// Yaw EMA: smooths the raw per-frame ArUco corner-angle before it reaches any
+// controller. At 115fps (~8.7ms/frame) raw yaw jitters by ~1deg frame-to-frame
+// from corner-detection noise alone; left unfiltered, that noise is what the
+// D-term (divided by a ~10ms dt) blows up into ~30 turn-units of pure buzz per
+// frame. alpha=0.08 gives ~12-frame memory (~105ms), matching the smoothing
+// the old alpha=0.25 gave at 30fps (~4-frame memory, ~133ms).
+static constexpr float YAW_ALPHA = 0.08f;
+
+// D-term rate window: angleErr/yaw rate-of-change is estimated via
+// sample-and-hold over this period rather than per-frame, since
+// differencing consecutive ~8.7ms frames just measures measurement noise —
+// SEND_INTERVAL_S is the actuation rate, so there's no benefit to a faster
+// derivative anyway.
+static constexpr float D_TERM_WINDOW_S = SEND_INTERVAL_S;
+
+// Controller score: three EMA-filtered terms isolating the PD controller's
+// failure modes (see ControlScore below). SCORE_ALPHA sets the averaging
+// time-constant (~1/SCORE_ALPHA frames, so ~33s at 30fps for 0.03).
+static constexpr float SCORE_ALPHA = 0.03f;
+static constexpr float W_BIAS     = 1.0f;   // weight on persistent heading error  (deg)
+static constexpr float W_OSC      = 1.0f;   // weight on oscillation RMS           (deg)
+static constexpr float W_JERK     = 0.05f;  // weight on output-jerk RMS           (turn-units/s)
+static constexpr float W_POS_BIAS = 0.1f;   // weight on persistent radial (off-track) error (per mm)
+static constexpr float W_POS_OSC  = 0.1f;   // weight on radial oscillation RMS              (per mm)
 
 // ── Protocol ─────────────────────────────────────────────────────────────────
 
@@ -143,14 +173,107 @@ static float normAngle(float a) {
 }
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
+// Sample-and-hold rate-of-change estimator for an angle (deg/s). Holds the
+// previous rate until D_TERM_WINDOW_S has elapsed since the last sample, so
+// the result reflects change over a real time window instead of frame-to-frame
+// measurement noise (see D_TERM_WINDOW_S above).
+struct RateEstimator {
+    bool   init      = false;
+    float  baseAngle = 0.f;
+    float  rate      = 0.f;
+    std::chrono::steady_clock::time_point baseTime;
+};
+
+static float updateRate(RateEstimator& r, float angle,
+                         std::chrono::steady_clock::time_point now,
+                         float windowS) {
+    if (!r.init) {
+        r.baseAngle = angle;
+        r.baseTime  = now;
+        r.init      = true;
+        return 0.f;
+    }
+    float elapsed = std::chrono::duration<float>(now - r.baseTime).count();
+    if (elapsed >= windowS) {
+        r.rate      = normAngle(angle - r.baseAngle) / elapsed;
+        r.baseAngle = angle;
+        r.baseTime  = now;
+    }
+    return r.rate;
+}
+
+// ── Controller performance score ─────────────────────────────────────────────
+//
+// Four failure modes of the PD controller, each isolated by a different filter
+// on the (angleErr, turn, radialErr) signal triple:
+//
+//   1. General error    — persistent offset from the desired heading (gain too
+//                          low, feedforward miscalibrated, ...). Captured as a
+//                          slow EMA of angleErr itself: a controller that's just
+//                          lagging settles to a nonzero mean error.
+//   2. Oscillating error — oversteering / ringing. Captured as the RMS of the
+//                          high-frequency residual (angleErr minus its slow EMA)
+//                          — overshoot makes angleErr swing around the mean even
+//                          when the mean itself is ~0.
+//   3. Snappy output     — too little smoothing. Captured as the RMS of
+//                          d(turn)/dt: a controller riding raw, noisy yaw turns
+//                          measurement noise directly into rapid motor-command
+//                          changes.
+//   4. Off-track position — the heading can be perfectly tracked (angleErr ~ 0)
+//                          while the robot itself sits off the circle, e.g.
+//                          orbiting at the wrong radius. Captured the same way
+//                          as (1)/(2) but on radialErr = dist(robot, centre) -
+//                          circle.radius (mm): a slow EMA for a persistent
+//                          radius offset, and the RMS of its residual for
+//                          radial "breathing" oscillation.
+//
+// All four are reported in native units plus a single weighted composite
+// (lower = better) — a natural objective for an outer optimizer (e.g. a
+// Gaussian-process search over K_ANGLE / K_YAW_D / K_FF_YAW / K_RAD).
+struct ControlScore {
+    bool  init       = false;
+    float biasEma    = 0.f;   // slow EMA of angleErr              (deg)
+    float oscVar     = 0.f;   // EMA of (angleErr - biasEma)^2     (deg^2)
+    float jerkVar    = 0.f;   // EMA of (d turn/dt)^2              ((turn-units/s)^2)
+    float posBiasEma = 0.f;   // slow EMA of radialErr             (mm)
+    float posVar     = 0.f;   // EMA of (radialErr - posBiasEma)^2 (mm^2)
+    float prevTurn   = 0.f;
+};
+
+static void updateScore(ControlScore& sc, float angleErr, float turn, float radialErr, float dt) {
+    if (!sc.init) {
+        sc.biasEma    = angleErr;
+        sc.posBiasEma = radialErr;
+        sc.prevTurn   = turn;
+        sc.init       = true;
+        return;
+    }
+    sc.biasEma += SCORE_ALPHA * (angleErr - sc.biasEma);
+    float osc   = angleErr - sc.biasEma;
+    sc.oscVar  += SCORE_ALPHA * (osc * osc - sc.oscVar);
+    float jerk  = (turn - sc.prevTurn) / dt;
+    sc.jerkVar += SCORE_ALPHA * (jerk * jerk - sc.jerkVar);
+    sc.prevTurn = turn;
+
+    sc.posBiasEma += SCORE_ALPHA * (radialErr - sc.posBiasEma);
+    float posOsc   = radialErr - sc.posBiasEma;
+    sc.posVar      += SCORE_ALPHA * (posOsc * posOsc - sc.posVar);
+}
+
+static float totalScore(const ControlScore& sc) {
+    return W_BIAS     * fabsf(sc.biasEma)
+         + W_OSC      * sqrtf(std::max(sc.oscVar,  0.f))
+         + W_JERK     * sqrtf(std::max(sc.jerkVar, 0.f))
+         + W_POS_BIAS * fabsf(sc.posBiasEma)
+         + W_POS_OSC  * sqrtf(std::max(sc.posVar,  0.f));
+}
+
 // ── Calibration ───────────────────────────────────────────────────────────────
 
 static cv::Mat  g_H;
 static bool     g_hasH = false;
 static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
 static const char* CIRCLE_FILE     = "/tmp/circle_demo.yml";
-
-static std::unordered_map<int,float> g_robotSpeed;         // per-robot multiplier (forward-decl for save/load)
 
 static cv::Point2f pixelToWorld(cv::Point2f px) {
     if (!g_hasH) return px;
@@ -191,7 +314,8 @@ static bool runCalibration(ArucoTracker& tracker) {
     }
     cv::Mat frame = tracker.debugFrame().clone();
 
-    cv::namedWindow("Calibration", cv::WINDOW_NORMAL);
+    cv::namedWindow("Calibration", cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
+    cv::resizeWindow("Calibration", frame.cols, frame.rows);
     CalibState cs;
     cv::setMouseCallback("Calibration", onCalibMouse, &cs);
 
@@ -254,13 +378,6 @@ static void saveCircle(const CircleState& c) {
        << "radius"      << c.radius
        << "min_gap"     << c.minGapMm
        << "orbit_spd"   << c.orbitSpeed;
-    // Persist per-robot speed overrides as a flat [id, mult, id, mult, ...] sequence.
-    std::vector<float> speedEntries;
-    for (auto& [id, spd] : g_robotSpeed) {
-        speedEntries.push_back((float)id);
-        speedEntries.push_back(spd);
-    }
-    fs << "robot_speeds" << speedEntries;
     printf("[circle] Saved: centre=(%.0f,%.0f) radius=%.0fmm gap=%.0fmm\n",
            c.centre.x, c.centre.y, c.radius, c.minGapMm);
 }
@@ -282,14 +399,6 @@ static bool loadCircle(CircleState& c) {
     if (r   >  0.f) c.radius     = r;
     if (gap >= 0.f) c.minGapMm   = gap;
     if (spd != 0.f) c.orbitSpeed = spd;
-    // Restore per-robot speed overrides.
-    std::vector<float> speedEntries;
-    fs["robot_speeds"] >> speedEntries;
-    for (size_t i = 0; i + 1 < speedEntries.size(); i += 2) {
-        int id = (int)speedEntries[i];
-        if (id >= 0 && id < MAX_ROBOTS)
-            g_robotSpeed[id] = speedEntries[i + 1];
-    }
     printf("[circle] Loaded: centre=(%.0f,%.0f) radius=%.0fmm gap=%.0fmm orbit=%.0fdeg/s\n",
            c.centre.x, c.centre.y, c.radius, c.minGapMm, c.orbitSpeed);
     return true;
@@ -346,17 +455,9 @@ static void onMouse(int event, int x, int y, int, void*) {
     if (event == cv::EVENT_LBUTTONDOWN) { g_leftClick = true; g_clickPt = {x, y}; }
 }
 
-// ── Per-robot speed ───────────────────────────────────────────────────────────
+// ── Speed ─────────────────────────────────────────────────────────────────────
 
 static float g_defaultSpeedMult = 0.40f;                   // set by --speed; lower default since MAX_SPEED is now 100
-// g_robotSpeed declared above (needed by saveCircle/loadCircle)
-static int   g_selectedRobot = -1;                         // -1 = none selected
-static bool  g_allSelected   = false;                      // '.' = all selected → +/- changes default speed
-
-static float robotSpeed(int id) {
-    auto it = g_robotSpeed.find(id);
-    return it != g_robotSpeed.end() ? it->second : g_defaultSpeedMult;
-}
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
@@ -371,6 +472,8 @@ int main(int argc, char* argv[]) {
     float orbitSpeed  = -1.f;
     float speedPct    = 70.f;
     bool  doCalibrate = false;
+    bool  logPerf     = false;
+    bool  logScore    = false;
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--serial")       && i+1<argc) serial     = argv[++i];
@@ -380,13 +483,15 @@ int main(int argc, char* argv[]) {
         if (!strcmp(argv[i], "--orbit-speed")  && i+1<argc) orbitSpeed = atof(argv[++i]);
         if (!strcmp(argv[i], "--speed")        && i+1<argc) speedPct   = atof(argv[++i]);
         if (!strcmp(argv[i], "--calibrate"))                doCalibrate = true;
+        if (!strcmp(argv[i], "--log-perf"))                 logPerf     = true;
+        if (!strcmp(argv[i], "--log-score"))                logScore    = true;
     }
     g_defaultSpeedMult = clampf(speedPct / 100.f, 0.05f, 2.0f);
 
     if (tryHub()) printf("[hub] Connected.\n");
     else          printf("[hub] Not available — will retry.\n");
 
-    auto cfg = ArucoConfig::fromFile("vision/aruco_tracker_config.json");
+    auto cfg = ArucoConfig::fromFile();
     if (!serial.empty()) cfg.baslerSerial = serial;
     if (!ip.empty())     cfg.baslerIp     = ip;
     cfg.debugOverlay = true;
@@ -404,7 +509,8 @@ int main(int argc, char* argv[]) {
     if (doCalibrate && !runCalibration(tracker)) printf("Calibration skipped.\n");
 
     const char* WIN = "Circle Demo";
-    cv::namedWindow(WIN, cv::WINDOW_NORMAL);
+    cv::namedWindow(WIN, cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
+    cv::resizeWindow(WIN, tracker.frameSize().width, tracker.frameSize().height);
     cv::setMouseCallback(WIN, onMouse, nullptr);
 
     CircleState circle;
@@ -430,6 +536,13 @@ int main(int argc, char* argv[]) {
     int  frameCount   = 0;
     float fps         = 0;
 
+    // ── Phase-1 perf instrumentation (see TODO.md "Performance: loop_fps vs
+    // cam_fps") ──────────────────────────────────────────────────────────
+    // Coarse per-section timings, printed once per second alongside loop_fps,
+    // to locate where the loop falls behind cam_fps before optimizing.
+    auto   prevIterT  = lastSend;
+    double accTotal   = 0, accControl = 0, accDraw = 0, accImshow = 0, accWaitKey = 0;
+
     std::unordered_map<int, std::chrono::steady_clock::time_point> robotLastSeen;
     std::unordered_map<int, std::chrono::steady_clock::time_point> robotLostSince;
 
@@ -446,21 +559,27 @@ int main(int argc, char* argv[]) {
     // Per-robot EMA-smoothed yaw.  Seeded on first detection; updated only when
     // the robot is visible.  Handles angle wrap via normAngle delta.
     std::unordered_map<int, float> smoothedYaw;
-    // Previous heading error per robot — used to compute the D term of the position-mode PD controller.
-    std::unordered_map<int, float> prevAngleErr;
-    // Previous (smoothed) yaw per robot — orbit mode measures actual yaw rate
-    // from this for the feedforward/D-term (see orbit control loop below).
-    std::unordered_map<int, float> prevYaw;
+    // D-term rate estimators (see RateEstimator above): position mode tracks
+    // d(angleErr)/dt, orbit mode tracks d(yaw)/dt — both sample-and-hold over
+    // D_TERM_WINDOW_S.
+    std::unordered_map<int, RateEstimator> angleErrRate;
+    std::unordered_map<int, RateEstimator> yawRateEst;
+    // Last slew-limited turn output per robot (see MAX_TURN_RATE above).
+    std::unordered_map<int, float> prevTurnOut;
+    // Controller performance score per robot (see ControlScore above).
+    std::unordered_map<int, ControlScore> robotScore;
 
-    printf("\nLeft-click = centre  +/- = radius  . = select all (then +/- = speed)  0-9 = select robot\nt = orbit  [ / ] = orbit speed  s = stop  c = calibrate  q = quit\n\n");
+    printf("\nLeft-click = centre  +/- = radius\nt = orbit  [ / ] = orbit speed  s = stop  c = calibrate  q = quit\n\n");
 
     while (g_running) {
         if (!tracker.update()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
 
         auto now = std::chrono::steady_clock::now();
+        accTotal += std::chrono::duration<double>(now - prevIterT).count();
+        prevIterT = now;
         ++frameCount;
         float controlDt = clampf(std::chrono::duration<float>(now - lastControlT).count(), 0.01f, 0.2f);
         lastControlT = now;
@@ -471,7 +590,29 @@ int main(int argc, char* argv[]) {
         }
 
         float dt = std::chrono::duration<float>(now - lastFpsT).count();
-        if (dt >= 1.0f) { fps = frameCount / dt; frameCount = 0; lastFpsT = now; }
+        if (dt >= 1.0f) {
+            fps = frameCount / dt;
+            if (frameCount > 0 && logPerf) {
+                double n = (double)frameCount;
+                printf("[perf] loop_fps=%.0f  total=%.2fms  control=%.2fms  draw=%.2fms  imshow=%.2fms  waitKey=%.2fms  other=%.2fms\n",
+                       fps, accTotal/n*1000.0, accControl/n*1000.0, accDraw/n*1000.0,
+                       accImshow/n*1000.0, accWaitKey/n*1000.0,
+                       (accTotal - accControl - accDraw - accImshow - accWaitKey)/n*1000.0);
+            }
+            frameCount = 0; lastFpsT = now;
+            accTotal = accControl = accDraw = accImshow = accWaitKey = 0;
+
+            if (logScore) {
+                for (auto& [id, sc] : robotScore) {
+                    if (!sc.init) continue;
+                    printf("[score] robot %d  bias=%.2fdeg  osc=%.2fdeg  jerk=%.2f  posBias=%+.1fmm  posOsc=%.1fmm  total=%.2f\n",
+                           id, fabsf(sc.biasEma), sqrtf(std::max(sc.oscVar, 0.f)),
+                           sqrtf(std::max(sc.jerkVar, 0.f)),
+                           sc.posBiasEma, sqrtf(std::max(sc.posVar, 0.f)),
+                           totalScore(sc));
+                }
+            }
+        }
 
         // ── Handle click: set new circle centre ───────────────────────────────
         if (g_leftClick) {
@@ -542,8 +683,10 @@ int main(int argc, char* argv[]) {
                     robotLostSince.erase(id);
                     persistentSlots.erase(id);
                     smoothedYaw.erase(id);
-                    prevAngleErr.erase(id);
-                    prevYaw.erase(id);
+                    angleErrRate.erase(id);
+                    yawRateEst.erase(id);
+                    prevTurnOut.erase(id);
+                    robotScore.erase(id);
                     for (auto& [rid, sidx] : robotSlotIndex)
                         if (sidx > evicted) sidx--;
                     registeredCount--;
@@ -631,11 +774,12 @@ int main(int argc, char* argv[]) {
                 float ty = (circle.orbitSpeed >= 0.f) ?  rx : -rx;
 
                 // Tangential speed: angular rate (deg/s → rad/s) × radius, capped, then scaled.
-                // robotSpeed multiplies the cap (not the raw velocity) so it has a linear
-                // effect across its full range regardless of how fast the orbit geometry wants
-                // to run — consistent with position mode's "maxSpd = MAX_SPEED * robotSpeed".
+                // g_defaultSpeedMult multiplies the cap (not the raw velocity) so it has a
+                // linear effect across its full range regardless of how fast the orbit
+                // geometry wants to run — consistent with position mode's
+                // "maxSpd = MAX_SPEED * g_defaultSpeedMult".
                 float omegaRad = fabsf(circle.orbitSpeed) * (float)M_PI / 180.f;
-                float vTan = std::min(omegaRad * circle.radius, MAX_SPEED) * robotSpeed(id);
+                float vTan = std::min(omegaRad * circle.radius, MAX_SPEED) * g_defaultSpeedMult;
 
                 // Scale tangential speed down when too close to the leading robot.
                 if (circle.minGapMm > 0.f && chordToLeader.count(id)) {
@@ -690,25 +834,34 @@ int main(int argc, char* argv[]) {
                 // D-term: (ffOmegaDeg − yawRate) is the analytic d(angleErr)/dt
                 // — the same quantity the old code numerically differenced out
                 // of the atan2-derived (and therefore noisy) angleErr, but here
-                // built from one clean measurement (yawRate, itself riding on
-                // the already EMA-smoothed yaw) instead of finite-differencing
-                // two noisy signals. Less noise reaching the D-term means less
-                // of the high-frequency jitter that forced the gains down.
-                float yawRate = 0.f;
-                {
-                    auto it = prevYaw.find(id);
-                    if (it != prevYaw.end())
-                        yawRate = normAngle(pose.yaw - it->second) / controlDt;
-                    prevYaw[id] = pose.yaw;
-                }
-                float dAngleErr = clampf(ffOmegaDeg - yawRate, -300.f, 300.f);
+                // built from one clean measurement (yawRate) instead of
+                // finite-differencing two noisy signals. yawRate itself is
+                // sample-and-held over D_TERM_WINDOW_S (see RateEstimator) so
+                // it reflects real angular velocity, not per-frame yaw jitter.
+                float yawRate    = updateRate(yawRateEst[id], pose.yaw, now, D_TERM_WINDOW_S);
+                float dAngleErr  = clampf(ffOmegaDeg - yawRate, -300.f, 300.f);
 
+                // Gate the feedforward by headingSc too: turnFF assumes the robot
+                // is cruising tangentially at vTan, which only holds once it's
+                // roughly aligned. While |angleErr| >= 90° (headingSc == 0, pure
+                // spin-to-align), an unconditional turnFF can cancel the feedback
+                // term to ~0 turn — with forward already 0 from headingSc, both
+                // motors land at ~0 and the robot freezes in a self-consistent
+                // deadlock (nothing changes next frame, so it never recovers).
+                // Dropping turnFF here leaves pure feedback, which for
+                // |angleErr| >= 90° always produces |turn| >= K_ANGLE*90 — large
+                // enough to clamp to MAX_TURN, so the deadlock can't form.
                 float forward = clampf(vMag, 0.f, MAX_SPEED) * headingSc;
-                float turn    = clampf(turnFF + K_ANGLE * angleErr + K_YAW_D * dAngleErr,
+                float turnTgt = clampf(turnFF * headingSc + K_ANGLE * angleErr + K_YAW_D * dAngleErr,
                                        -MAX_TURN, MAX_TURN);
+                float maxStep = MAX_TURN_RATE * controlDt;
+                float turn    = clampf(turnTgt, prevTurnOut[id] - maxStep, prevTurnOut[id] + maxStep);
+                prevTurnOut[id] = turn;
 
                 motors[id][0] = (int8_t)clampf(forward + turn, -100, 100);
                 motors[id][1] = (int8_t)clampf(forward - turn, -100, 100);
+
+                updateScore(robotScore[id], angleErr, turn, distC - circle.radius, controlDt);
 
             } else {
                 // ── Position mode: drive to assigned slot and stop ────────────
@@ -732,23 +885,25 @@ int main(int argc, char* argv[]) {
                 float headingN  = clampf(fabsf(angleErr) / 90.f, 0.f, 1.f);
                 float headingSc = 1.f - headingN * headingN;
                 float brakeSc   = clampf((dist - ARRIVAL_MM) / ARRIVAL_MM, 0.f, 1.f);
-                float maxSpd    = MAX_SPEED * robotSpeed(id);
+                float maxSpd    = MAX_SPEED * g_defaultSpeedMult;
 
-                float dAngleErr = 0.f;
-                {
-                    auto it = prevAngleErr.find(id);
-                    if (it != prevAngleErr.end())
-                        dAngleErr = clampf(normAngle(angleErr - it->second) / controlDt,
-                                           -300.f, 300.f);
-                    prevAngleErr[id] = angleErr;
-                }
+                // Sample-and-held over D_TERM_WINDOW_S — see RateEstimator.
+                float dAngleErr = clampf(updateRate(angleErrRate[id], angleErr, now, D_TERM_WINDOW_S),
+                                         -300.f, 300.f);
 
                 float forward = clampf(K_DIST * dist, 0.f, maxSpd) * headingSc * brakeSc;
-                float turn    = clampf(K_ANGLE * angleErr + K_YAW_D * dAngleErr,
+                float turnTgt = clampf(K_ANGLE * angleErr + K_YAW_D * dAngleErr,
                                        -MAX_TURN, MAX_TURN);
+                float maxStep = MAX_TURN_RATE * controlDt;
+                float turn    = clampf(turnTgt, prevTurnOut[id] - maxStep, prevTurnOut[id] + maxStep);
+                prevTurnOut[id] = turn;
 
                 motors[id][0] = (int8_t)clampf(forward + turn, -100, 100);
                 motors[id][1] = (int8_t)clampf(forward - turn, -100, 100);
+
+                float distCentre = sqrtf((pose.x - circle.centre.x)*(pose.x - circle.centre.x)
+                                        + (pose.y - circle.centre.y)*(pose.y - circle.centre.y));
+                updateScore(robotScore[id], angleErr, turn, distCentre - circle.radius, controlDt);
             }
         }
 
@@ -769,6 +924,9 @@ int main(int argc, char* argv[]) {
             lastSend = now;
             memcpy(lastMotors, motors, sizeof(motors));
         }
+
+        auto tControlEnd = std::chrono::steady_clock::now();
+        accControl += std::chrono::duration<double>(tControlEnd - now).count();
 
         // ── Draw HUD ──────────────────────────────────────────────────────────
         cv::Mat disp = tracker.debugFrame().clone();
@@ -818,7 +976,7 @@ int main(int argc, char* argv[]) {
                 float vty = (circle.orbitSpeed >= 0.f) ?  rx : -rx;
 
                 float omegaRad = fabsf(circle.orbitSpeed) * (float)M_PI / 180.f;
-                float vTan = std::min(omegaRad * circle.radius, MAX_SPEED) * robotSpeed(id);
+                float vTan = std::min(omegaRad * circle.radius, MAX_SPEED) * g_defaultSpeedMult;
                 if (circle.minGapMm > 0.f && chordToLeader.count(id))
                     vTan *= clampf((chordToLeader[id] - circle.minGapMm) / circle.minGapMm, 0.f, 1.f);
 
@@ -865,48 +1023,31 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // ── Per-robot speed labels + selection ring ───────────────────────────
-        for (auto& [id, pose] : poseById) {
-            float spd = robotSpeed(id);
-            bool selected = (id == g_selectedRobot) || g_allSelected;
-            if (selected)
-                cv::circle(disp, {(int)pose.px,(int)pose.py}, 22, {0,255,255}, 2, cv::LINE_AA);
-            if (spd != 1.0f || selected) {
-                char buf[16]; snprintf(buf, sizeof(buf), "%.0f%%", spd * 100.f);
-                tracker.drawText(disp, buf,
-                    cv::Point2f(pose.px + 14, pose.py + 20), 16,
-                    selected ? cv::Scalar(0,255,255) : cv::Scalar(180,180,180));
-            }
-        }
-
         // ── Status bar ────────────────────────────────────────────────────────
-        char hudSel[48];
-        if (g_allSelected)
-            snprintf(hudSel, sizeof(hudSel), "SEL:all(%.0f%%)  +/-=spd",
-                     g_defaultSpeedMult * 100.f);
-        else if (g_selectedRobot >= 0)
-            snprintf(hudSel, sizeof(hudSel), "SEL:%d(%.0f%%)  +/-=spd",
-                     g_selectedRobot, robotSpeed(g_selectedRobot) * 100.f);
-        else
-            snprintf(hudSel, sizeof(hudSel), "SEL:none  +/-=radius");
-
         char hud[256];
         snprintf(hud, sizeof(hud),
-            "FPS:%.0f  Robots:%d/%d  R:%.0fmm  Gap:%.0fmm  %s  HUB:%s  %s  %s",
+            "loop_fps:%.0f  Robots:%d/%d  R:%.0fmm  Gap:%.0fmm  %s  HUB:%s  %s",
             fps, (int)poseById.size(), registeredCount,
             circle.radius, circle.minGapMm,
             g_hasH ? "world" : "pixels",
             g_hubFd >= 0 ? "OK" : "INACTIVE",
             circle.tracking
                 ? cv::format("ORBIT %.0fdeg/s", circle.orbitSpeed).c_str()
-                : "POSITION",
-            hudSel);
+                : "POSITION");
         cv::Scalar hudCol = g_hubFd >= 0 ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 120, 255);
         tracker.drawText(disp, hud, {10, disp.rows - 19}, 18, hudCol);
 
+        auto tDrawEnd = std::chrono::steady_clock::now();
+        accDraw += std::chrono::duration<double>(tDrawEnd - tControlEnd).count();
+
         cv::imshow(WIN, disp);
 
+        auto tImshowEnd = std::chrono::steady_clock::now();
+        accImshow += std::chrono::duration<double>(tImshowEnd - tDrawEnd).count();
+
         int key = cv::waitKey(1) & 0xFF;
+
+        accWaitKey += std::chrono::duration<double>(std::chrono::steady_clock::now() - tImshowEnd).count();
         if (key == 'q' || key == 27) break;
         if (key == 's') {
             memset(motors, 0, sizeof(motors));
@@ -916,49 +1057,14 @@ int main(int argc, char* argv[]) {
         }
         if (key == 'c') runCalibration(tracker);
         if (key == '+' || key == '=') {
-            if (g_allSelected) {
-                g_defaultSpeedMult = clampf(g_defaultSpeedMult + 0.1f, 0.05f, 2.0f);
-                printf("All speed: %.0f%%\n", g_defaultSpeedMult * 100.f);
-            } else if (g_selectedRobot >= 0) {
-                float s = clampf(robotSpeed(g_selectedRobot) + 0.1f, 0.05f, 2.0f);
-                g_robotSpeed[g_selectedRobot] = s;
-                printf("Robot %d speed: %.0f%%\n", g_selectedRobot, s * 100.f);
-            } else {
-                circle.radius += 25.f;
-                printf("Radius: %.0f mm\n", circle.radius);
-                saveCircle(circle);
-            }
+            circle.radius += 25.f;
+            printf("Radius: %.0f mm\n", circle.radius);
+            saveCircle(circle);
         }
         if (key == '-') {
-            if (g_allSelected) {
-                g_defaultSpeedMult = clampf(g_defaultSpeedMult - 0.1f, 0.05f, 2.0f);
-                printf("All speed: %.0f%%\n", g_defaultSpeedMult * 100.f);
-            } else if (g_selectedRobot >= 0) {
-                float s = clampf(robotSpeed(g_selectedRobot) - 0.1f, 0.05f, 2.0f);
-                g_robotSpeed[g_selectedRobot] = s;
-                printf("Robot %d speed: %.0f%%\n", g_selectedRobot, s * 100.f);
-            } else {
-                circle.radius = std::max(50.f, circle.radius - 25.f);
-                printf("Radius: %.0f mm\n", circle.radius);
-                saveCircle(circle);
-            }
-        }
-        if (key >= '0' && key <= '9') {
-            int id = key - '0';
-            if (g_selectedRobot == id) {
-                g_selectedRobot = -1;
-                printf("Deselected robot %d\n", id);
-            } else {
-                g_selectedRobot = id;
-                g_allSelected   = false;
-                printf("Selected robot %d  (speed %.0f%%)\n", id, robotSpeed(id) * 100.f);
-            }
-        }
-        if (key == '.') {
-            g_allSelected   = !g_allSelected;
-            g_selectedRobot = -1;
-            printf(g_allSelected ? "All selected  (speed %.0f%%)  +/-=speed\n"
-                                 : "Deselected all\n", g_defaultSpeedMult * 100.f);
+            circle.radius = std::max(50.f, circle.radius - 25.f);
+            printf("Radius: %.0f mm\n", circle.radius);
+            saveCircle(circle);
         }
         if (key == 't') {
             circle.tracking = !circle.tracking;
