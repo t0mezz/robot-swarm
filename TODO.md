@@ -1,5 +1,12 @@
 # TODO
 
+## Bug: Latency
+- Find out why Latency is only getting calculated and send, when Data is
+  written to the hub and send through the dongle. They should always be
+  a calculated latency calculated with periodic pings
+- Find out why, as soon as a second client (swarm_terminal) listens to the
+  hub, the latency explodes (~x2)
+
 ## Grundlagen-Refactor (Basis für die folgenden Punkte)
 - Codebase aufräumen
     - Socket/Protokoll-Boilerplate zentralisieren (aktuell in swarm_controller, swarm_terminal,
