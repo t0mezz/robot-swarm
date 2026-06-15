@@ -9,6 +9,7 @@
 //           q/Esc = quit
 
 #include "aruco_tracker.h"
+#include "SwarmClient.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -20,15 +21,7 @@
 #include <unordered_map>
 #include <chrono>
 #include <thread>
-#include <mutex>
 #include <algorithm>
-
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <sys/wait.h>
-#include <glob.h>
 
 // ── Controller tunables ───────────────────────────────────────────────────────
 
@@ -51,7 +44,7 @@ static constexpr float MAX_TURN  = 40.0f;
 // tune up if corrections feel sluggish, down if still buzzing.
 static constexpr float MAX_TURN_RATE = 120.0f;  // turn-units/s
 static constexpr float ARRIVAL_MM       = 40.0f;   // stop when within this distance of slot
-static constexpr float SEND_INTERVAL_S  = 0.05f;
+static constexpr float SEND_INTERVAL_S  = 0.01f; // Send intervall in s
 
 // Yaw EMA: smooths the raw per-frame ArUco corner-angle before it reaches any
 // controller. At 115fps (~8.7ms/frame) raw yaw jitters by ~1deg frame-to-frame
@@ -78,91 +71,12 @@ static constexpr float W_JERK     = 0.05f;  // weight on output-jerk RMS        
 static constexpr float W_POS_BIAS = 0.1f;   // weight on persistent radial (off-track) error (per mm)
 static constexpr float W_POS_OSC  = 0.1f;   // weight on radial oscillation RMS              (per mm)
 
-// ── Protocol ─────────────────────────────────────────────────────────────────
+// ── Swarm hub ────────────────────────────────────────────────────────────────
 
-static constexpr uint8_t MAGIC_0   = 0xAA;
-static constexpr uint8_t MAGIC_1   = 0x55;
-static constexpr uint8_t MSG_SWARM = 0x10;
-static constexpr int     MAX_ROBOTS = 32;
+static constexpr int MAX_ROBOTS = SC_MAX_ROBOTS;
 
-static uint8_t crc8(const uint8_t* d, uint8_t n) {
-    uint8_t c = 0;
-    for (uint8_t i = 0; i < n; i++) {
-        c ^= d[i];
-        for (uint8_t b = 0; b < 8; b++) c = (c & 0x80) ? (c << 1) ^ 7 : (c << 1);
-    }
-    return c;
-}
-static void buildFrame(uint8_t* buf, uint8_t type, const uint8_t* payload, uint8_t plen) {
-    buf[0] = MAGIC_0; buf[1] = MAGIC_1; buf[2] = type; buf[3] = plen;
-    memcpy(&buf[4], payload, plen);
-    buf[4 + plen] = crc8(&buf[2], plen + 2);
-}
-
-// ── Hub connection ────────────────────────────────────────────────────────────
-
-static int  g_hubFd  = -1;
 static volatile bool g_running = true;
-static std::mutex g_hubMutex;
 static void onSignal(int) { g_running = false; }
-
-static int hubConnect() {
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0) return -1;
-    sockaddr_un addr{};
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, "/tmp/swarm_hub.sock", sizeof(addr.sun_path) - 1);
-    if (connect(fd, (sockaddr*)&addr, sizeof(addr)) < 0) { close(fd); return -1; }
-    fcntl(fd, F_SETFL, O_NONBLOCK);
-    return fd;
-}
-
-static bool tryHub() {
-    g_hubFd = hubConnect();
-    if (g_hubFd >= 0) return true;
-
-    glob_t gl{};
-    const char* patterns[] = {
-        "/dev/tty.usbmodem*", "/dev/tty.usbserial*", "/dev/ttyUSB*", "/dev/ttyACM*"
-    };
-    std::string port;
-    for (auto* p : patterns) {
-        if (glob(p, 0, nullptr, &gl) == 0 && gl.gl_pathc > 0) {
-            port = gl.gl_pathv[0]; globfree(&gl); break;
-        }
-        globfree(&gl);
-    }
-    if (port.empty()) return false;
-
-    printf("[hub] Launching swarm_hub on %s\n", port.c_str());
-    if (fork() == 0) {
-        execl("./swarm_hub", "./swarm_hub", port.c_str(), nullptr);
-        execl("/usr/local/bin/swarm_hub", "swarm_hub", port.c_str(), nullptr);
-        _exit(1);
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(800));
-    g_hubFd = hubConnect();
-    return g_hubFd >= 0;
-}
-
-static void sendSwarm(int8_t motors[MAX_ROBOTS][2]) {
-    if (g_hubFd < 0) return;
-    uint8_t payload[MAX_ROBOTS * 3];
-    for (int i = 0; i < MAX_ROBOTS; ++i) {
-        payload[i*3+0] = (uint8_t)i;
-        payload[i*3+1] = (uint8_t)motors[i][0];
-        payload[i*3+2] = (uint8_t)motors[i][1];
-    }
-    uint8_t frame[4 + MAX_ROBOTS * 3 + 1];
-    buildFrame(frame, MSG_SWARM, payload, MAX_ROBOTS * 3);
-    std::lock_guard<std::mutex> lock(g_hubMutex);
-    ssize_t n = write(g_hubFd, frame, sizeof(frame));
-    if (n < 0) {
-        perror("[hub] write");
-        close(g_hubFd);
-        g_hubFd = -1;
-    }
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -488,8 +402,9 @@ int main(int argc, char* argv[]) {
     }
     g_defaultSpeedMult = clampf(speedPct / 100.f, 0.05f, 2.0f);
 
-    if (tryHub()) printf("[hub] Connected.\n");
-    else          printf("[hub] Not available — will retry.\n");
+    SwarmClient swarm;
+    if (swarm.connect()) printf("[hub] Connected.\n");
+    else                 printf("[hub] Not available — will retry.\n");
 
     auto cfg = ArucoConfig::fromFile();
     if (!serial.empty()) cfg.baslerSerial = serial;
@@ -528,6 +443,11 @@ int main(int argc, char* argv[]) {
 
     int8_t motors[MAX_ROBOTS][2]     = {};
     int8_t lastMotors[MAX_ROBOTS][2] = {};
+
+    auto sendMotors = [&]() {
+        for (int id = 0; id < MAX_ROBOTS; ++id) swarm.setSpeed((uint8_t)id, motors[id][0], motors[id][1]);
+        swarm.flush();
+    };
 
     auto lastSend     = std::chrono::steady_clock::now();
     auto lastFpsT     = lastSend;
@@ -584,9 +504,9 @@ int main(int argc, char* argv[]) {
         float controlDt = clampf(std::chrono::duration<float>(now - lastControlT).count(), 0.01f, 0.2f);
         lastControlT = now;
 
-        if (g_hubFd < 0 && std::chrono::duration<float>(now - lastHubRetry).count() >= 2.0f) {
+        if (!swarm.isConnected() && std::chrono::duration<float>(now - lastHubRetry).count() >= 2.0f) {
             lastHubRetry = now;
-            if (tryHub()) printf("[hub] Connected.\n");
+            if (swarm.connect()) printf("[hub] Connected.\n");
         }
 
         float dt = std::chrono::duration<float>(now - lastFpsT).count();
@@ -656,6 +576,7 @@ int main(int argc, char* argv[]) {
             for (auto& [id, _] : poseById) {
                 robotLostSince.erase(id);
                 if (!robotSlotIndex.count(id)) {
+                    swarm.registerRobot((uint8_t)id);
                     robotSlotIndex[id] = registeredCount++;
                     printf("[circle] Robot %d registered → slot %d / %d\n",
                            id, robotSlotIndex[id], registeredCount);
@@ -920,7 +841,7 @@ int main(int argc, char* argv[]) {
         }
 
         if (std::chrono::duration<float>(now - lastSend).count() >= SEND_INTERVAL_S) {
-            sendSwarm(motors);
+            sendMotors();
             lastSend = now;
             memcpy(lastMotors, motors, sizeof(motors));
         }
@@ -1030,11 +951,11 @@ int main(int argc, char* argv[]) {
             fps, (int)poseById.size(), registeredCount,
             circle.radius, circle.minGapMm,
             g_hasH ? "world" : "pixels",
-            g_hubFd >= 0 ? "OK" : "INACTIVE",
+            swarm.isConnected() ? "OK" : "INACTIVE",
             circle.tracking
                 ? cv::format("ORBIT %.0fdeg/s", circle.orbitSpeed).c_str()
                 : "POSITION");
-        cv::Scalar hudCol = g_hubFd >= 0 ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 120, 255);
+        cv::Scalar hudCol = swarm.isConnected() ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 120, 255);
         tracker.drawText(disp, hud, {10, disp.rows - 19}, 18, hudCol);
 
         auto tDrawEnd = std::chrono::steady_clock::now();
@@ -1052,7 +973,7 @@ int main(int argc, char* argv[]) {
         if (key == 's') {
             memset(motors, 0, sizeof(motors));
             memset(lastMotors, 0, sizeof(lastMotors));
-            sendSwarm(motors);
+            sendMotors();
             printf("Stopped.\n");
         }
         if (key == 'c') runCalibration(tracker);
@@ -1084,8 +1005,7 @@ int main(int argc, char* argv[]) {
 
     g_running = false;
     memset(motors, 0, sizeof(motors));
-    sendSwarm(motors);
-    if (g_hubFd >= 0) close(g_hubFd);
+    sendMotors();
     cv::destroyAllWindows();
     printf("Stopped.\n");
     return 0;

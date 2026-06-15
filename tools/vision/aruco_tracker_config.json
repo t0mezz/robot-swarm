@@ -1,9 +1,9 @@
 {
     "basler_serial": "",
     "basler_ip": "",
-    "cam_width": 1492,
-    "cam_height": 1248,
-    "cam_fps": 115, // keep at 115
+    "cam_width": 1408,
+    "cam_height": 1240,
+    "cam_fps": 100, // dont change
     "aruco_dict": 0,
     "win_min": 3,
     "win_max": 23,

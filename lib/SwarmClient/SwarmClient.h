@@ -43,9 +43,13 @@ static constexpr uint8_t SC_MAGIC_0       = 0xAA;
 static constexpr uint8_t SC_MAGIC_1       = 0x55;
 static constexpr uint8_t SC_MSG_SWARM     = 0x10;
 static constexpr uint8_t SC_MSG_ANNOUNCE  = 0x20;
-static constexpr uint8_t SC_MSG_TELEMETRY = 0x30;
+static constexpr uint8_t SC_MSG_PING      = 0x22;
 static constexpr uint8_t SC_MSG_PONG      = 0x23;
+static constexpr uint8_t SC_MSG_TELEMETRY = 0x30;
 static constexpr int     SC_MAX_ROBOTS    = 32;
+
+static constexpr uint8_t SC_STATUS_LOW_BATTERY = 0x04;
+static constexpr uint8_t SC_STATUS_ANNOUNCING  = 0x08;
 
 // ── SwarmClient ───────────────────────────────────────────────────────────────
 
@@ -58,8 +62,11 @@ public:
         uint8_t  flags     = 0;
         int8_t   motorL    = 0;
         int8_t   motorR    = 0;
+        uint16_t uptime    = 0;
         uint16_t latencyUs = 0;
+        bool     hasTelemetry = false;
         std::chrono::steady_clock::time_point lastSeen;
+        std::chrono::steady_clock::time_point lastPongAt;
     };
 
     SwarmClient() {
@@ -175,6 +182,35 @@ public:
 
         std::lock_guard<std::mutex> lock(m_writeMutex);
         ssize_t written = write(m_fd, frame, frameSize(plen));
+        if (written < 0) {
+            perror("[SwarmClient] write");
+            close(m_fd);
+            m_fd = -1;
+            return false;
+        }
+        return true;
+    }
+
+    // Send a MSG_PING to the given robot, carrying the current timestamp
+    // (low 32 bits of microseconds since epoch). The hub relays this to the
+    // robot, which echoes a MSG_PONG; poll() then updates
+    // robotState(id).latencyUs and lastPongAt.
+    bool sendPing(uint8_t targetId) {
+        if (m_fd < 0) return false;
+
+        using namespace std::chrono;
+        uint32_t ts = static_cast<uint32_t>(
+            duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count());
+        uint8_t payload[5] = {
+            targetId,
+            static_cast<uint8_t>(ts), static_cast<uint8_t>(ts >> 8),
+            static_cast<uint8_t>(ts >> 16), static_cast<uint8_t>(ts >> 24)
+        };
+        uint8_t frame[10];
+        buildFrame(frame, SC_MSG_PING, payload, 5);
+
+        std::lock_guard<std::mutex> lock(m_writeMutex);
+        ssize_t written = write(m_fd, frame, frameSize(5));
         if (written < 0) {
             perror("[SwarmClient] write");
             close(m_fd);
@@ -300,6 +336,7 @@ private:
                     m_robots[id].known = true;
                     memcpy(m_robots[id].mac, &p[1], 6);
                     m_robots[id].lastSeen = now;
+                    if (!m_robots[id].hasTelemetry) m_robots[id].flags |= SC_STATUS_ANNOUNCING;
                 }
                 break;
             case SC_MSG_TELEMETRY:
@@ -310,6 +347,8 @@ private:
                     m_robots[id].flags    = p[2];
                     m_robots[id].motorL   = static_cast<int8_t>(p[3]);
                     m_robots[id].motorR   = static_cast<int8_t>(p[4]);
+                    m_robots[id].uptime   = static_cast<uint16_t>(p[5] | (p[6] << 8));
+                    m_robots[id].hasTelemetry = true;
                     m_robots[id].lastSeen = now;
                 }
                 break;
@@ -318,6 +357,7 @@ private:
                     uint8_t id = p[0];
                     m_robots[id].latencyUs = static_cast<uint16_t>(p[1] | (p[2] << 8));
                     m_robots[id].lastSeen  = now;
+                    m_robots[id].lastPongAt = now;
                 }
                 break;
         }
@@ -342,7 +382,7 @@ private:
         FILE* f = fopen("/tmp/swarm_hub.pid", "r");
         if (!f) return false;
         pid_t pid = 0;
-        fscanf(f, "%d", &pid);
+        if (fscanf(f, "%d", &pid) != 1) pid = 0;
         fclose(f);
         return pid > 0 && kill(pid, 0) == 0;
     }

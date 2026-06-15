@@ -21,6 +21,8 @@
 //   t          Open test menu
 //   q / Ctrl+C Quit
 
+#include "SwarmClient.h"
+
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
@@ -30,14 +32,8 @@
 #include <chrono>
 #include <thread>
 #include <csignal>
-#include <fcntl.h>
 #include <unistd.h>
 #include <termios.h>
-#include <errno.h>
-#include <glob.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <sys/wait.h>
 
 #ifdef __APPLE__
 #include <CoreGraphics/CoreGraphics.h>
@@ -65,145 +61,13 @@ static int g_kbDeviceCount = -1;  // # evdev devices opened — surfaced in the 
 #endif
 
 // ═══════════════════════════════════════════════════════════════
-// Protocol
-// ═══════════════════════════════════════════════════════════════
-
-#define MAGIC_0       0xAA
-#define MAGIC_1       0x55
-#define MSG_SWARM     0x10
-#define MSG_ANNOUNCE  0x20
-#define MSG_PING      0x22
-#define MSG_PONG      0x23
-#define MSG_TELEMETRY 0x30
-#define MAX_ROBOTS    32
-
-static uint8_t crc8(const uint8_t* data, uint8_t len) {
-    uint8_t crc = 0x00;
-    for (uint8_t i = 0; i < len; i++) {
-        crc ^= data[i];
-        for (uint8_t b = 0; b < 8; b++)
-            crc = (crc & 0x80) ? (crc << 1) ^ 0x07 : (crc << 1);
-    }
-    return crc;
-}
-
-static void buildFrame(uint8_t* buf, uint8_t type, const uint8_t* payload, uint8_t plen) {
-    buf[0] = MAGIC_0;
-    buf[1] = MAGIC_1;
-    buf[2] = type;
-    buf[3] = plen;
-    memcpy(&buf[4], payload, plen);
-    buf[4 + plen] = crc8(&buf[2], plen + 2);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Hub Connection
-// ═══════════════════════════════════════════════════════════════
-
-static int hub_connect() {
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0) return -1;
-    struct sockaddr_un addr{};
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, "/tmp/swarm_hub.sock", sizeof(addr.sun_path) - 1);
-    if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        close(fd);
-        return -1;
-    }
-    int flags = fcntl(fd, F_GETFL, 0);
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-    return fd;
-}
-
-static std::string find_serial_port() {
-    const char* patterns[] = {
-        "/dev/tty.usbmodem*", "/dev/tty.usbserial*",
-        "/dev/ttyUSB*",       "/dev/ttyACM*",
-        nullptr
-    };
-    for (int p = 0; patterns[p]; p++) {
-        glob_t g{};
-        if (glob(patterns[p], 0, nullptr, &g) == 0 && g.gl_pathc > 0) {
-            std::string port = g.gl_pathv[0];
-            globfree(&g);
-            return port;
-        }
-        globfree(&g);
-    }
-    return "";
-}
-
-static bool hub_is_running() {
-    FILE* f = fopen("/tmp/swarm_hub.pid", "r");
-    if (!f) return false;
-    pid_t pid = 0;
-    fscanf(f, "%d", &pid);
-    fclose(f);
-    return pid > 0 && kill(pid, 0) == 0;
-}
-
-static int hub_connect_or_start() {
-    int fd = hub_connect();
-    if (fd >= 0) return fd;
-
-    // If hub process is alive but socket not ready yet, wait for it
-    if (hub_is_running()) {
-        fprintf(stderr, "[auto] Hub is running, waiting for socket...\n");
-        for (int i = 0; i < 20; i++) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            fd = hub_connect();
-            if (fd >= 0) { fprintf(stderr, "[auto] Connected to swarm_hub.\n"); return fd; }
-        }
-        fprintf(stderr, "Error: hub is running but socket not ready.\n");
-        return -1;
-    }
-
-    std::string port = find_serial_port();
-    if (port.empty()) {
-        fprintf(stderr, "Error: swarm_hub not running and no serial port found.\n"
-                        "Start manually: ./swarm_hub /dev/tty.usbmodem*\n");
-        return -1;
-    }
-
-    fprintf(stderr, "[auto] Starting swarm_hub on %s...\n", port.c_str());
-    pid_t pid = fork();
-    if (pid == 0) {
-        execlp("./swarm_hub", "./swarm_hub", "--daemon", port.c_str(), nullptr);
-        execlp("swarm_hub",   "swarm_hub",   "--daemon", port.c_str(), nullptr);
-        _exit(1);
-    } else if (pid < 0) {
-        fprintf(stderr, "Error: fork failed: %s\n", strerror(errno));
-        return -1;
-    }
-    int status; waitpid(pid, &status, 0);
-
-    for (int i = 0; i < 50; i++) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        fd = hub_connect();
-        if (fd >= 0) { fprintf(stderr, "[auto] Connected to swarm_hub.\n"); return fd; }
-    }
-    fprintf(stderr, "Error: swarm_hub did not become ready within 5s.\n");
-    return -1;
-}
-
-// ═══════════════════════════════════════════════════════════════
 // Robot State
 // ═══════════════════════════════════════════════════════════════
 
-struct RobotInfo {
-    bool    known     = false;
-    uint8_t mac[6]    = {};
-    uint8_t battery   = 0;
-    uint8_t flags     = 0;
-    int8_t  motorL    = 0;
-    int8_t  motorR    = 0;
-    uint16_t latencyUs = 0;
-    std::chrono::steady_clock::time_point lastSeen;
-};
-
-static RobotInfo     robots[MAX_ROBOTS];
-static int8_t        speeds[MAX_ROBOTS][2] = {};   // commanded L/R
-static volatile bool g_running = true;
+static constexpr int MAX_ROBOTS = SC_MAX_ROBOTS;
+static SwarmClient    g_swarm;
+static int8_t         speeds[MAX_ROBOTS][2] = {};   // commanded L/R
+static volatile bool  g_running = true;
 
 // ═══════════════════════════════════════════════════════════════
 // Terminal Raw Mode
@@ -229,110 +93,21 @@ static void normalMode() {
 // Swarm Send
 // ═══════════════════════════════════════════════════════════════
 
-static void sendSwarm(int fd) {
+static void sendSwarm() {
     // Only include known robots so the frame stays small.
     // With N active robots the payload is N*3 bytes instead of always MAX_ROBOTS*3.
     // At 115200 baud a full 32-robot frame takes 8.77 ms on the serial link;
     // a single-robot frame takes 0.69 ms — a 12× reduction that cuts both
     // fixed latency and jitter amplification from frame bursts.
-    uint8_t payload[MAX_ROBOTS * 3];
-    int count = 0;
     for (int i = 0; i < MAX_ROBOTS; i++) {
-        if (!robots[i].known) continue;
-        payload[count * 3]     = (uint8_t)i;
-        payload[count * 3 + 1] = (uint8_t)speeds[i][0];
-        payload[count * 3 + 2] = (uint8_t)speeds[i][1];
-        count++;
+        if (!g_swarm.isKnown(i)) continue;
+        g_swarm.setSpeed((uint8_t)i, speeds[i][0], speeds[i][1]);
     }
-    if (count == 0) return;
-    int plen = count * 3;
-    uint8_t frame[5 + MAX_ROBOTS * 3];
-    buildFrame(frame, MSG_SWARM, payload, (uint8_t)plen);
-    write(fd, frame, 5 + plen);
+    g_swarm.flush();
 }
 
 static void stopAll() {
     memset(speeds, 0, sizeof(speeds));
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Incoming Packet Parser
-// ═══════════════════════════════════════════════════════════════
-
-static uint8_t rxBuf[1024];
-static int     rxLen = 0;
-
-static void parsePacket(const uint8_t* data, int len) {
-    if (len < 5) return;
-    if (data[0] != MAGIC_0 || data[1] != MAGIC_1) return;
-    uint8_t type = data[2];
-    uint8_t plen = data[3];
-    if (4 + plen + 1 > len) return;
-    if (crc8(&data[2], plen + 2) != data[4 + plen]) return;
-
-    const uint8_t* payload = &data[4];
-    auto now = std::chrono::steady_clock::now();
-
-    switch (type) {
-        case MSG_ANNOUNCE:
-            if (plen >= 7) {
-                uint8_t id = payload[0];
-                if (id < MAX_ROBOTS) {
-                    robots[id].known = true;
-                    memcpy(robots[id].mac, &payload[1], 6);
-                    robots[id].lastSeen = now;
-                }
-            }
-            break;
-        case MSG_TELEMETRY:
-            if (plen >= 7) {
-                uint8_t id = payload[0];
-                if (id < MAX_ROBOTS) {
-                    robots[id].known   = true;
-                    robots[id].battery = payload[1];
-                    robots[id].flags   = payload[2];
-                    robots[id].motorL  = (int8_t)payload[3];
-                    robots[id].motorR  = (int8_t)payload[4];
-                    robots[id].lastSeen = now;
-                }
-            }
-            break;
-        case MSG_PONG:
-            if (plen >= 3) {
-                uint8_t id = payload[0];
-                if (id < MAX_ROBOTS) {
-                    robots[id].latencyUs = payload[1] | (payload[2] << 8);
-                    robots[id].lastSeen  = now;
-                }
-            }
-            break;
-    }
-}
-
-static void readFromHub(int fd) {
-    uint8_t tmp[512];
-    ssize_t n = read(fd, tmp, sizeof(tmp));
-    if (n <= 0) return;
-    int space = (int)sizeof(rxBuf) - rxLen;
-    int copy  = (n < space) ? (int)n : space;
-    memcpy(&rxBuf[rxLen], tmp, copy);
-    rxLen += copy;
-
-    while (rxLen >= 5) {
-        int idx = -1;
-        for (int i = 0; i < rxLen - 1; i++) {
-            if (rxBuf[i] == MAGIC_0 && rxBuf[i+1] == MAGIC_1) { idx = i; break; }
-        }
-        if (idx < 0) { rxLen = 0; return; }
-        if (idx > 0) { memmove(rxBuf, rxBuf + idx, rxLen - idx); rxLen -= idx; }
-        if (rxLen < 4) return;
-        uint8_t plen = rxBuf[3];
-        int     flen = 4 + plen + 1;
-        if (rxLen < flen) return;
-        parsePacket(rxBuf, flen);
-        memmove(rxBuf, rxBuf + flen, rxLen - flen);
-        rxLen -= flen;
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -381,7 +156,7 @@ static TestState g_test;
 
 static void applyTestStep(const TestStep& step) {
     for (int i = 0; i < MAX_ROBOTS; i++) {
-        if (!robots[i].known) continue;
+        if (!g_swarm.isKnown(i)) continue;
         speeds[i][0] = step.motorL;
         speeds[i][1] = step.motorR;
     }
@@ -423,7 +198,7 @@ static void startTest(int suiteIdx) {
 
     // Need at least one known robot
     bool anyKnown = false;
-    for (int i = 0; i < MAX_ROBOTS; i++) if (robots[i].known) { anyKnown = true; break; }
+    for (int i = 0; i < MAX_ROBOTS; i++) if (g_swarm.isKnown(i)) { anyKnown = true; break; }
     if (!anyKnown) {
         snprintf(g_test.status, sizeof(g_test.status), "No robots known yet");
         return;
@@ -462,7 +237,7 @@ static constexpr int8_t CTRL_SPEED = 30;  // 30% of full range (100)
 //   S+A / S+D  →  arc reverse left / right
 static int8_t g_wasdL = 0, g_wasdR = 0;  // last commanded values (change-detection)
 
-static void pollWASD(int fd) {
+static void pollWASD() {
     if (g_test.running) return;
 
     bool fwd = keyDown(kKey_W);
@@ -489,7 +264,7 @@ static void pollWASD(int fd) {
         speeds[g_selectedRobot][0] = newL;
         speeds[g_selectedRobot][1] = newR;
     }
-    sendSwarm(fd);
+    sendSwarm();
 }
 
 static void stopSelected() {
@@ -521,7 +296,7 @@ static void drawUI() {
 
     int known = 0;
     for (int i = 0; i < MAX_ROBOTS; i++) {
-        if (!robots[i].known) continue;
+        if (!g_swarm.isKnown(i)) continue;
         known++;
         bool sel = (g_selectedRobot < 0 || g_selectedRobot == i);
         const char* rowColor = sel ? "\033[1;37m" : "\033[37m";
@@ -573,7 +348,7 @@ static void drawUI() {
 // ═══════════════════════════════════════════════════════════════
 
 // Returns true if quit requested
-static bool handleInput(int fd) {
+static bool handleInput() {
     uint8_t buf[4];
     ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
     if (n <= 0) return false;
@@ -631,7 +406,7 @@ static bool handleInput(int fd) {
         case ' ':
             g_wasdL = g_wasdR = 0;
             stopSelected();
-            sendSwarm(fd);
+            sendSwarm();
             break;
 
         case 't':
@@ -662,8 +437,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    int fd = hub_connect_or_start();
-    if (fd < 0) return 1;
+    if (!g_swarm.connect()) return 1;
 
     signal(SIGINT,  signal_handler);
     signal(SIGTERM, signal_handler);
@@ -685,16 +459,16 @@ int main(int argc, char* argv[]) {
     int  pingRobot = 0;
 
     while (g_running) {
-        readFromHub(fd);
+        g_swarm.poll();
         advanceTest();
 
-        if (handleInput(fd)) break;
+        if (handleInput()) break;
 
-        pollWASD(fd);
+        pollWASD();
 
         auto now = Clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSwarm).count() >= 50) {
-            sendSwarm(fd);
+            sendSwarm();
             lastSwarm = now;
         }
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastDraw).count() >= drawIntervalMs) {
@@ -705,18 +479,10 @@ int main(int argc, char* argv[]) {
             // Round-robin ping through known robots
             for (int attempt = 0; attempt < MAX_ROBOTS; attempt++) {
                 pingRobot = (pingRobot + 1) % MAX_ROBOTS;
-                if (robots[pingRobot].known) break;
+                if (g_swarm.isKnown(pingRobot)) break;
             }
-            if (robots[pingRobot].known) {
-                using namespace std::chrono;
-                uint32_t ts = (uint32_t)duration_cast<microseconds>(now.time_since_epoch()).count();
-                uint8_t payload[5] = {
-                    (uint8_t)pingRobot,
-                    (uint8_t)ts, (uint8_t)(ts >> 8), (uint8_t)(ts >> 16), (uint8_t)(ts >> 24)
-                };
-                uint8_t frame[10];
-                buildFrame(frame, MSG_PING, payload, 5);
-                write(fd, frame, 10);
+            if (g_swarm.isKnown(pingRobot)) {
+                g_swarm.sendPing((uint8_t)pingRobot);
             }
             lastPing = now;
         }
@@ -725,8 +491,8 @@ int main(int argc, char* argv[]) {
     }
 
     stopAll();
-    sendSwarm(fd);
-    close(fd);
+    sendSwarm();
+    g_swarm.disconnect();
     normalMode();
 #ifndef __APPLE__
     g_keyboard.close();

@@ -18,6 +18,8 @@
 // Voraussetzung: swarm_hub muss laufen
 //   ./swarm_hub /dev/tty.usbmodem*
 
+#include "SwarmClient.h"
+
 #include <SFML/Graphics.hpp>
 #include <cmath>
 #include <cstdint>
@@ -26,31 +28,10 @@
 #include <vector>
 #include <deque>
 #include <optional>
-#include <fcntl.h>
-#include <unistd.h>
-#include <errno.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <thread>
 #include <chrono>
 
 static const float PI = 3.14159265f;
-
-// ─── Protokoll ────────────────────────────────────────────────
-static const uint8_t MAGIC_0    = 0xAA;
-static const uint8_t MAGIC_1    = 0x55;
-static const uint8_t MSG_SWARM  = 0x10;
-static const int     NUM_ROBOTS = 20;
-
-static uint8_t crc8(const uint8_t* data, uint8_t len) {
-    uint8_t crc = 0x00;
-    for (uint8_t i = 0; i < len; i++) {
-        crc ^= data[i];
-        for (uint8_t b = 0; b < 8; b++)
-            crc = (crc & 0x80) ? (crc << 1) ^ 0x07 : (crc << 1);
-    }
-    return crc;
-}
 
 // ─── Farbpalette: Retro Racing ────────────────────────────────
 namespace C {
@@ -110,74 +91,6 @@ namespace C {
             a.r + (int)((b.r - a.r)*t), a.g + (int)((b.g - a.g)*t),
             a.b + (int)((b.b - a.b)*t), a.a + (int)((b.a - a.a)*t));
     }
-}
-
-// ─── Hub Socket Connection ────────────────────────────────────
-class HubSocket {
-    int fd_ = -1;
-    static constexpr const char* HUB_SOCK_PATH = "/tmp/swarm_hub.sock";
-    
-public:
-    bool connect() {
-        fd_ = socket(AF_UNIX, SOCK_STREAM, 0);
-        if (fd_ < 0) { 
-            std::cerr << "Cannot create socket: " << strerror(errno) << "\n"; 
-            return false; 
-        }
-        
-        struct sockaddr_un addr{};
-        addr.sun_family = AF_UNIX;
-        strncpy(addr.sun_path, HUB_SOCK_PATH, sizeof(addr.sun_path) - 1);
-        
-        if (::connect(fd_, (struct sockaddr*)&addr, sizeof(addr)) < 0) { 
-            std::cerr << "Cannot connect to swarm_hub at " << HUB_SOCK_PATH << ": " 
-                      << strerror(errno) << "\n";
-            close_fd();
-            return false; 
-        }
-        
-        int flags = fcntl(fd_, F_GETFL, 0);
-        fcntl(fd_, F_SETFL, flags | O_NONBLOCK);
-        
-        return true;
-    }
-    
-    bool send(const uint8_t* d, size_t l) { 
-        if (fd_ < 0) return false;
-        ssize_t written = ::write(fd_, d, l);
-        if (written < 0 && (errno == EPIPE || errno == EBADF)) {
-            close_fd();
-            return false;
-        }
-        return written == (ssize_t)l;
-    }
-    
-    bool is_open() const { return fd_ >= 0; }
-    
-    void close() { close_fd(); }
-    
-    ~HubSocket() { close_fd(); }
-    
-private:
-    void close_fd() { 
-        if (fd_ >= 0) { 
-            ::close(fd_); 
-            fd_ = -1; 
-        } 
-    }
-};
-
-// ─── Swarm-Paket ──────────────────────────────────────────────
-static void send_swarm(HubSocket& hub, int ctrl_id, int8_t left, int8_t right) {
-    uint8_t pl = NUM_ROBOTS * 3;
-    std::vector<uint8_t> f(5 + pl, 0);
-    f[0] = MAGIC_0; f[1] = MAGIC_1; f[2] = MSG_SWARM; f[3] = pl;
-    for (int i = 0; i < NUM_ROBOTS; i++) {
-        f[4 + i*3] = (uint8_t)i;
-        if (i == ctrl_id) { f[4+i*3+1] = (uint8_t)left; f[4+i*3+2] = (uint8_t)right; }
-    }
-    f[4+pl] = crc8(&f[2], pl+2);
-    hub.send(f.data(), f.size());
 }
 
 // ─── Fahrzeugphysik ──────────────────────────────────────────
@@ -634,29 +547,19 @@ static void draw_drift_badge(sf::RenderWindow& win, sf::Font& font,
 int main(int argc, char* argv[]) {
     int         send_ms   = (argc > 1) ? std::stoi(argv[1]) : 50;
     int         robot_id  = (argc > 2) ? std::stoi(argv[2]) : 0;
-    if (robot_id < 0 || robot_id >= NUM_ROBOTS) robot_id = 0;
+    if (robot_id < 0 || robot_id >= SC_MAX_ROBOTS) robot_id = 0;
 
-    HubSocket hub;
+    SwarmClient swarm;
     std::cout << "Connecting to swarm_hub at /tmp/swarm_hub.sock...\n";
-    
-    // Try to connect with a few retries in case swarm_hub is just starting
-    bool connected = hub.connect();
-    if (!connected) {
-        for (int i = 0; i < 5 && !connected; i++) {
-            std::cout << "Retrying connection...\n";
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            connected = hub.connect();
-        }
-    }
-    
-    if (!connected) {
+    if (!swarm.connect()) {
         std::cerr << "Error: Could not connect to swarm_hub. Make sure it's running:\n";
         std::cerr << "  ./swarm_hub /dev/tty.usbmodem*\n";
         return 1;
     }
-    
+    swarm.registerRobot((uint8_t)robot_id);
+
     std::cout << "Connected to swarm_hub\n";
-    std::cout << "Robot ID: " << robot_id << "  |  60B MSG_SWARM  |  " << send_ms << "ms\n";
+    std::cout << "Robot ID: " << robot_id << "  |  MSG_SWARM  |  " << send_ms << "ms\n";
     std::cout << "F11: Fullscreen  |  ESC: Exit\n";
 
     sf::ContextSettings settings;
@@ -738,7 +641,8 @@ int main(int argc, char* argv[]) {
         car.update(w, s, a, d, space, shift, dt);
 
         if (sendClock.getElapsedTime().asMilliseconds() >= send_ms) {
-            send_swarm(hub, robot_id, car.motorL(), car.motorR());
+            swarm.setSpeed((uint8_t)robot_id, car.motorL(), car.motorR());
+            swarm.flush();
             sendClock.restart();
         }
 
@@ -794,7 +698,7 @@ int main(int argc, char* argv[]) {
             sf::CircleShape dot(4);
             dot.setOrigin(sf::Vector2f(4, 4));
             dot.setPosition(sf::Vector2f(S(12.f, 10.f).x + addr.getLocalBounds().size.x + 12, S(0.f, 17.f).y));
-            dot.setFillColor(hub.is_open() ? C::green : C::red);
+            dot.setFillColor(swarm.isConnected() ? C::green : C::red);
             win.draw(dot);
 
             char info[64];
@@ -818,6 +722,7 @@ int main(int argc, char* argv[]) {
         win.display();
     }
 
-    send_swarm(hub, robot_id, 0, 0);
+    swarm.setSpeed((uint8_t)robot_id, 0, 0);
+    swarm.flush();
     return 0;
 }

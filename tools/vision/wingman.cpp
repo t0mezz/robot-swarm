@@ -35,6 +35,7 @@
 #endif
 
 #include "aruco_tracker.h"
+#include "SwarmClient.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -52,12 +53,7 @@
 #include <mutex>
 
 #include <unistd.h>
-#include <fcntl.h>
 #include <termios.h>
-#include <glob.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <sys/wait.h>
 
 #ifdef __APPLE__
 static constexpr CGKeyCode kKey_A = 0x00;
@@ -85,37 +81,17 @@ static constexpr float ARRIVAL_MM = 55.0f;   // stop correcting within this radi
 
 static constexpr int8_t LEADER_SPEED = 18;   // WASD throttle magnitude
 
-// ── Protocol ──────────────────────────────────────────────────────────────────
-
-#define MAGIC_0      0xAA
-#define MAGIC_1      0x55
-#define MSG_SWARM    0x10
-#define MSG_ANNOUNCE 0x20
-#define MSG_PING     0x22
-#define MSG_PONG     0x23
-#define MSG_TELEMETRY 0x30
-#define MAX_ROBOTS   32
-
-static uint8_t crc8(const uint8_t* d, uint8_t n) {
-    uint8_t c = 0;
-    for (uint8_t i = 0; i < n; i++) {
-        c ^= d[i];
-        for (uint8_t b = 0; b < 8; b++) c = (c & 0x80) ? (c << 1) ^ 7 : (c << 1);
-    }
-    return c;
-}
-
-static void buildFrame(uint8_t* buf, uint8_t type, const uint8_t* payload, uint8_t plen) {
-    buf[0] = MAGIC_0; buf[1] = MAGIC_1; buf[2] = type; buf[3] = plen;
-    memcpy(&buf[4], payload, plen);
-    buf[4 + plen] = crc8(&buf[2], plen + 2);
-}
-
 // ── Shared state ──────────────────────────────────────────────────────────────
 
-static int           g_hubFd   = -1;
+static constexpr int MAX_ROBOTS = SC_MAX_ROBOTS;
+
 static volatile bool g_running = true;
-static std::mutex    g_hubMutex;
+
+// SwarmClient instance shared by the vision thread, the heartbeat thread and
+// the input thread. All access (setSpeed/registerRobot/flush/connect) must
+// hold g_swarmMutex.
+static SwarmClient g_swarm;
+static std::mutex  g_swarmMutex;
 
 // Motors array written by both the control thread (leader slot) and the vision
 // thread (follower slots). Always access under g_motorMutex.
@@ -127,98 +103,28 @@ static volatile int g_leaderId = -1;
 
 static void onSignal(int) { g_running = false; }
 
-static int hubConnect() {
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0) return -1;
-    sockaddr_un addr{};
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, "/tmp/swarm_hub.sock", sizeof(addr.sun_path) - 1);
-    if (connect(fd, (sockaddr*)&addr, sizeof(addr)) < 0) { close(fd); return -1; }
-    fcntl(fd, F_SETFL, O_NONBLOCK);
-    return fd;
-}
-
 static bool tryHub() {
-    g_hubFd = hubConnect();
-    if (g_hubFd >= 0) return true;
-
-    glob_t gl{};
-    const char* patterns[] = {
-        "/dev/tty.usbmodem*", "/dev/tty.usbserial*", "/dev/ttyUSB*", "/dev/ttyACM*"
-    };
-    std::string port;
-    for (auto* p : patterns) {
-        if (glob(p, 0, nullptr, &gl) == 0 && gl.gl_pathc > 0) {
-            port = gl.gl_pathv[0]; globfree(&gl); break;
-        }
-        globfree(&gl);
-    }
-    if (port.empty()) return false;
-
-    printf("[hub] Launching swarm_hub on %s\n", port.c_str());
-    if (fork() == 0) {
-        execl("./swarm_hub", "./swarm_hub", port.c_str(), nullptr);
-        execl("/usr/local/bin/swarm_hub", "swarm_hub", port.c_str(), nullptr);
-        _exit(1);
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(800));
-    g_hubFd = hubConnect();
-    return g_hubFd >= 0;
+    std::lock_guard<std::mutex> lk(g_swarmMutex);
+    return g_swarm.connect();
 }
 
 // Send a single-robot frame for the leader immediately, without touching follower state.
 // Called from the CGEventTap callback so it must be low-latency.
 static void sendLeader(int lid, int8_t L, int8_t R) {
-    if (g_hubFd < 0) return;
-    uint8_t payload[3] = { (uint8_t)lid, (uint8_t)L, (uint8_t)R };
-    uint8_t frame[8];
-    buildFrame(frame, MSG_SWARM, payload, 3);
-    std::lock_guard<std::mutex> lk(g_hubMutex);
-    if (write(g_hubFd, frame, 8) < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) return;
-        perror("[hub] write");
-        close(g_hubFd);
-        g_hubFd = -1;
-    }
+    std::lock_guard<std::mutex> lk(g_swarmMutex);
+    g_swarm.setSpeed((uint8_t)lid, L, R);
+    g_swarm.flush();
 }
 
-// Snapshot g_motors (under g_motorMutex) then write to hub (under g_hubMutex).
+// Snapshot g_motors (under g_motorMutex) then write to hub (under g_swarmMutex).
 // Safe to call from any thread without holding either lock beforehand.
 static void sendSwarm() {
-    if (g_hubFd < 0) return;
-
-    // Snapshot under motor lock so we don't hold it during I/O.
     int8_t snap[MAX_ROBOTS][2];
     { std::lock_guard<std::mutex> lk(g_motorMutex); memcpy(snap, g_motors, sizeof(snap)); }
 
-    uint8_t payload[MAX_ROBOTS * 3];
-    int count = 0;
-    for (int i = 0; i < MAX_ROBOTS; i++) {
-        if (snap[i][0] == 0 && snap[i][1] == 0) continue;
-        payload[count*3+0] = (uint8_t)i;
-        payload[count*3+1] = (uint8_t)snap[i][0];
-        payload[count*3+2] = (uint8_t)snap[i][1];
-        count++;
-    }
-    // Always send at least a minimal frame so the watchdog on the leader
-    // never times out (1 s silence = motors stop on the robot side).
-    if (count == 0) {
-        int lid = g_leaderId;
-        if (lid >= 0) {
-            payload[0] = (uint8_t)lid; payload[1] = 0; payload[2] = 0;
-            count = 1;
-        } else return;
-    }
-    int plen = count * 3;
-    uint8_t frame[5 + MAX_ROBOTS * 3];
-    buildFrame(frame, MSG_SWARM, payload, (uint8_t)plen);
-    std::lock_guard<std::mutex> lk(g_hubMutex);
-    if (write(g_hubFd, frame, 5 + plen) < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) return;  // buffer full — transient, skip frame
-        perror("[hub] write");
-        close(g_hubFd);
-        g_hubFd = -1;
-    }
+    std::lock_guard<std::mutex> lk(g_swarmMutex);
+    for (int i = 0; i < MAX_ROBOTS; i++) g_swarm.setSpeed((uint8_t)i, snap[i][0], snap[i][1]);
+    g_swarm.flush();
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -652,7 +558,7 @@ int main(int argc, char* argv[]) {
         // ── Hub reconnect ─────────────────────────────────────────────────────
         {
             auto now = std::chrono::steady_clock::now();
-            if (g_hubFd < 0 && std::chrono::duration<float>(now - lastHubRetry).count() >= 0.25f) {
+            if (!g_swarm.isConnected() && std::chrono::duration<float>(now - lastHubRetry).count() >= 0.25f) {
                 lastHubRetry = now;
                 if (tryHub()) printf("[hub] Reconnected.\n");
             }
@@ -680,6 +586,7 @@ int main(int argc, char* argv[]) {
             if (r.id < 0 || r.id >= MAX_ROBOTS) continue;
             poseById[r.id] = r;
             robotLastSeen[r.id] = now;
+            { std::lock_guard<std::mutex> lk(g_swarmMutex); g_swarm.registerRobot((uint8_t)r.id); }
         }
 
         // ── Registration phase: collect robots, then lock leader ──────────────
@@ -851,8 +758,8 @@ int main(int argc, char* argv[]) {
             char fpsBuf[32]; snprintf(fpsBuf, sizeof(fpsBuf), "loop_fps: %.1f", fps);
             tracker.drawText(disp, fpsBuf, {10, y}, 17, {100, 200, 100}); y += 22;
 
-            tracker.drawText(disp, "Hub: " + std::string(g_hubFd >= 0 ? "OK" : "DISCONNECTED"),
-                {10, y}, 17, g_hubFd >= 0 ? cv::Scalar(100, 200, 100) : cv::Scalar(60, 60, 220));
+            tracker.drawText(disp, "Hub: " + std::string(g_swarm.isConnected() ? "OK" : "DISCONNECTED"),
+                {10, y}, 17, g_swarm.isConnected() ? cv::Scalar(100, 200, 100) : cv::Scalar(60, 60, 220));
             y += 26;
 
             // Per-robot status
@@ -904,7 +811,6 @@ int main(int argc, char* argv[]) {
     heartbeatThread.join();
     { std::lock_guard<std::mutex> lk(g_motorMutex); memset(g_motors, 0, sizeof(g_motors)); }
     sendSwarm();
-    if (g_hubFd >= 0) close(g_hubFd);
     cv::destroyAllWindows();
     printf("Wingman stopped.\n");
     return 0;
