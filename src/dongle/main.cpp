@@ -107,20 +107,33 @@ static void enqueueSend(const uint8_t* data, uint8_t len, bool isPing = false) {
 // ─── Empfangs-Buffer ─────────────────────────────────────────
 // The dongle is esp32dev (dual-core): onReceive fires on Core 0 (WiFi task)
 // while loop() runs on Core 1.  Protect shared state with a spinlock.
-
-static uint8_t          rxBuf[250];
-static uint8_t          rxLen    = 0;
-static uint8_t          rxMAC[6] = {};
-static bool             hasData  = false;
-static portMUX_TYPE     rxMux    = portMUX_INITIALIZER_UNLOCKED;
+//
+// SPSC ring buffer (mirrors src/receiver/main.cpp): a single-slot buffer
+// here would silently overwrite/drop a packet (e.g. MSG_TELEMETRY) if a
+// second ESP-NOW packet arrives before loop() drains the first — most
+// likely during the idle-throttle vTaskDelay(10) below. When the queue is
+// full the oldest slot is dropped so the consumer keeps up with the
+// freshest traffic.
+static const uint8_t RX_QUEUE_SIZE = 4;
+struct RxSlot { uint8_t data[250]; uint8_t len; uint8_t mac[6]; };
+static RxSlot        rxQueue[RX_QUEUE_SIZE];
+static uint8_t       rxHead = 0;   // next write index (producer, Core 0)
+static uint8_t       rxTail = 0;   // next read  index (consumer, Core 1)
+static portMUX_TYPE  rxMux  = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t      diagRxDropCount = 0;  // RX queue overflow drops
 
 void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
-    if (len <= 0 || len > (int)sizeof(rxBuf)) return;
+    if (len <= 0 || len > (int)sizeof(rxQueue[0].data)) return;
     portENTER_CRITICAL(&rxMux);
-    memcpy(rxBuf, data, len);
-    rxLen = (uint8_t)len;
-    memcpy(rxMAC, mac, 6);
-    hasData = true;
+    uint8_t used = (rxHead - rxTail + RX_QUEUE_SIZE) % RX_QUEUE_SIZE;
+    if (used == RX_QUEUE_SIZE - 1) {
+        rxTail = (rxTail + 1) % RX_QUEUE_SIZE;
+        diagRxDropCount++;
+    }
+    memcpy(rxQueue[rxHead].data, data, len);
+    rxQueue[rxHead].len = (uint8_t)len;
+    memcpy(rxQueue[rxHead].mac, mac, 6);
+    rxHead = (rxHead + 1) % RX_QUEUE_SIZE;
     portEXIT_CRITICAL(&rxMux);
 }
 
@@ -135,8 +148,13 @@ static uint8_t serialLen = 0;
 
 // Non-blocking Serial write: HardwareSerial blocks loop() if the TX buffer is full.
 // Guard every write so the dongle is never stalled waiting for the hub to drain bytes.
+// If the TX buffer is full the frame is dropped — diagSerialDropCount tracks how
+// often this happens so a saturated PC-side link is visible in diagnostics.
+static uint32_t diagSerialDropCount = 0;
+
 static inline void serialWrite(const uint8_t* data, uint8_t len) {
     if (Serial.availableForWrite() >= len) Serial.write(data, len);
+    else diagSerialDropCount++;
 }
 
 static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) {
@@ -237,8 +255,9 @@ static void processSerialPacket(const uint8_t* data, uint8_t len) {
 
 // ─── Timing ──────────────────────────────────────────────────
 
-static unsigned long ledOffAt    = 0;
-static unsigned long lastSerial  = 0;
+static unsigned long ledOffAt     = 0;
+static unsigned long lastSerial   = 0;
+static unsigned long lastDiagReport = 0;
 
 // ─── Idle Throttle ───────────────────────────────────────────
 
@@ -296,21 +315,26 @@ void setup() {
 void loop() {
     unsigned long now = millis();
 
-    // ESP-NOW Empfang — copy under spinlock, then process outside it
-    uint8_t localBuf[250];
-    uint8_t localLen = 0;
-    uint8_t localMAC[6];
-    bool    got = false;
-    portENTER_CRITICAL(&rxMux);
-    if (hasData) {
-        localLen = rxLen;
-        memcpy(localBuf, rxBuf, localLen);
-        memcpy(localMAC, rxMAC, 6);
-        hasData = false;
-        got = true;
+    // ESP-NOW Empfang — drain the whole ring buffer, copying one slot at a
+    // time under the spinlock so routeIncoming() (which can call
+    // serialWrite/enqueueSend) never runs while the lock is held.
+    while (true) {
+        uint8_t localBuf[250];
+        uint8_t localLen = 0;
+        uint8_t localMAC[6];
+        bool    got = false;
+        portENTER_CRITICAL(&rxMux);
+        if (rxHead != rxTail) {
+            localLen = rxQueue[rxTail].len;
+            memcpy(localBuf, rxQueue[rxTail].data, localLen);
+            memcpy(localMAC, rxQueue[rxTail].mac, 6);
+            rxTail = (rxTail + 1) % RX_QUEUE_SIZE;
+            got = true;
+        }
+        portEXIT_CRITICAL(&rxMux);
+        if (!got) break;
+        routeIncoming(localBuf, localLen, localMAC);
     }
-    portEXIT_CRITICAL(&rxMux);
-    if (got) routeIncoming(localBuf, localLen, localMAC);
 
     // Expire robots that haven't sent anything in ROBOT_EXPIRY_MS.
     // This lets the idle throttle and WiFi PS kick back in when all robots
@@ -358,6 +382,18 @@ void loop() {
 
     // LED
     if (ledOffAt && now >= ledOffAt) { ledOff(); ledOffAt = 0; }
+
+    // Periodic diagnostics (every 2s) — only when a USB terminal is connected
+    // so the Serial write overhead is zero when running standalone.
+    if (now - lastDiagReport >= 2000) {
+        if (Serial) {
+            Serial.printf("[DIAG] rx_drops=%lu serial_drops=%lu\n",
+                          (unsigned long)diagRxDropCount, (unsigned long)diagSerialDropCount);
+        }
+        diagRxDropCount     = 0;
+        diagSerialDropCount = 0;
+        lastDiagReport      = now;
+    }
 
     // Idle management: throttle the loop when no robots are active to reduce
     // CPU load.  WiFi PS is intentionally kept at WIFI_PS_NONE at all times —

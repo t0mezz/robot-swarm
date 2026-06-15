@@ -252,7 +252,14 @@ public:
                     idx = i; break;
                 }
             }
-            if (idx < 0) { m_rxLen = 0; return; }
+            if (idx < 0) {
+                // No header pair found. If the buffer ends in a lone MAGIC_0, keep
+                // it — it may be the start of the next frame with MAGIC_1 still in
+                // flight. Dropping it here would desync and lose that frame.
+                m_rxLen = (m_rxBuf[m_rxLen - 1] == SC_MAGIC_0) ? 1 : 0;
+                if (m_rxLen == 1) m_rxBuf[0] = SC_MAGIC_0;
+                return;
+            }
             if (idx > 0) {
                 memmove(m_rxBuf, m_rxBuf + idx, m_rxLen - idx);
                 m_rxLen -= idx;

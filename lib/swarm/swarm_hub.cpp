@@ -176,7 +176,12 @@ static void broadcast_to_clients(const uint8_t* frame, int len) {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (!clients[i].active) continue;
         ssize_t n = write(clients[i].fd, frame, len);
-        if (n < 0 && (errno == EPIPE || errno == EWOULDBLOCK || errno == EAGAIN)) {
+        if (n < 0) {
+            // EWOULDBLOCK/EAGAIN: client's socket buffer is momentarily full
+            // (e.g. busy rendering a frame) — skip this frame for them but
+            // keep the connection. Closing here would drop the whole client
+            // over a single backed-up telemetry frame.
+            if (errno == EWOULDBLOCK || errno == EAGAIN) continue;
             client_close(i);
         }
     }
@@ -227,7 +232,14 @@ static void serial_read_and_broadcast(int serialFd) {
         for (int i = 0; i < serialRxLen - 1; i++) {
             if (serialRxBuf[i] == MAGIC_0 && serialRxBuf[i+1] == MAGIC_1) { idx = i; break; }
         }
-        if (idx < 0) { serialRxLen = 0; return; }
+        if (idx < 0) {
+            // No header pair found. If the buffer ends in a lone MAGIC_0, keep
+            // it — it may be the start of the next frame with MAGIC_1 still in
+            // flight. Dropping it here would desync and lose that frame.
+            serialRxLen = (serialRxBuf[serialRxLen - 1] == MAGIC_0) ? 1 : 0;
+            if (serialRxLen == 1) serialRxBuf[0] = MAGIC_0;
+            return;
+        }
         if (idx > 0) { memmove(serialRxBuf, serialRxBuf + idx, serialRxLen - idx); serialRxLen -= idx; }
         if (serialRxLen < 4) return;
 
@@ -282,7 +294,12 @@ static void process_client_data(int slot) {
         for (int i = 0; i < c.rxLen - 1; i++) {
             if (c.rxBuf[i] == MAGIC_0 && c.rxBuf[i+1] == MAGIC_1) { idx = i; break; }
         }
-        if (idx < 0) { c.rxLen = 0; break; }
+        if (idx < 0) {
+            // Keep a trailing lone MAGIC_0 — see serial_read_and_broadcast().
+            c.rxLen = (c.rxBuf[c.rxLen - 1] == MAGIC_0) ? 1 : 0;
+            if (c.rxLen == 1) c.rxBuf[0] = MAGIC_0;
+            break;
+        }
         if (idx > 0) { memmove(c.rxBuf, c.rxBuf + idx, c.rxLen - idx); c.rxLen -= idx; }
         if (c.rxLen < 4) break;
 
