@@ -51,6 +51,8 @@ static void drawDetections(cv::Mat& img, const FrameDetections& d) {
 }
 
 int main(int argc, char* argv[]) {
+    setvbuf(stdout, nullptr, _IOLBF, 0);  // flush progress lines even when piped/redirected
+
     std::string configPath = ArucoConfig::kDefaultConfigPath;
     std::string serial, ip;
     bool   cfg_mirror = false;
@@ -94,7 +96,7 @@ int main(int argc, char* argv[]) {
     while (std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() < seconds) {
         if (source.read(frame)) {
             if (cfg.mirrorInput) cv::flip(frame, frame, 1);
-            frames.push_back(frame.clone());
+            frames.push_back(std::move(frame));
         }
     }
     double elapsed     = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();

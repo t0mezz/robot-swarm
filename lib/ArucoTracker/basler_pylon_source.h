@@ -49,9 +49,21 @@ public:
             // LatestImageOnly: always return the newest frame, discard queued ones.
             camera_.StartGrabbing(Pylon::GrabStrategy_LatestImageOnly);
 
+            // ResultingFrameRate is the camera's own estimate of what it can
+            // actually sustain right now given current exposure/bandwidth —
+            // often well below the requested AcquisitionFrameRate, and the
+            // most direct answer to "why is my captured fps lower than
+            // expected". Not every firmware exposes it, so failure is quiet.
+            float resultingFps = -1.f;
+            try { resultingFps = (float)Pylon::CFloatParameter(nm, "ResultingFrameRate").GetValue(); }
+            catch (...) {}
+
             printf("[basler] open  serial=%s  %dx%d  fps=%d\n",
                    camera_.GetDeviceInfo().GetSerialNumber().c_str(),
                    width_, height_, cfg.fps);
+            if (resultingFps >= 0.f)
+                printf("[basler] camera-reported sustainable rate right now: %.1f fps "
+                       "(depends on current exposure/bandwidth, not fixed)\n", resultingFps);
             return true;
         } catch (const Pylon::GenericException& e) {
             fprintf(stderr, "[basler] open failed: %s\n", e.GetDescription());
