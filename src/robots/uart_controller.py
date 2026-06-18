@@ -26,7 +26,7 @@ import time
 # Closed-loop (encoder+PID) vs. open-loop (target mapped straight to power).
 # Flip to True to re-enable closed-loop control — the PID objects and
 # run_pid()'s measurement code stay intact either way.
-ODOMETRY_ENABLED = False
+ODOMETRY_ENABLED = True
 
 if ENGINE_SOUND_ENABLED:
     from pololu_3pi_2040_robot.buzzer import Buzzer

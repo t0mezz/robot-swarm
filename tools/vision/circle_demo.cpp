@@ -35,7 +35,7 @@ static constexpr float K_YAW_D   = 0.15f;  // heading D-gain: damps transient ov
 static constexpr float K_FF_YAW  = 1.00f;   // orbit-mode yaw feedforward, turn-units per deg/s of required yaw rate — tune empirically (see orbit control below)
 static constexpr float K_RAD     = 0.30f;   // radial correction gain (mm/s per mm of error)
 static constexpr float MAX_SPEED = 100.0f;  // full motor range for high-speed testing
-static constexpr float MAX_TURN  = 40.0f;
+static constexpr float MAX_TURN  = 20.0f;
 // Slew-rate limit on the commanded turn differential, applied at the final
 // output stage. This is the actuator-side counterpart to the D-term
 // windowing below: whatever measurement noise survives upstream, this caps

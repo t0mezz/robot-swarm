@@ -1,5 +1,7 @@
 # TODO
 
+## Fix bugs in robots logic and fix odometry jitter.
+
 ## Bug: Latency
 - [x] Latency only got calculated when swarm_controller was the client running,
   since the round-robin ping lived in its main loop instead of SwarmClient.
