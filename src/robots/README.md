@@ -89,6 +89,17 @@ freq = round(440 * 2 ** ((note - 57) / 12))
 
 Deploy `robot_uart.py`, `screen_manager.py`, and `uart_controller.py` to the Pololu 3pi+ 2040 via MicroPython. `uart_controller.py` is the entry point (`main.py`).
 
+### Batch flashing
+
+`flash.py` deploys every `*.py` file in this directory (except `main.py`, Pololu's stock splash loader) over USB via `mpremote`, then soft-resets the board so the new code runs immediately:
+
+```bash
+pip install mpremote
+python3 src/robots/flash.py
+```
+
+It watches for a robot's serial port to appear, flashes it, waits for it to be unplugged, and repeats — so you can plug robots in one after another without re-running anything. Not yet verified against real hardware.
+
 ```python
 # uart_controller.py wires everything together:
 proto = UARTProtocol(uart, screen_manager=mgr, on_packet=on_packet, on_robot_id=on_robot_id)
@@ -103,3 +114,4 @@ while True:
 
 - MicroPython on Pololu 3pi+ 2040
 - `pololu_3pi_2040_robot` MicroPython library (bundled with the robot)
+- `mpremote` (PC-side, only for `flash.py`) — `pip install mpremote`
