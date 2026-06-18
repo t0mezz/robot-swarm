@@ -17,6 +17,8 @@ tools/build/
 lib/SwarmProtocol/robot_id_cfg.h
 *.o
 *.d
+__pycache__/
+*.pyc
 
 # Generated / scratch files
 *.bck
