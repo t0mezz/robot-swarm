@@ -1,11 +1,21 @@
 # TODO
 
 ## Bug: Latency
-- Find out why Latency is only getting calculated and send, when Data is
-  written to the hub and send through the dongle. They should always be
-  a calculated latency calculated with periodic pings
-- Find out why, as soon as a second client (swarm_terminal) listens to the
-  hub, the latency explodes (~x2)
+- [x] Latency only got calculated when swarm_controller was the client running,
+  since the round-robin ping lived in its main loop instead of SwarmClient.
+  Fixed: moved the 200ms round-robin ping into SwarmClient::poll(), so any
+  program using SwarmClient (swarm_terminal, latency_plot, drag_drop_demo,
+  shape_demo, ...) now gets live latency independent of which client is active.
+  Note: vision_controller/wingman/circle_demo still never call poll(), so they
+  still won't see latency (separate, pre-existing issue — they don't process
+  any incoming telemetry at all, not just pongs).
+- Investigated "second client (swarm_terminal) doubles latency": could not
+  reproduce in a controlled A/B test (single idle robot, original pre-fix
+  binaries, 15s windows) — avg/min/max were statistically identical with and
+  without swarm_terminal attached. Natural RTT jitter alone spans ~2x
+  (~2.5ms min vs ~5.5ms occasional spikes), which plausibly explains a casual
+  "it doubled" observation. Re-open with specifics (robots moving? multiple
+  robots known? which exact second client?) if it recurs.
 
 ## Grundlagen-Refactor (Basis für die folgenden Punkte)
 - Codebase aufräumen

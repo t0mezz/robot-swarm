@@ -455,11 +455,9 @@ int main(int argc, char* argv[]) {
     using Clock = std::chrono::steady_clock;
     auto lastSwarm = Clock::now();
     auto lastDraw  = Clock::now();
-    auto lastPing  = Clock::now();
-    int  pingRobot = 0;
 
     while (g_running) {
-        g_swarm.poll();
+        g_swarm.poll();  // also drives the round-robin auto-ping (see SwarmClient::poll)
         advanceTest();
 
         if (handleInput()) break;
@@ -474,17 +472,6 @@ int main(int argc, char* argv[]) {
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastDraw).count() >= drawIntervalMs) {
             drawUI();
             lastDraw = now;
-        }
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPing).count() >= 200) {
-            // Round-robin ping through known robots
-            for (int attempt = 0; attempt < MAX_ROBOTS; attempt++) {
-                pingRobot = (pingRobot + 1) % MAX_ROBOTS;
-                if (g_swarm.isKnown(pingRobot)) break;
-            }
-            if (g_swarm.isKnown(pingRobot)) {
-                g_swarm.sendPing((uint8_t)pingRobot);
-            }
-            lastPing = now;
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1));

@@ -224,9 +224,13 @@ public:
 
     // Read incoming bytes from the hub and update robot state.
     // Call this regularly (e.g. every loop iteration) to process
-    // telemetry and announce packets.
+    // telemetry and announce packets. Also drives the round-robin
+    // auto-ping (see autoPing()), so latency tracking works for any
+    // caller regardless of which program is driving the robots.
     void poll() {
         if (m_fd < 0) return;
+
+        autoPing();
 
         uint8_t tmp[512];
         ssize_t n = read(m_fd, tmp, sizeof(tmp));
@@ -301,6 +305,28 @@ private:
     uint8_t     m_rxBuf[1024];
     int         m_rxLen = 0;
     std::mutex  m_writeMutex;
+
+    // Round-robin auto-ping: every SC_PING_INTERVAL_MS, ping the next known
+    // robot. Runs from poll() so latency tracking doesn't depend on any
+    // particular client (e.g. swarm_controller) also being active.
+    static constexpr int SC_PING_INTERVAL_MS = 200;
+    std::chrono::steady_clock::time_point m_lastAutoPingAt{};
+    int m_autoPingIdx = -1;
+
+    void autoPing() {
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - m_lastAutoPingAt).count() < SC_PING_INTERVAL_MS) return;
+        m_lastAutoPingAt = now;
+
+        for (int attempt = 0; attempt < SC_MAX_ROBOTS; attempt++) {
+            m_autoPingIdx = (m_autoPingIdx + 1) % SC_MAX_ROBOTS;
+            if (m_robots[m_autoPingIdx].known) {
+                sendPing((uint8_t)m_autoPingIdx);
+                break;
+            }
+        }
+    }
 
     // ── Protocol helpers ──────────────────────────────────────────
 
