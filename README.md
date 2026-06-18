@@ -40,6 +40,7 @@ robot-swarm/
 │       ├── circle_demo.cpp        # Circle orbit formation
 │       ├── shape_demo.cpp         # Freehand path drawing controller
 │       ├── marker_eval.cpp        # Camera + detection benchmarking tool
+│       ├── frame_inspector.cpp    # Record N seconds, step through frames, inspect detections
 │       ├── aruco_tracker_config.json
 │       └── calibration/           # CMA-ES detector calibrator
 └── docs/
@@ -328,6 +329,22 @@ Camera and detection benchmark. Shows per-marker detection rate, live FPS, resol
 |-----|--------|
 | `r` | Reset evaluation counters |
 | `q` / Esc | Print summary and quit |
+
+---
+
+### `frame_inspector`
+Records a short burst of frames at the camera's current fps, then lets you step through them one at a time to inspect motion blur, exposure, or detection quality. Frames live only in memory and are dropped when the program exits — nothing is written to disk.
+
+```bash
+./build/frame_inspector [--config JSON] [--serial SN] [--ip IP] [--seconds N] [--mirror]
+```
+
+| Key | Action |
+|-----|--------|
+| `Left` / `Right` | Step one frame backward / forward |
+| `Home` / `End` | Jump to first / last frame |
+| `d` | Run the ArUco detector once over every recorded frame, then toggle the overlay |
+| `q` / Esc | Quit |
 
 ---
 

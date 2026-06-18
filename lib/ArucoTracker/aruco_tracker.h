@@ -132,6 +132,30 @@ inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
     return c;
 }
 
+// Builds a detector with the same dictionary/parameters ArucoTracker uses
+// internally. Exposed so one-shot/offline tools (e.g. frame_inspector) can
+// run an identical detection pass without the live tracker's threading,
+// Kalman filtering, or ROI state.
+inline cv::aruco::ArucoDetector buildArucoDetector(const ArucoConfig& cfg) {
+    auto dict   = cv::aruco::getPredefinedDictionary(cfg.dictId);
+    auto params = cv::aruco::DetectorParameters();
+    params.adaptiveThreshWinSizeMin              = cfg.winMin;
+    params.adaptiveThreshWinSizeMax              = cfg.winMax;
+    params.adaptiveThreshWinSizeStep             = cfg.winStep;
+    params.adaptiveThreshConstant                = cfg.threshC;
+    params.minMarkerPerimeterRate                = cfg.minPerimRate;
+    params.polygonalApproxAccuracyRate           = cfg.polyApprox;
+    params.perspectiveRemovePixelPerCell         = cfg.pixPerCell;
+    params.perspectiveRemoveIgnoredMarginPerCell = cfg.cellMargin;
+    params.errorCorrectionRate                   = cfg.errorCorr;
+    params.minOtsuStdDev                         = cfg.minOtsuStdDev;
+    params.minMarkerDistanceRate                 = 0.0;
+    params.cornerRefinementMethod                = cv::aruco::CORNER_REFINE_SUBPIX;
+    params.cornerRefinementWinSize               = cfg.cornerWin;
+    params.cornerRefinementMaxIterations         = cfg.cornerMaxIter;
+    return cv::aruco::ArucoDetector(dict, params);
+}
+
 // ─── Preprocessor pipeline ────────────────────────────────────────────────────
 
 struct IPreprocessor {
@@ -191,23 +215,7 @@ private:
 class ArucoTracker {
 public:
     explicit ArucoTracker(ArucoConfig cfg = {}) : cfg_(cfg) {
-        auto dict   = cv::aruco::getPredefinedDictionary(cfg_.dictId);
-        auto params = cv::aruco::DetectorParameters();
-        params.adaptiveThreshWinSizeMin              = cfg_.winMin;
-        params.adaptiveThreshWinSizeMax              = cfg_.winMax;
-        params.adaptiveThreshWinSizeStep             = cfg_.winStep;
-        params.adaptiveThreshConstant                = cfg_.threshC;
-        params.minMarkerPerimeterRate                = cfg_.minPerimRate;
-        params.polygonalApproxAccuracyRate           = cfg_.polyApprox;
-        params.perspectiveRemovePixelPerCell         = cfg_.pixPerCell;
-        params.perspectiveRemoveIgnoredMarginPerCell = cfg_.cellMargin;
-        params.errorCorrectionRate                   = cfg_.errorCorr;
-        params.minOtsuStdDev                         = cfg_.minOtsuStdDev;
-        params.minMarkerDistanceRate                 = 0.0;
-        params.cornerRefinementMethod                = cv::aruco::CORNER_REFINE_SUBPIX;
-        params.cornerRefinementWinSize               = cfg_.cornerWin;
-        params.cornerRefinementMaxIterations         = cfg_.cornerMaxIter;
-        detector_ = cv::aruco::ArucoDetector(dict, params);
+        detector_ = buildArucoDetector(cfg_);
 
         if (cfg_.claheClip > 0)
             clahe_ = cv::createCLAHE(cfg_.claheClip, {cfg_.claheTile, cfg_.claheTile});
