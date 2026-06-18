@@ -19,8 +19,8 @@ class EngineSound:
     """
 
     def __init__(self, buzzer, max_cps: float,
-                 idle_freq: int = 110, max_freq: int = 480,
-                 idle_duty: int = 1200, max_duty: int = 16000,
+                 idle_freq: int = 55, max_freq: int = 480,
+                 idle_duty: int = 300, max_duty: int = 16000,
                  turn_threshold: float = 80.0, wobble_hz: float = 14.0,
                  wobble_depth: int = 6, smoothing: float = 0.25):
         self._pwm            = buzzer.pwm
