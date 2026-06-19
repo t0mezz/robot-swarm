@@ -60,6 +60,11 @@ PID_INTERVAL_MS = 10      # 100 Hz control loop
 BAT_INTERVAL_MS = 2000    # read voltage every 2 s
 
 
+def _battery_byte(mv: int) -> int:
+    """Battery millivolts -> wire-protocol byte (0-255 representing 0-5V, see MSG_TELEMETRY)."""
+    return min(255, max(0, int(mv / 1000.0 / 5.0 * 255)))
+
+
 # ─── PID Controller ───────────────────────────────────────────
 
 class PI:
@@ -224,6 +229,7 @@ def run_pid():
     if time.ticks_diff(now, _last_bat_time) >= BAT_INTERVAL_MS:
         _bat_mv[0] = battery.get_level_millivolts()
         _last_bat_time = now
+        proto.send_metrics(_battery_byte(_bat_mv[0]))
 
     mgr.mark_dirty()
 

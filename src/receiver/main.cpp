@@ -148,6 +148,7 @@ static int8_t   currentMotorL = 0;
 static int8_t   currentMotorR = 0;
 static uint16_t lastLatencyUs = 0;
 static uint8_t  statusFlags   = STATUS_ANNOUNCING;
+static uint8_t  lastBattery   = 0;  // from MSG_METRICS, uint8 0-255 -> 0-5V
 
 // ═══════════════════════════════════════════════════════════════
 // ESP-NOW Callback
@@ -294,6 +295,9 @@ static void processUartFrame(const uint8_t* data, uint8_t len) {
         uint8_t frame[48];
         buildFrame(frame, MSG_DEBUG, outPayload, payloadLen + 1);
         Transport::sendToDongle(frame, frameSize(payloadLen + 1));
+    } else if (data[2] == MSG_METRICS) {
+        // Batteriespannung vom RP2040: [battery] (uint8, 0-255 -> 0-5V)
+        if (data[3] >= 1) lastBattery = data[4];
     }
 }
 
@@ -338,7 +342,7 @@ static void sendTelemetry() {
 
     uint8_t payload[7] = {
         ROBOT_ID,
-        0,                       // Batterie (TODO)
+        lastBattery,
         statusFlags,
         (uint8_t)currentMotorL,
         (uint8_t)currentMotorR,

@@ -15,6 +15,9 @@
 #define MSG_DEBUG         0x02   // RP2040 -> ESP32 (UART): [field_id, value_type, data...]
                                  //   receiver prepends robot_id and relays to dongle/PC:
                                  //   PC sees [robot_id, field_id, value_type, data...] (debug log)
+#define MSG_METRICS       0x03   // RP2040 -> ESP32 (UART): [battery]
+                                 //   battery: uint8, 0-255 -> 0-5V, forwarded as-is into
+                                 //   MSG_TELEMETRY's battery byte
 #define MSG_ROBOT_ID      0x04   // ESP32 -> RP2040 (UART): [robot_id]
 #define MSG_SWARM         0x10   // PC -> Broadcast: [id|L|R] x MAX_ROBOTS
 #define MSG_ANNOUNCE      0x20   // Robot -> Broadcast: [id, mac x6]
