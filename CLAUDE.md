@@ -36,9 +36,15 @@ Requires OpenCV, SFML 3 (not `sfml@2`), and Basler pylon 8.1.0 on the host — s
 
 No build step. Deploy `robot_uart.py`, `screen_manager.py`, and `uart_controller.py` directly to the Pololu 3pi+ 2040 over MicroPython (`uart_controller.py` is the entry point / `main.py`).
 
-### Tests
+### Tests (`tests/`, plain Makefile)
 
-There is no test suite or CI configured in this repo yet (see `TODO.md` under "Tooling / Tests" — unit tests for the CRC-8 framing and formation math are a planned future step, not yet started). Don't invent test commands.
+```bash
+cd tests
+make test         # builds and runs tests/build/test_protocol
+make clean        # removes tests/build/
+```
+
+Currently covers the CRC-8 framing pure functions (`crc8`, `buildFrame`, `validateFrame`, `frameSize` in `lib/SwarmProtocol/protocol.h`) with a small assert-based harness — no test framework dependency. There's no CI configured yet. Formation-math unit tests are still pending extraction of that logic into testable pure functions (see `TODO.md` under "Tooling / Tests").
 
 ## Architecture
 

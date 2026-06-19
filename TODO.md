@@ -32,8 +32,8 @@
 - Record/Replay: Vision-Posen + gesendete Commands loggen und offline replayen
   (hilft beim Tunen der Formationscontroller ohne Hardware, macht Latenz-Tests
   reproduzierbar)
-- Unit-Tests für reine Funktionen: CRC-8 Framing (SwarmProtocol), Formation-Mathematik
-  nach Extraktion
+- ~~Unit-Tests für reine Funktionen: CRC-8 Framing (SwarmProtocol)~~ erledigt,
+  siehe unten. Formation-Mathematik nach Extraktion noch offen.
 - Generalisiertes DEBUG-Util: gemeinsame Overlay/HUD-Komponente für cam_fps,
   loop_fps, Latenz, Batterie-Prozent etc. über alle PC-Tools (circle_demo,
   shape_demo, vision_controller, wingman, ...), statt jedes Tool sein eigenes
@@ -98,3 +98,15 @@
 ~~Gelöst (2026-06-12)~~ - loop_fps liegt jetzt bei ~115-117, praktisch
 identisch mit cam_fps (115). Details siehe "Erledigt (2026-06-12)" unten und
 PERFORMANCE.md.
+
+## Tests: CRC-8 Framing Unit Tests Erledigt (2026-06-19)
+- [x] Neues `tests/`-Verzeichnis (eigenes Makefile, kein Framework, einfache
+  Asserts): `tests/test_protocol.cpp` deckt die reinen Funktionen aus
+  `lib/SwarmProtocol/protocol.h` ab (`crc8`, `buildFrame`, `validateFrame`,
+  `frameSize`) — bekannte CRC-8-Testvektoren (u.a. der Standard-Check-Wert
+  0xF4 für "123456789", unabhängig per Python gegengerechnet), Build→Validate-
+  Round-Trip für mehrere Payload-Längen, sowie Ablehnung von kaputten Frames
+  (CRC-Bit-Flip, Payload-Bit-Flip, falsches Magic-Byte, abgeschnittener Buffer).
+  `cd tests && make test` baut und führt sie aus. Formation-Mathematik bleibt
+  offen (siehe "Tooling / Tests" oben — braucht erst die Extraktion in reine
+  Funktionen).
