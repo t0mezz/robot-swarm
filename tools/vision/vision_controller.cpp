@@ -99,7 +99,12 @@ static constexpr float MAX_TURN       = 16.0f;
 static constexpr float ARRIVAL_MM     = 75.0f;
 static constexpr float SEND_INTERVALS = 0.05f;
 // Yaw EMA: lower α = smoother but more lag; higher α = faster tracking, less overshoot.
-static constexpr float YAW_ALPHA      = 0.25f;
+// 0.08, not the 0.25 this was tuned at originally: that value matched a
+// ~30fps loop, but the 2026-06-15 sleep_for(50ms->1ms) fix (55e7d938) lets
+// this loop run at the camera's ~115fps now, so the old alpha let raw
+// per-frame ArUco corner-angle noise straight through into the D-term. See
+// circle_demo.cpp's YAW_ALPHA comment for the full derivation.
+static constexpr float YAW_ALPHA      = 0.08f;
 
 static float normAngle(float a) {
     while (a >  180) a -= 360;

@@ -17,7 +17,7 @@ from pathlib import Path
 import serial.tools.list_ports
 
 ROBOT_DIR = Path(__file__).resolve().parent
-SKIP_FILES = {"main.py", Path(__file__).name}
+SKIP_FILES = {".main.py", Path(__file__).name}
 FILES = sorted(p for p in ROBOT_DIR.glob("*.py") if p.name not in SKIP_FILES)
 
 POLL_INTERVAL_S = 0.5

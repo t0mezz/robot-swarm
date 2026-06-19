@@ -1,47 +1,13 @@
 # TODO
 
+## Think about if its a good idea to:
+- Create a unified, well tuned PID unit taking in referenced of robot poses and desired poses (maybe in vector space)
+- Every demo is dependent of a good PID controller
+- we dont want unnessarary computational or memory costs though (references, vecor space conversion)
+
 ## Fix bugs in robots logic and fix odometry jitter.
 
-## Bug: Latency
-- [x] Latency only got calculated when swarm_controller was the client running,
-  since the round-robin ping lived in its main loop instead of SwarmClient.
-  Fixed: moved the 200ms round-robin ping into SwarmClient::poll(), so any
-  program using SwarmClient (swarm_terminal, latency_plot, drag_drop_demo,
-  shape_demo, ...) now gets live latency independent of which client is active.
-  Note: vision_controller/wingman/circle_demo still never call poll(), so they
-  still won't see latency (separate, pre-existing issue — they don't process
-  any incoming telemetry at all, not just pongs).
-- Investigated "second client (swarm_terminal) doubles latency": could not
-  reproduce in a controlled A/B test (single idle robot, original pre-fix
-  binaries, 15s windows) — avg/min/max were statistically identical with and
-  without swarm_terminal attached. Natural RTT jitter alone spans ~2x
-  (~2.5ms min vs ~5.5ms occasional spikes), which plausibly explains a casual
-  "it doubled" observation. Re-open with specifics (robots moving? multiple
-  robots known? which exact second client?) if it recurs.
-
-## Grundlagen-Refactor (Basis für die folgenden Punkte)
-- Codebase aufräumen
-    - Socket/Protokoll-Boilerplate zentralisieren (aktuell in swarm_controller, swarm_terminal,
-      latency_plot, game.cpp, circle_demo dupliziert) -> konsequent SwarmClient nutzen
-    - Tuning-Konstanten (K_DIST, K_ANGLE, K_YAW_D etc.) in gemeinsame Config auslagern
-      (analog aruco_tracker_config.json)
-    - Große Demo-Dateien (circle_demo, wingman, shape_demo, je 800-1000 Zeilen) entflechten:
-      Controller-Logik / Socket-Code / Rendering trennen
-
-## Vision/Control Interface
-- Vision und Control Layer isolieren, sauberes Vision-Interface (PoseStream) erstellen
-    - Im swarm repo bleiben (kein Repo-Split, Codebase noch zu klein/jung dafür)
-    - PlatformIO-Firmware ist bereits sauber getrennt - hier nur PC-seitige Vision/Control-
-      Kopplung lösen
-    - Vision-Demos sollen Posen über das Interface beziehen statt direkt ArucoTracker +
-      Protokoll-Frames selbst zu bauen (drag_drop_demo macht das schon besser via SwarmClient)
-
-## Formationsfunktionen zusammenfassen
-- Funktionen wie follow_circle, follow_shape (kein Userinput nötig) als Swarm-/
-  Formationsfunktionen-Bibliothek zusammenfassen (Kontroll-Mathematik ist bereits
-  rendering-agnostisch, leicht extrahierbar)
-- Übrige Funktionen mit Userinput (drag_drop, WASD-Controller) separat halten
-    - Hier Latenz über remote testen (braucht Input-Stream Remote-Client -> PC)
+## Tuning-Konstanten (K_DIST, K_ANGLE, K_YAW_D etc.) in gemeinsame Config auslagern (analog aruco_tracker_config.json)
 
 ## Webserver / Headless
 - Webserver-Fähigkeit hinzufügen, komplett headless
@@ -75,14 +41,6 @@
   Window-Properties/Designs (Default-Größe passend zur Kamera-Auflösung,
   Theme/Layout) bereitstellen.
 
-## Performance: loop_fps vs cam_fps (circle_demo)
-~~Gelöst (2026-06-12)~~ - loop_fps liegt jetzt bei ~115-117, praktisch
-identisch mit cam_fps (115). Details siehe "Erledigt (2026-06-12)" unten und
-PERFORMANCE.md.
-
-## Hardware
-- Bessere Aruco-Code Halterung bauen
-
 ## Später
 - Windows Kompatibilität (neuer branch)
     - Aktuell kein #ifdef _WIN32 vorhanden - betrifft AF_UNIX Sockets, evdev-Tastatur,
@@ -110,3 +68,26 @@ PERFORMANCE.md.
     - verwaiste, nicht ignorierte Binary tools/drag_drop_demo entfernt
 - Makefile-Target für drag_drop_demo ergänzt (tools/vision/drag_drop_demo.cpp,
   analog zu shape_demo: ArucoTracker + SwarmClient)
+
+
+## Bug: Latency Erledigt (2026-06-18)
+- [x] Latency only got calculated when swarm_controller was the client running,
+  since the round-robin ping lived in its main loop instead of SwarmClient.
+  Fixed: moved the 200ms round-robin ping into SwarmClient::poll(), so any
+  program using SwarmClient (swarm_terminal, latency_plot, drag_drop_demo,
+  shape_demo, ...) now gets live latency independent of which client is active.
+  Note: vision_controller/wingman/circle_demo still never call poll(), so they
+  still won't see latency (separate, pre-existing issue — they don't process
+  any incoming telemetry at all, not just pongs).
+- Investigated "second client (swarm_terminal) doubles latency": could not
+  reproduce in a controlled A/B test (single idle robot, original pre-fix
+  binaries, 15s windows) — avg/min/max were statistically identical with and
+  without swarm_terminal attached. Natural RTT jitter alone spans ~2x
+  (~2.5ms min vs ~5.5ms occasional spikes), which plausibly explains a casual
+  "it doubled" observation. Re-open with specifics (robots moving? multiple
+  robots known? which exact second client?) if it recurs.
+
+  ## Performance: loop_fps vs cam_fps (circle_demo) Erledigt (2026-06-12)
+~~Gelöst (2026-06-12)~~ - loop_fps liegt jetzt bei ~115-117, praktisch
+identisch mit cam_fps (115). Details siehe "Erledigt (2026-06-12)" unten und
+PERFORMANCE.md.

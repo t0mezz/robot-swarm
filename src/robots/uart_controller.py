@@ -4,11 +4,6 @@
 #
 # The two signed bytes in MSG_SPEED now represent target rotational wheel
 # speeds scaled to [-127..+127] → [-MAX_WHEEL_CPS..+MAX_WHEEL_CPS].
-#
-# Optimisations retained:
-#   - UART RX buffer enlarged to 256 bytes
-#   - Skip-to-latest: only the most recent speed packet is applied per loop
-#   - Display update fully decoupled from packet receive
 
 # ─── Feature toggles ───────────────────────────────────────────
 ENGINE_SOUND_ENABLED = True   # False: skip importing/loading engine_sound entirely
@@ -26,7 +21,7 @@ import time
 # Closed-loop (encoder+PID) vs. open-loop (target mapped straight to power).
 # Flip to True to re-enable closed-loop control — the PID objects and
 # run_pid()'s measurement code stay intact either way.
-ODOMETRY_ENABLED = True
+ODOMETRY_ENABLED = False
 
 if ENGINE_SOUND_ENABLED:
     from pololu_3pi_2040_robot.buzzer import Buzzer
@@ -59,7 +54,7 @@ PID_I_MAX = 250.0
 MOTOR_MAX = 6000
 
 # PID update interval
-PID_INTERVAL_MS = 20      # 50 Hz control loop
+PID_INTERVAL_MS = 10      # 100 Hz control loop
 
 # Battery sampling interval
 BAT_INTERVAL_MS = 2000    # read voltage every 2 s

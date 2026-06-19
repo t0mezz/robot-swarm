@@ -35,7 +35,12 @@ static constexpr float MAX_SPEED     = 60.0f;
 static constexpr float MAX_TURN      = 16.0f;
 static constexpr float ARRIVAL_MM    = 20.0f;
 static constexpr float SEND_INT_S    = 0.05f;
-static constexpr float YAW_ALPHA     = 0.25f;
+// 0.08, not the 0.25 this was tuned at originally: that value matched a
+// ~30fps loop, but the 2026-06-15 sleep_for(50ms->1ms) fix (55e7d938) lets
+// this loop run at the camera's ~115fps now, so the old alpha let raw
+// per-frame ArUco corner-angle noise straight through into the D-term. See
+// circle_demo.cpp's YAW_ALPHA comment for the full derivation.
+static constexpr float YAW_ALPHA     = 0.08f;
 static constexpr float DANGER_MM     = 120.0f;
 static constexpr float SAFE_MM       = 230.0f;
 static constexpr float AVOID_BLEND   = 0.70f;
