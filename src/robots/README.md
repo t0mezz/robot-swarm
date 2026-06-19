@@ -45,7 +45,7 @@ CRC-8 covers `type + len + payload` (polynomial 0x07).
 |----|------|-----------|---------|
 | `0x01` | `MSG_SPEED` | ESP32 → Robot | `[left: int8][right: int8]` (-127..+127) |
 | `0x02` | `MSG_DEBUG` | Robot → PC | `[field_id][value_type][data...]` (robot→ESP32; ESP32 prepends `robot_id`, so the PC sees `[robot_id][field_id][value_type][data...]`) |
-| `0x03` | `MSG_METRICS` | — | — |
+| `0x03` | `MSG_METRICS` | Robot → ESP32 | `[battery: uint8]` (0-255 → 0-5V; ESP32 forwards it as-is into `MSG_TELEMETRY`'s battery byte) |
 | `0x04` | `MSG_ROBOT_ID` | ESP32 → Robot | `[id: uint8]` |
 | `0x20` | `MSG_PING` | bidirectional | empty |
 | `0x22` | `MSG_DEBUG_REG` | ESP32 → Robot | `[field_id][display_type][x][y][label...]` |

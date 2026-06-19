@@ -139,6 +139,15 @@ class UARTProtocol:
         payload = struct.pack('bb', left, right)
         self.send(MSG_SPEED, payload)
 
+    def send_metrics(self, battery_byte: int):
+        """
+        Sendet die Batteriespannung an den ESP32 (MSG_METRICS).
+
+        :param battery_byte: Spannung skaliert auf 0..255 (0-5V), wird vom
+                             ESP32 1:1 in den MSG_TELEMETRY-Batterie-Byte übernommen
+        """
+        self.send(MSG_METRICS, bytes([battery_byte & 0xFF]))
+
     def send_debug(self, text, field_id: int = 0):
         """
         Sendet eine Debug-Log-Zeile an den PC (MSG_DEBUG).
