@@ -139,6 +139,23 @@ class UARTProtocol:
         payload = struct.pack('bb', left, right)
         self.send(MSG_SPEED, payload)
 
+    def send_debug(self, text, field_id: int = 0):
+        """
+        Sendet eine Debug-Log-Zeile an den PC (MSG_DEBUG).
+
+        Der ESP32 stellt die robot_id voran und reicht die Zeile an den Dongle
+        weiter; das swarm_terminal zeigt sie im DEBUG-LOG-Bereich an. Payload:
+        [field_id][value_type][data...] – gleiches Format wie MSG_DEBUG_DATA,
+        nur in Gegenrichtung (Robot -> PC).
+
+        :param text:     Beliebiger String (wird auf 32 Bytes UTF-8 gekuerzt,
+                         um im UART/ESP-NOW-Frame-Budget zu bleiben)
+        :param field_id: Optionaler Kanal (0..255) zur Unterscheidung mehrerer Quellen
+        """
+        data    = text.encode("utf-8")[:32]
+        payload = bytes([field_id & 0xFF, DBG_STRING]) + data
+        self.send(MSG_DEBUG, payload)
+
     def _send_ping(self):
         self.send(MSG_PING, bytes())
         self._last_heartbeat = time.ticks_ms()

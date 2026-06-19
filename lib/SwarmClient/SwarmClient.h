@@ -41,12 +41,20 @@
 
 static constexpr uint8_t SC_MAGIC_0       = 0xAA;
 static constexpr uint8_t SC_MAGIC_1       = 0x55;
+static constexpr uint8_t SC_MSG_DEBUG     = 0x02;
 static constexpr uint8_t SC_MSG_SWARM     = 0x10;
 static constexpr uint8_t SC_MSG_ANNOUNCE  = 0x20;
 static constexpr uint8_t SC_MSG_PING      = 0x22;
 static constexpr uint8_t SC_MSG_PONG      = 0x23;
 static constexpr uint8_t SC_MSG_TELEMETRY = 0x30;
 static constexpr int     SC_MAX_ROBOTS    = 32;
+
+// Debug value types (mirrors lib/SwarmProtocol/debug_protocol.h), used by the
+// MSG_DEBUG robot->PC debug-log channel.
+static constexpr uint8_t SC_DBG_FLOAT32 = 0x01;
+static constexpr uint8_t SC_DBG_INT8    = 0x02;
+static constexpr uint8_t SC_DBG_INT16   = 0x03;
+static constexpr uint8_t SC_DBG_STRING  = 0x04;
 
 static constexpr uint8_t SC_STATUS_LOW_BATTERY = 0x04;
 static constexpr uint8_t SC_STATUS_ANNOUNCING  = 0x08;
@@ -67,6 +75,15 @@ public:
         bool     hasTelemetry = false;
         std::chrono::steady_clock::time_point lastSeen;
         std::chrono::steady_clock::time_point lastPongAt;
+    };
+
+    // One robot->PC debug-log line (MSG_DEBUG). Robots emit these via
+    // UARTProtocol.send_debug(); the receiver prepends robotId.
+    struct DebugEntry {
+        uint8_t     robotId = 0;
+        uint8_t     fieldId = 0;
+        std::string text;
+        std::chrono::steady_clock::time_point at;
     };
 
     SwarmClient() {
@@ -298,6 +315,11 @@ public:
         return id < SC_MAX_ROBOTS ? m_robots[id] : empty;
     }
 
+    // Rolling buffer of robot->PC debug-log lines (oldest first, capped at
+    // SC_DEBUG_LOG_MAX). Empty until a robot sends its first MSG_DEBUG.
+    const std::vector<DebugEntry>& debugLog() const { return m_debugLog; }
+    void clearDebugLog() { m_debugLog.clear(); }
+
 private:
     int         m_fd    = -1;
     int8_t      m_speeds[SC_MAX_ROBOTS][2] = {};
@@ -305,6 +327,9 @@ private:
     uint8_t     m_rxBuf[1024];
     int         m_rxLen = 0;
     std::mutex  m_writeMutex;
+
+    static constexpr size_t SC_DEBUG_LOG_MAX = 200;
+    std::vector<DebugEntry> m_debugLog;
 
     // Round-robin auto-ping: every SC_PING_INTERVAL_MS, ping the next known
     // robot. Runs from poll() so latency tracking doesn't depend on any
@@ -352,6 +377,29 @@ private:
 
     static int frameSize(uint8_t plen) { return 4 + plen + 1; }
 
+    // Render a MSG_DEBUG value payload to text per its value_type.
+    static std::string formatDebugValue(uint8_t vtype, const uint8_t* d, int len) {
+        if (len < 0) len = 0;
+        char buf[64];
+        switch (vtype) {
+            case SC_DBG_FLOAT32:
+                if (len >= 4) { float f; memcpy(&f, d, 4);
+                    snprintf(buf, sizeof(buf), "%.2f", f); return buf; }
+                break;
+            case SC_DBG_INT8:
+                if (len >= 1) {
+                    snprintf(buf, sizeof(buf), "%d", (int)(int8_t)d[0]); return buf; }
+                break;
+            case SC_DBG_INT16:
+                if (len >= 2) { int16_t v = (int16_t)(d[0] | (d[1] << 8));
+                    snprintf(buf, sizeof(buf), "%d", (int)v); return buf; }
+                break;
+            case SC_DBG_STRING:
+                return std::string(reinterpret_cast<const char*>(d), len);
+        }
+        return std::string();
+    }
+
     void parseFrame(const uint8_t* data, int len) {
         if (len < 5) return;
         uint8_t type = data[2];
@@ -363,6 +411,23 @@ private:
         auto           now = std::chrono::steady_clock::now();
 
         switch (type) {
+            case SC_MSG_DEBUG:
+                // [robot_id][field_id][value_type][data...]
+                if (plen >= 3 && p[0] < SC_MAX_ROBOTS) {
+                    uint8_t id = p[0];
+                    DebugEntry e;
+                    e.robotId = id;
+                    e.fieldId = p[1];
+                    e.text    = formatDebugValue(p[2], &p[3], plen - 3);
+                    e.at      = now;
+                    m_debugLog.push_back(std::move(e));
+                    if (m_debugLog.size() > SC_DEBUG_LOG_MAX)
+                        m_debugLog.erase(m_debugLog.begin(),
+                                         m_debugLog.begin() +
+                                             (m_debugLog.size() - SC_DEBUG_LOG_MAX));
+                    m_robots[id].lastSeen = now;
+                }
+                break;
             case SC_MSG_ANNOUNCE:
                 if (plen >= 7 && p[0] < SC_MAX_ROBOTS) {
                     uint8_t id = p[0];

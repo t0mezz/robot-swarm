@@ -282,6 +282,18 @@ static void processUartFrame(const uint8_t* data, uint8_t len) {
         uart_send_robot_id();
         DebugScreen::registerAllFields(UART);
         debugRegistered = true;
+    } else if (data[2] == MSG_DEBUG) {
+        // Debug-Log vom RP2040: [field_id][value_type][data...]
+        // robot_id voranstellen und 1:1 an den Dongle weiterreichen (der Dongle
+        // leitet unbekannte Typen per default an den PC weiter -> swarm_terminal).
+        uint8_t payloadLen = data[3];
+        if (payloadLen > 40) return;   // hält den Frame im UART/ESP-NOW-Budget
+        uint8_t outPayload[42];
+        outPayload[0] = ROBOT_ID;
+        memcpy(&outPayload[1], &data[4], payloadLen);
+        uint8_t frame[48];
+        buildFrame(frame, MSG_DEBUG, outPayload, payloadLen + 1);
+        Transport::sendToDongle(frame, frameSize(payloadLen + 1));
     }
 }
 

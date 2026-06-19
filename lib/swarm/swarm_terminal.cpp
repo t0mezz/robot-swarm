@@ -104,6 +104,24 @@ static void drawUI(const SwarmClient& swarm) {
     printf("\033[37m  Active: %d/%d    Registered: %d/%d\033[0m\n",
            activeCount, MAX_ROBOTS, totalCount, MAX_ROBOTS);
     std::cout << "\033[90m  via swarm_hub (/tmp/swarm_hub.sock)   Ctrl+C to exit\033[0m\n";
+
+    // Debug log — only shown once a robot has sent at least one MSG_DEBUG line.
+    const auto& log = swarm.debugLog();
+    if (!log.empty()) {
+        std::cout << "\n\033[1;37m  DEBUG LOG\033[0m\n";
+        std::cout << "\033[90m  age     robot  message\033[0m\n";
+        std::cout << "\033[90m────────────────────────────────────────────────────────────────────────────\033[0m\n";
+
+        const int shown = 12;
+        int start = (int)log.size() > shown ? (int)log.size() - shown : 0;
+        for (int i = start; i < (int)log.size(); i++) {
+            const auto& e = log[i];
+            double age = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             now - e.at).count() / 1000.0;
+            printf("\033[90m  -%5.1fs \033[36mR%-3d\033[0m %s\n",
+                   age, e.robotId, e.text.c_str());
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════

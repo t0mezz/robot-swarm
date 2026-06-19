@@ -1,5 +1,12 @@
 # TODO
 
+## ⚠️ Reflash needed (2026-06-19)
+- Reflash the **robot RP2040** (`src/robots/` MicroPython: `robot_uart.py`) and the
+  **receiver ESP32** (`pio run -e receiver -t upload`) — added the `MSG_DEBUG`
+  robot→PC debug-log channel (`UARTProtocol.send_debug()` → receiver relays with
+  `robot_id` → `swarm_terminal` DEBUG LOG pane). The **dongle is unchanged** (it
+  already forwards unknown frame types 1:1 to the PC).
+
 ## Think about if its a good idea to:
 - Create a unified, well tuned PID unit taking in referenced of robot poses and desired poses (maybe in vector space)
 - Every demo is dependent of a good PID controller
