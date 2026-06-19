@@ -16,51 +16,48 @@
 
 ## Tuning-Konstanten (K_DIST, K_ANGLE, K_YAW_D etc.) in gemeinsame Config auslagern (analog aruco_tracker_config.json)
 
-## Idea: remote robot shutdown command
+## Idea: remote robot shutdown command — SCRAPPED (2026-06-19)
 
-Goal: power a robot off remotely (end of session, low battery, retrieving a
-robot that wandered out of reach) instead of having to walk over and press
-the physical power button.
+**Scrapped: not firmware-feasible without a hardware mod on every robot.**
+The power latch's control input is *not* wired to any RP2040/ESP32 GPIO on the
+3pi+ 2040 — there is no onboard trace to drive it from software. Triggering it
+would require manually soldering a wire from a free GPIO to the latch on each
+of the (up to 32) robots. Not worth it; parked. Research kept below in case the
+trade-off changes (e.g. a one-off hardware revision).
 
-**Feasibility check (done, before writing any firmware code):**
+Goal was: power a robot off remotely (end of session, low battery, retrieving a
+robot that wandered out of reach) instead of walking over to press the physical
+power button.
+
+**Research findings:**
 - The 3pi+ 2040 control board's power button is *not* a plain mechanical
   switch — it's Pololu's solid-state pushbutton-power-switch latching
-  circuit (same one used on their standalone power-switch boards). The
-  RP2040 has a GPIO wired to the latch's control input; floating/driving it
-  low releases the latch and cuts the board's own power, same effect as a
-  second press of the physical button. So a true power-off (not just
-  motors-idle) is hardware-feasible. Source: Pololu 3pi+ 2040 User's Guide
-  §6.7 "Power".
-- BUT the vendored `pololu_3pi_2040_robot` MicroPython library (lives on the
-  robot's flash, not in this repo) doesn't expose this — its modules are
-  `battery.py` (ADC battery-voltage read only, GPIO26), `motors.py`,
+  circuit. Driving the latch's control input releases it and cuts the board's
+  own power. So a true power-off is electrically possible *if* you can reach
+  that input — but see the scrap reason above: no onboard GPIO connection
+  exists. Source: Pololu 3pi+ 2040 User's Guide §6.7 "Power".
+- The vendored `pololu_3pi_2040_robot` MicroPython library exposes no
+  `power.py`/shutdown module (modules: `battery.py`, `motors.py`,
   `buttons.py`, `buzzer.py`, `display.py`, `encoders.py`, `imu.py`,
-  `ir_sensors.py`, `rgb_leds.py`, `yellow_led.py`. No `power.py`/shutdown
-  module. Using the latch would mean driving the control GPIO directly via
-  `machine.Pin` — **the exact pin number needs confirming against the real
-  board schematic/pinout on actual hardware before this gets implemented**,
-  not guessed from documentation alone.
-- Open question to verify on hardware: the onboard ESP32-S3 receiver has no
-  battery of its own — it's powered from the 3pi+ board's regulated rail —
-  so cutting RP2040/board power almost certainly also kills the ESP32. That
-  means shutdown is "whole robot off" (matches the physical button, can't
-  be undone remotely — same as today) rather than "motors off, robot stays
-  reachable." Probably the desired behavior, but confirm before relying on
-  it.
+  `ir_sensors.py`, `rgb_leds.py`, `yellow_led.py`) — consistent with there
+  being no software-reachable latch line.
+- CONFIRMED: the onboard ESP32-S3 receiver has no battery of its own — it's
+  powered from the 3pi+ board's regulated rail — so cutting RP2040/board power
+  also cuts the receiver. Shutdown would have been "whole robot off" (matches
+  the physical button, irreversible remotely), which was the intended behavior.
 
-**Proposed design once the GPIO is confirmed:**
+**Sketched design (only relevant if the hardware mod ever gets done):**
 - New protocol message targeted at a single robot ID (not broadcast — an
   accidental swarm-wide shutdown would require physically visiting every
-  robot to recover). Either reuse the already-reserved-but-unused
-  `MSG_CONFIG` (0x40, PC→Robot) or add a new `MSG_SHUTDOWN`; needs adding in
-  all three protocol implementations (see CLAUDE.md "Wire protocol" note).
-  Path: PC tool → swarm_hub → dongle → ESP-NOW unicast → robot ESP32 → new
-  UART message type → RP2040.
-- RP2040 graceful sequence on receipt: `motors.set_speeds(0, 0)` → brief
-  "shutting down" message on the OLED → short delay → drive the latch
-  control GPIO to release power.
-- PC-side: require an explicit per-robot confirmation step (not a single
-  bare keypress) given the action is irreversible without physical access.
+  robot to recover). Either reuse `MSG_CONFIG` (0x40, PC→Robot) or add a new
+  `MSG_SHUTDOWN`; needs adding in all three protocol implementations (see
+  CLAUDE.md "Wire protocol" note). Path: PC tool → swarm_hub → dongle →
+  ESP-NOW unicast → robot ESP32 → new UART message type → RP2040.
+- RP2040 graceful sequence: `motors.set_speeds(0, 0)` → brief "shutting down"
+  message on the OLED → short delay → drive the (hand-wired) latch GPIO to
+  release power.
+- PC-side: require an explicit per-robot confirmation step, since the action
+  is irreversible without physical access.
 
 ## Webserver / Headless
 - Webserver-Fähigkeit hinzufügen, komplett headless
