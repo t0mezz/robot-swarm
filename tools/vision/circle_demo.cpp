@@ -10,6 +10,7 @@
 
 #include "aruco_tracker.h"
 #include "SwarmClient.h"
+#include "DebugHud.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -946,8 +947,8 @@ int main(int argc, char* argv[]) {
         }
 
         // ── Status bar ────────────────────────────────────────────────────────
-        char hud[256];
-        snprintf(hud, sizeof(hud),
+        DebugHud hud;
+        hud.title(DebugHud::fmt(
             "loop_fps:%.0f  Robots:%d/%d  R:%.0fmm  Gap:%.0fmm  %s  HUB:%s  %s",
             fps, (int)poseById.size(), registeredCount,
             circle.radius, circle.minGapMm,
@@ -955,9 +956,9 @@ int main(int argc, char* argv[]) {
             swarm.isConnected() ? "OK" : "INACTIVE",
             circle.tracking
                 ? cv::format("ORBIT %.0fdeg/s", circle.orbitSpeed).c_str()
-                : "POSITION");
-        cv::Scalar hudCol = swarm.isConnected() ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 120, 255);
-        tracker.drawText(disp, hud, {10, disp.rows - 19}, 18, hudCol);
+                : "POSITION"),
+            swarm.isConnected() ? DebugHud::COL_OK : DebugHud::COL_BAD);
+        hud.draw(disp, {10, disp.rows - 36});
 
         auto tDrawEnd = std::chrono::steady_clock::now();
         accDraw += std::chrono::duration<double>(tDrawEnd - tControlEnd).count();

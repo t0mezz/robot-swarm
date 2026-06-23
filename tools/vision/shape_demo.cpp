@@ -13,6 +13,7 @@
 
 #include "aruco_tracker.h"
 #include "SwarmClient.h"
+#include "DebugHud.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -315,12 +316,6 @@ struct RobotTelRow {
     float    distMm;         // -1 = no waypoint assigned
 };
 
-static const cv::Scalar COL_OK   (0, 220, 80);
-static const cv::Scalar COL_WARN (0, 180, 255);
-static const cv::Scalar COL_BAD  (0, 80,  255);
-static const cv::Scalar COL_DIM  (90, 90,  90);
-static const cv::Scalar COL_HEAD (200, 200, 200);
-
 static cv::Mat buildTelPanel(int width, const std::vector<RobotTelRow>& rows,
     float fps, int visible, int registered, float pathMm,
     float speedPct, bool hubOk, Mode mode, Tool tool)
@@ -328,58 +323,35 @@ static cv::Mat buildTelPanel(int width, const std::vector<RobotTelRow>& rows,
     static const char* TOOL_NAMES[] = {"LINE","RECT","CIRCLE","FREEHAND"};
     cv::Mat panel(TEL_HEIGHT, width, CV_8UC3, cv::Scalar(18, 18, 18));
 
-    // Summary bar
-    char sum[300];
+    DebugHud hud;
     if (mode == Mode::DRAW)
-        snprintf(sum, sizeof(sum),
+        hud.title(DebugHud::fmt(
             "loop_fps:%.0f  Robots:%d/%d  Path:%.0fmm  Speed:%.0f%%  MODE:DRAW  TOOL:%s  HUB:%s",
             fps, visible, registered, pathMm, speedPct,
-            TOOL_NAMES[(int)tool], hubOk ? "OK" : "OFFLINE");
+            TOOL_NAMES[(int)tool], hubOk ? "OK" : "OFFLINE"),
+            hubOk ? DebugHud::COL_OK : DebugHud::COL_BAD);
     else
-        snprintf(sum, sizeof(sum),
+        hud.title(DebugHud::fmt(
             "loop_fps:%.0f  Robots:%d/%d  Path:%.0fmm  Speed:%.0f%%  MODE:TRACK  HUB:%s",
-            fps, visible, registered, pathMm, speedPct, hubOk ? "OK" : "OFFLINE");
-    ArucoTracker::drawText(panel, sum, {8, 22}, 17, hubOk ? COL_OK : COL_BAD);
-    cv::line(panel, {0,30}, {width,30}, {45,45,45}, 1);
+            fps, visible, registered, pathMm, speedPct, hubOk ? "OK" : "OFFLINE"),
+            hubOk ? DebugHud::COL_OK : DebugHud::COL_BAD);
 
-    // Column headers
-    const int CX[] = {8, 55, 115, 185, 255, 315, 390, 475};
-    const char* HD[] = {"ID","Vision","Battery","Latency","Mot-L","Mot-R","Dist(mm)","Status"};
-    for (int i = 0; i < 8; i++)
-        ArucoTracker::drawText(panel, HD[i], {CX[i], 50}, 15, COL_HEAD);
-    cv::line(panel, {0,56}, {width,56}, {45,45,45}, 1);
-
-    int y = 76;
+    hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Dist(mm)", "Status"});
     for (auto& r : rows) {
-        if (y >= TEL_HEIGHT - 8) break;
-        cv::Scalar col = r.visible ? COL_OK : (r.known ? COL_WARN : COL_DIM);
-
-        char id[6];  snprintf(id,  sizeof(id),  "%d", r.id);
-        char vis[4]; snprintf(vis, sizeof(vis),  r.visible ? "YES" : "NO");
-        char bat[8];
-        if (r.known) snprintf(bat, sizeof(bat), "%d%%", (int)(r.battery * 100 / 255));
-        else         snprintf(bat, sizeof(bat), "--");
-        char lat[10];
-        if (r.known && r.latencyUs > 0)
-            snprintf(lat, sizeof(lat), "%.1fms", r.latencyUs / 1000.f);
-        else snprintf(lat, sizeof(lat), "--");
-        char ml[8];  snprintf(ml,  sizeof(ml),  r.visible ? "%+d" : "--", (int)r.motorL);
-        char mr[8];  snprintf(mr,  sizeof(mr),  r.visible ? "%+d" : "--", (int)r.motorR);
-        char dst[10];
-        if (r.distMm >= 0.f) snprintf(dst, sizeof(dst), "%.0f", r.distMm);
-        else                  snprintf(dst, sizeof(dst), "--");
-        const char* status = r.visible ? "ACTIVE" : (r.known ? "RADIO" : "UNSEEN");
-
-        ArucoTracker::drawText(panel, id,     {CX[0], y}, 16, col);
-        ArucoTracker::drawText(panel, vis,    {CX[1], y}, 16, col);
-        ArucoTracker::drawText(panel, bat,    {CX[2], y}, 16, col);
-        ArucoTracker::drawText(panel, lat,    {CX[3], y}, 16, col);
-        ArucoTracker::drawText(panel, ml,     {CX[4], y}, 16, col);
-        ArucoTracker::drawText(panel, mr,     {CX[5], y}, 16, col);
-        ArucoTracker::drawText(panel, dst,    {CX[6], y}, 16, col);
-        ArucoTracker::drawText(panel, status, {CX[7], y}, 16, col);
-        y += 22;
+        cv::Scalar col = r.visible ? DebugHud::COL_OK
+                       : (r.known ? DebugHud::COL_WARN : DebugHud::COL_TEXT);
+        hud.row({
+            DebugHud::fmt("%d", r.id),
+            r.visible ? "YES" : "NO",
+            r.known ? DebugHud::formatBattery(r.battery) : "--",
+            r.known ? DebugHud::formatLatency(r.latencyUs) : "--",
+            r.visible ? DebugHud::fmt("%+d", (int)r.motorL) : "--",
+            r.visible ? DebugHud::fmt("%+d", (int)r.motorR) : "--",
+            r.distMm >= 0.f ? DebugHud::fmt("%.0f", r.distMm) : "--",
+            r.visible ? "ACTIVE" : (r.known ? "RADIO" : "UNSEEN"),
+        }, col);
     }
+    hud.draw(panel, {0, 0}, width);
     return panel;
 }
 

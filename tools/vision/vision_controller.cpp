@@ -12,6 +12,7 @@
 
 #include "aruco_tracker.h"
 #include "SwarmClient.h"
+#include "DebugHud.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -584,16 +585,17 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        char hud[160];
-        snprintf(hud, sizeof(hud), "loop_fps:%.0f  Robots:%d  Sel:%s  %s  HUB:%s  Speed:%d(%.2fx)  WASD:%s",
-                 fps, (int)tracker.robots().size(),
-                 g_selectedRobot < 0 ? "all" : std::to_string(g_selectedRobot).c_str(),
-                 g_hasH ? "world" : "pixels",
-                 g_swarm.isConnected() ? "OK" : "INACTIVE",
-                 g_speedLevel, (float)g_speedLevel / 255.0f * 4.0f,
-                 g_wasdActive ? "ON" : "off");
-        cv::Scalar hudCol = g_swarm.isConnected() ? cv::Scalar(0,255,0) : cv::Scalar(0,120,255);
-        tracker.drawText(disp, hud, {10, disp.rows - 19}, 18, hudCol);
+        DebugHud hud;
+        hud.title(DebugHud::fmt(
+            "loop_fps:%.0f  Robots:%d  Sel:%s  %s  HUB:%s  Speed:%d(%.2fx)  WASD:%s",
+            fps, (int)tracker.robots().size(),
+            g_selectedRobot < 0 ? "all" : std::to_string(g_selectedRobot).c_str(),
+            g_hasH ? "world" : "pixels",
+            g_swarm.isConnected() ? "OK" : "INACTIVE",
+            g_speedLevel, (float)g_speedLevel / 255.0f * 4.0f,
+            g_wasdActive ? "ON" : "off"),
+            g_swarm.isConnected() ? DebugHud::COL_OK : DebugHud::COL_BAD);
+        hud.draw(disp, {10, disp.rows - 36});
 
         char wasdState[64];
         snprintf(wasdState, sizeof(wasdState), "W:%c A:%c S:%c D:%c",

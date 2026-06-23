@@ -36,6 +36,7 @@
 
 #include "aruco_tracker.h"
 #include "SwarmClient.h"
+#include "DebugHud.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -725,60 +726,44 @@ int main(int argc, char* argv[]) {
 
         // ── HUD overlay (top-left info panel) ─────────────────────────────────
         {
-            int panelW = 340, panelH = 160 + (int)poseById.size() * 22;
-            cv::Mat panel(panelH, panelW, CV_8UC3, cv::Scalar(18, 18, 18));
-            cv::addWeighted(disp(cv::Rect(0, 0, panelW, std::min(panelH, disp.rows))),
-                            0.35f, panel, 0.65f, 0,
-                            disp(cv::Rect(0, 0, panelW, std::min(panelH, disp.rows))));
-
-            int y = 26;
-            tracker.drawText(disp, "WINGMAN FORMATION", {10, y}, 20, {255, 255, 255}); y += 26;
-
             std::string leaderStr;
             cv::Scalar  leaderCol;
             if (!registered) {
-                char buf[64];
-                snprintf(buf, sizeof(buf), "Registering... %d/%d", regFrames, REGISTRATION_FRAMES);
-                leaderStr = buf;
-                leaderCol = {80, 200, 80};
+                leaderStr = DebugHud::fmt("Registering... %d/%d", regFrames, REGISTRATION_FRAMES);
+                leaderCol = DebugHud::COL_OK;
             } else if (leaderId >= 0) {
                 leaderStr = "Leader: Robot " + std::to_string(leaderId) + "  (WASD)";
-                leaderCol = {80, 160, 255};
+                leaderCol = DebugHud::COL_WARN;
             } else {
                 leaderStr = "Leader: none visible";
-                leaderCol = {100, 100, 100};
+                leaderCol = DebugHud::COL_TEXT;
             }
-            tracker.drawText(disp, leaderStr, {10, y}, 17, leaderCol);
-            y += 22;
 
-            tracker.drawText(disp,
-                "Spacing: " + std::to_string((int)spacingMm) + " mm   "
-                "Robots: " + std::to_string((int)poseById.size()),
-                {10, y}, 17, {180, 180, 180});
-            y += 22;
+            DebugHud hud;
+            hud.title("WINGMAN FORMATION");
+            hud.row({leaderStr}, leaderCol);
+            hud.row({DebugHud::fmt("Spacing: %d mm   Robots: %d",
+                     (int)spacingMm, (int)poseById.size())});
+            hud.row("loop_fps", DebugHud::fmt("%.1f", fps), DebugHud::COL_OK);
+            hud.row("Hub", g_swarm.isConnected() ? "OK" : "DISCONNECTED",
+                    g_swarm.isConnected() ? DebugHud::COL_OK : DebugHud::COL_BAD);
 
-            char fpsBuf[32]; snprintf(fpsBuf, sizeof(fpsBuf), "loop_fps: %.1f", fps);
-            tracker.drawText(disp, fpsBuf, {10, y}, 17, {100, 200, 100}); y += 22;
-
-            tracker.drawText(disp, "Hub: " + std::string(g_swarm.isConnected() ? "OK" : "DISCONNECTED"),
-                {10, y}, 17, g_swarm.isConnected() ? cv::Scalar(100, 200, 100) : cv::Scalar(60, 60, 220));
-            y += 26;
-
-            // Per-robot status
-            tracker.drawText(disp, "ID   Role     L    R", {10, y}, 15, {140, 140, 140}); y += 20;
+            hud.header({"ID", "Role", "Battery", "Latency", "Mot-L", "Mot-R"});
             for (auto& [id, r] : poseById) {
                 bool isLeader = (id == leaderId);
                 std::string role = isLeader ? "LEADER" : ("Flw S" + std::to_string(
                     assignment.count(id) ? assignment.at(id) : -1));
-                char buf[64];
                 int8_t mL, mR;
                 { std::lock_guard<std::mutex> lk(g_motorMutex); mL = g_motors[id][0]; mR = g_motors[id][1]; }
-                snprintf(buf, sizeof(buf), "%2d   %-8s %+4d %+4d",
-                    id, role.c_str(), (int)mL, (int)mR);
-                tracker.drawText(disp, buf, {10, y}, 15,
-                    isLeader ? cv::Scalar(80, 160, 255) : cv::Scalar(200, 200, 200));
-                y += 20;
+                const auto& ss = g_swarm.robotState((uint8_t)id);
+                hud.row({
+                    DebugHud::fmt("%d", id), role,
+                    ss.known ? DebugHud::formatBattery(ss.battery) : "--",
+                    ss.known ? DebugHud::formatLatency(ss.latencyUs) : "--",
+                    DebugHud::fmt("%+d", (int)mL), DebugHud::fmt("%+d", (int)mR),
+                }, isLeader ? DebugHud::COL_WARN : DebugHud::COL_TEXT);
             }
+            hud.draw(disp, {10, 10});
 
             // Controls hint at bottom
             tracker.drawText(disp, "WASD: lead   +/-: spacing   c: calib   q: quit",
