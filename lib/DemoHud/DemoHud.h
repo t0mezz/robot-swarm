@@ -1,20 +1,20 @@
-// DebugHud.h — header-only shared debug overlay for PC vision tools.
-//
-// One consistent panel style (stacked rows, optional columns) for everything
-// every tool currently rolls its own HUD for: loop_fps, cam_fps, latency,
-// battery, hub status, per-robot tables, etc. Replaces the ad-hoc
-// cv::putText/snprintf HUD code duplicated across vision_controller.cpp,
-// wingman.cpp, circle_demo.cpp, shape_demo.cpp, drag_drop_demo.cpp.
+// DemoHud.h — header-only on-screen debug overlay for the PC vision *demo*
+// tools (vision_controller, circle_demo, wingman, shape_demo, drag_drop_demo,
+// demo_hud_preview). Not a general-purpose UI/HUD library — it exists purely
+// so these interactive demos can show loop_fps, cam_fps, latency, battery,
+// hub status, and per-robot tables without each one rolling its own ad-hoc
+// cv::putText/snprintf HUD code. Production/headless tools (swarm_hub,
+// swarm_terminal, latency_plot, swarm_controller) have no use for this.
 //
 // Usage:
-//   DebugHud hud;
+//   DemoHud hud;
 //   hud.row("loop_fps", fmt("%.0f", fps));
-//   hud.row("Robots", fmt("%d", swarm.knownCount()), DebugHud::COL_OK);
+//   hud.row("Robots", fmt("%d", swarm.knownCount()), DemoHud::COL_OK);
 //   hud.draw(frame, {10, 10});
 //   hud.clear();
 //
 //   // tabular (per-robot) panel — same visual style, multiple columns/row
-//   DebugHud table;
+//   DemoHud table;
 //   table.header({"ID", "Battery", "Latency"});
 //   for (auto& r : robots) table.row({id, battery, latency}, colorForRow);
 //   table.draw(frame, {10, 10});
@@ -31,7 +31,7 @@
 #include <string>
 #include <vector>
 
-class DebugHud {
+class DemoHud {
 public:
     inline static const cv::Scalar COL_TEXT = {230, 230, 230};
     inline static const cv::Scalar COL_OK   = {100, 220, 100};

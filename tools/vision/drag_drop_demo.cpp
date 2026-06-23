@@ -11,7 +11,7 @@
 
 #include "aruco_tracker.h"
 #include "SwarmClient.h"
-#include "DebugHud.h"
+#include "DemoHud.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -290,7 +290,7 @@ static cv::Mat buildTelPanel(int width,
 {
     cv::Mat panel(TEL_HEIGHT, width, CV_8UC3, cv::Scalar(18,18,18));
 
-    DebugHud hud;
+    DemoHud hud;
     hud.title("Drag-Drop Demo");
     hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Dist", "Status"});
 
@@ -303,8 +303,8 @@ static cv::Mat buildTelPanel(int width,
         bool vis = poses.count(id) > 0;
         bool arc = vis && avoidance.count(id) && avoidance.at(id).arc;
 
-        cv::Scalar col = !vis ? (ss.known ? DebugHud::COL_WARN : DebugHud::COL_TEXT)
-                               : arc ? DebugHud::COL_WARN : DebugHud::COL_OK;
+        cv::Scalar col = !vis ? (ss.known ? DemoHud::COL_WARN : DemoHud::COL_TEXT)
+                               : arc ? DemoHud::COL_WARN : DemoHud::COL_OK;
 
         // Distance to goal
         float distMm = -1.f;
@@ -319,13 +319,13 @@ static cv::Mat buildTelPanel(int width,
                                   : g_goals.count(id) ? "GOAL" : "IDLE";
 
         hud.row({
-            DebugHud::fmt("%d", id),
+            DemoHud::fmt("%d", id),
             vis ? "YES" : "NO",
-            ss.known ? DebugHud::formatBattery(ss.battery) : "--",
-            ss.known ? DebugHud::formatLatency(ss.latencyUs) : "--",
-            vis ? DebugHud::fmt("%+d", (int)motors[id][0]) : "--",
-            vis ? DebugHud::fmt("%+d", (int)motors[id][1]) : "--",
-            distMm >= 0.f ? DebugHud::fmt("%.0f", distMm) : "--",
+            ss.known ? DemoHud::formatBattery(ss.battery) : "--",
+            ss.known ? DemoHud::formatLatency(ss.latencyUs) : "--",
+            vis ? DemoHud::fmt("%+d", (int)motors[id][0]) : "--",
+            vis ? DemoHud::fmt("%+d", (int)motors[id][1]) : "--",
+            distMm >= 0.f ? DemoHud::fmt("%.0f", distMm) : "--",
             status,
         }, col);
     }

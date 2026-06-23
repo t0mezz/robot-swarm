@@ -36,7 +36,7 @@
 
 #include "aruco_tracker.h"
 #include "SwarmClient.h"
-#include "DebugHud.h"
+#include "DemoHud.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -729,24 +729,24 @@ int main(int argc, char* argv[]) {
             std::string leaderStr;
             cv::Scalar  leaderCol;
             if (!registered) {
-                leaderStr = DebugHud::fmt("Registering... %d/%d", regFrames, REGISTRATION_FRAMES);
-                leaderCol = DebugHud::COL_OK;
+                leaderStr = DemoHud::fmt("Registering... %d/%d", regFrames, REGISTRATION_FRAMES);
+                leaderCol = DemoHud::COL_OK;
             } else if (leaderId >= 0) {
                 leaderStr = "Leader: Robot " + std::to_string(leaderId) + "  (WASD)";
-                leaderCol = DebugHud::COL_WARN;
+                leaderCol = DemoHud::COL_WARN;
             } else {
                 leaderStr = "Leader: none visible";
-                leaderCol = DebugHud::COL_TEXT;
+                leaderCol = DemoHud::COL_TEXT;
             }
 
-            DebugHud hud;
+            DemoHud hud;
             hud.title("WINGMAN FORMATION");
             hud.row({leaderStr}, leaderCol);
-            hud.row({DebugHud::fmt("Spacing: %d mm   Robots: %d",
+            hud.row({DemoHud::fmt("Spacing: %d mm   Robots: %d",
                      (int)spacingMm, (int)poseById.size())});
-            hud.row("loop_fps", DebugHud::fmt("%.1f", fps), DebugHud::COL_OK);
+            hud.row("loop_fps", DemoHud::fmt("%.1f", fps), DemoHud::COL_OK);
             hud.row("Hub", g_swarm.isConnected() ? "OK" : "DISCONNECTED",
-                    g_swarm.isConnected() ? DebugHud::COL_OK : DebugHud::COL_BAD);
+                    g_swarm.isConnected() ? DemoHud::COL_OK : DemoHud::COL_BAD);
 
             hud.header({"ID", "Role", "Battery", "Latency", "Mot-L", "Mot-R"});
             for (auto& [id, r] : poseById) {
@@ -757,11 +757,11 @@ int main(int argc, char* argv[]) {
                 { std::lock_guard<std::mutex> lk(g_motorMutex); mL = g_motors[id][0]; mR = g_motors[id][1]; }
                 const auto& ss = g_swarm.robotState((uint8_t)id);
                 hud.row({
-                    DebugHud::fmt("%d", id), role,
-                    ss.known ? DebugHud::formatBattery(ss.battery) : "--",
-                    ss.known ? DebugHud::formatLatency(ss.latencyUs) : "--",
-                    DebugHud::fmt("%+d", (int)mL), DebugHud::fmt("%+d", (int)mR),
-                }, isLeader ? DebugHud::COL_WARN : DebugHud::COL_TEXT);
+                    DemoHud::fmt("%d", id), role,
+                    ss.known ? DemoHud::formatBattery(ss.battery) : "--",
+                    ss.known ? DemoHud::formatLatency(ss.latencyUs) : "--",
+                    DemoHud::fmt("%+d", (int)mL), DemoHud::fmt("%+d", (int)mR),
+                }, isLeader ? DemoHud::COL_WARN : DemoHud::COL_TEXT);
             }
             hud.draw(disp, {10, 10});
 

@@ -13,7 +13,7 @@
 
 #include "aruco_tracker.h"
 #include "SwarmClient.h"
-#include "DebugHud.h"
+#include "DemoHud.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -323,31 +323,31 @@ static cv::Mat buildTelPanel(int width, const std::vector<RobotTelRow>& rows,
     static const char* TOOL_NAMES[] = {"LINE","RECT","CIRCLE","FREEHAND"};
     cv::Mat panel(TEL_HEIGHT, width, CV_8UC3, cv::Scalar(18, 18, 18));
 
-    DebugHud hud;
+    DemoHud hud;
     if (mode == Mode::DRAW)
-        hud.title(DebugHud::fmt(
+        hud.title(DemoHud::fmt(
             "loop_fps:%.0f  Robots:%d/%d  Path:%.0fmm  Speed:%.0f%%  MODE:DRAW  TOOL:%s  HUB:%s",
             fps, visible, registered, pathMm, speedPct,
             TOOL_NAMES[(int)tool], hubOk ? "OK" : "OFFLINE"),
-            hubOk ? DebugHud::COL_OK : DebugHud::COL_BAD);
+            hubOk ? DemoHud::COL_OK : DemoHud::COL_BAD);
     else
-        hud.title(DebugHud::fmt(
+        hud.title(DemoHud::fmt(
             "loop_fps:%.0f  Robots:%d/%d  Path:%.0fmm  Speed:%.0f%%  MODE:TRACK  HUB:%s",
             fps, visible, registered, pathMm, speedPct, hubOk ? "OK" : "OFFLINE"),
-            hubOk ? DebugHud::COL_OK : DebugHud::COL_BAD);
+            hubOk ? DemoHud::COL_OK : DemoHud::COL_BAD);
 
     hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Dist(mm)", "Status"});
     for (auto& r : rows) {
-        cv::Scalar col = r.visible ? DebugHud::COL_OK
-                       : (r.known ? DebugHud::COL_WARN : DebugHud::COL_TEXT);
+        cv::Scalar col = r.visible ? DemoHud::COL_OK
+                       : (r.known ? DemoHud::COL_WARN : DemoHud::COL_TEXT);
         hud.row({
-            DebugHud::fmt("%d", r.id),
+            DemoHud::fmt("%d", r.id),
             r.visible ? "YES" : "NO",
-            r.known ? DebugHud::formatBattery(r.battery) : "--",
-            r.known ? DebugHud::formatLatency(r.latencyUs) : "--",
-            r.visible ? DebugHud::fmt("%+d", (int)r.motorL) : "--",
-            r.visible ? DebugHud::fmt("%+d", (int)r.motorR) : "--",
-            r.distMm >= 0.f ? DebugHud::fmt("%.0f", r.distMm) : "--",
+            r.known ? DemoHud::formatBattery(r.battery) : "--",
+            r.known ? DemoHud::formatLatency(r.latencyUs) : "--",
+            r.visible ? DemoHud::fmt("%+d", (int)r.motorL) : "--",
+            r.visible ? DemoHud::fmt("%+d", (int)r.motorR) : "--",
+            r.distMm >= 0.f ? DemoHud::fmt("%.0f", r.distMm) : "--",
             r.visible ? "ACTIVE" : (r.known ? "RADIO" : "UNSEEN"),
         }, col);
     }

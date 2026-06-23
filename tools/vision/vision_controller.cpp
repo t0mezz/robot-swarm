@@ -12,7 +12,7 @@
 
 #include "aruco_tracker.h"
 #include "SwarmClient.h"
-#include "DebugHud.h"
+#include "DemoHud.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -585,8 +585,8 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        DebugHud hud;
-        hud.title(DebugHud::fmt(
+        DemoHud hud;
+        hud.title(DemoHud::fmt(
             "loop_fps:%.0f  Robots:%d  Sel:%s  %s  HUB:%s  Speed:%d(%.2fx)  WASD:%s",
             fps, (int)tracker.robots().size(),
             g_selectedRobot < 0 ? "all" : std::to_string(g_selectedRobot).c_str(),
@@ -594,7 +594,7 @@ int main(int argc, char* argv[]) {
             g_swarm.isConnected() ? "OK" : "INACTIVE",
             g_speedLevel, (float)g_speedLevel / 255.0f * 4.0f,
             g_wasdActive ? "ON" : "off"),
-            g_swarm.isConnected() ? DebugHud::COL_OK : DebugHud::COL_BAD);
+            g_swarm.isConnected() ? DemoHud::COL_OK : DemoHud::COL_BAD);
         hud.draw(disp, {10, disp.rows - 36});
 
         char wasdState[64];
