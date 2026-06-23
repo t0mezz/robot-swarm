@@ -68,7 +68,7 @@ static std::unordered_map<int, std::chrono::steady_clock::time_point> g_robotLas
 static void onSignal(int) { g_running = false; }
 
 // SwarmClient instance shared by the main loop and the WASD thread; all
-// access (connect/setSpeed/registerRobot/flush) must hold g_swarmMutex.
+// access (connect/setSpeed/registerRobot/flush/poll) must hold g_swarmMutex.
 static SwarmClient g_swarm;
 static std::mutex  g_swarmMutex;
 
@@ -325,6 +325,7 @@ int main(int argc, char* argv[]) {
             lastHubRetry = now;
             if (tryHub()) printf("[hub] Connected.\n");
         }
+        { std::lock_guard<std::mutex> lk(g_swarmMutex); g_swarm.poll(); }
 
         float dt = std::chrono::duration<float>(now - lastFpsT).count();
         if (dt >= 1.0f) { fps = frameCount / dt; frameCount = 0; lastFpsT = now; }

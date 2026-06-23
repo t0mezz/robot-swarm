@@ -88,8 +88,8 @@ static constexpr int MAX_ROBOTS = SC_MAX_ROBOTS;
 static volatile bool g_running = true;
 
 // SwarmClient instance shared by the vision thread, the heartbeat thread and
-// the input thread. All access (setSpeed/registerRobot/flush/connect) must
-// hold g_swarmMutex.
+// the input thread. All access (setSpeed/registerRobot/flush/connect/poll)
+// must hold g_swarmMutex.
 static SwarmClient g_swarm;
 static std::mutex  g_swarmMutex;
 
@@ -562,6 +562,8 @@ int main(int argc, char* argv[]) {
                 lastHubRetry = now;
                 if (tryHub()) printf("[hub] Reconnected.\n");
             }
+            std::lock_guard<std::mutex> lk(g_swarmMutex);
+            g_swarm.poll();
         }
 
         // ── Vision update ─────────────────────────────────────────────────────
