@@ -1,5 +1,11 @@
 # TODO
 
+## Remove ancient code
+ - swarm_terminal (replaced by swarm_dashboard)
+ - game (maybe if too old to update)
+  - if we update we need to add more cool features
+ - ...
+
 ## Verify is /lib/swarm/* is correctly placed there.
 
 ## Clean up Swarmhub code and terminal output, make it run as deamon on default.
