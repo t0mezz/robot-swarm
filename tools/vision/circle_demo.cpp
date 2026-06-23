@@ -508,6 +508,7 @@ int main(int argc, char* argv[]) {
             lastHubRetry = now;
             if (swarm.connect()) printf("[hub] Connected.\n");
         }
+        swarm.poll();
 
         float dt = std::chrono::duration<float>(now - lastFpsT).count();
         if (dt >= 1.0f) {

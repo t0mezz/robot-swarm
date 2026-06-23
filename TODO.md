@@ -129,9 +129,12 @@ the physical power button.
   Fixed: moved the 200ms round-robin ping into SwarmClient::poll(), so any
   program using SwarmClient (swarm_terminal, latency_plot, drag_drop_demo,
   shape_demo, ...) now gets live latency independent of which client is active.
-  Note: vision_controller/wingman/circle_demo still never call poll(), so they
-  still won't see latency (separate, pre-existing issue — they don't process
-  any incoming telemetry at all, not just pongs).
+  Note: vision_controller/wingman/circle_demo previously never called poll(),
+  so they didn't see latency (separate, pre-existing issue — they didn't
+  process any incoming telemetry at all, not just pongs). Fixed (2026-06-23):
+  each tool's main loop now calls `g_swarm.poll()` / `swarm.poll()` once per
+  iteration (under `g_swarmMutex` in vision_controller/wingman, which are
+  multi-threaded; circle_demo is single-threaded so no lock needed).
 - Investigated "second client (swarm_terminal) doubles latency": could not
   reproduce in a controlled A/B test (single idle robot, original pre-fix
   binaries, 15s windows) — avg/min/max were statistically identical with and
