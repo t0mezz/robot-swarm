@@ -2,6 +2,10 @@
 
 ## Verify is /lib/swarm/* is correctly placed there.
 
+## Clean up Swarmhub code and terminal output, make it run as deamon on default.
+
+## Clean up unnessary comments
+
 ## ⚠️ Reflash needed (2026-06-19)
 - Reflash the **robot RP2040** (`src/robots/` MicroPython: `robot_uart.py`) and the
   **receiver ESP32** (`pio run -e receiver -t upload`) — added the `MSG_DEBUG`
