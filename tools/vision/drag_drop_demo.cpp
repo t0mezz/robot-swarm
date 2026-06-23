@@ -11,6 +11,7 @@
 
 #include "aruco_tracker.h"
 #include "SwarmClient.h"
+#include "DemoHud.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -281,12 +282,6 @@ static bool runCalibration(ArucoTracker& tracker, const char* win) {
 
 // ── Telemetry panel ───────────────────────────────────────────────────────────
 
-static const cv::Scalar COL_OK  (0, 220, 80);
-static const cv::Scalar COL_WARN(0, 180, 255);
-static const cv::Scalar COL_BAD (0, 80,  255);
-static const cv::Scalar COL_DIM (80, 80, 80);
-static const cv::Scalar COL_HEAD(160, 160, 160);
-
 static cv::Mat buildTelPanel(int width,
     const std::unordered_map<int, RobotPose>& poses,
     const std::unordered_map<int, AvoidState>& avoidance,
@@ -294,27 +289,22 @@ static cv::Mat buildTelPanel(int width,
     SwarmClient& swarm)
 {
     cv::Mat panel(TEL_HEIGHT, width, CV_8UC3, cv::Scalar(18,18,18));
-    ArucoTracker::drawText(panel, "Drag-Drop Demo", {8, 28}, 17, {200,200,200});
 
-    const int CX[] = {8, 55, 115, 185, 255, 315, 390, 470};
-    const char* HD[] = {"ID","Vision","Battery","Latency","Mot-L","Mot-R","Dist","Status"};
-    for (int i = 0; i < 8; i++)
-        ArucoTracker::drawText(panel, HD[i], {CX[i], 50}, 15, COL_HEAD);
-    cv::line(panel, {0,56}, {width,56}, {45,45,45}, 1);
+    DemoHud hud;
+    hud.title("Drag-Drop Demo");
+    hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Dist", "Status"});
 
     std::set<int> allIds;
     for (auto& [id, _] : poses) allIds.insert(id);
     for (int id : swarm.knownIds()) allIds.insert(id);
 
-    int y = 76;
     for (int id : allIds) {
-        if (y >= TEL_HEIGHT - 8) break;
         const auto& ss  = swarm.robotState((uint8_t)id);
         bool vis = poses.count(id) > 0;
         bool arc = vis && avoidance.count(id) && avoidance.at(id).arc;
 
-        cv::Scalar col = !vis ? (ss.known ? COL_WARN : COL_DIM)
-                               : arc ? cv::Scalar(0,140,255) : COL_OK;
+        cv::Scalar col = !vis ? (ss.known ? DemoHud::COL_WARN : DemoHud::COL_TEXT)
+                               : arc ? DemoHud::COL_WARN : DemoHud::COL_OK;
 
         // Distance to goal
         float distMm = -1.f;
@@ -324,34 +314,22 @@ static cv::Mat buildTelPanel(int width,
             distMm = sqrtf((g.x-p.x)*(g.x-p.x) + (g.y-p.y)*(g.y-p.y));
         }
 
-        char sid[6];  snprintf(sid,  sizeof(sid),  "%d", id);
-        char vis_[4]; snprintf(vis_, sizeof(vis_),  vis ? "YES" : "NO");
-        char bat[8];
-        if (ss.known) snprintf(bat, sizeof(bat), "%d%%", (int)(ss.battery*100/255));
-        else          snprintf(bat, sizeof(bat), "--");
-        char lat[10];
-        if (ss.known && ss.latencyUs > 0)
-             snprintf(lat, sizeof(lat), "%.1fms", ss.latencyUs/1000.f);
-        else snprintf(lat, sizeof(lat), "--");
-        char ml[8]; snprintf(ml, sizeof(ml), vis ? "%+d" : "--", (int)motors[id][0]);
-        char mr[8]; snprintf(mr, sizeof(mr), vis ? "%+d" : "--", (int)motors[id][1]);
-        char dst[10];
-        if (distMm >= 0.f) snprintf(dst, sizeof(dst), "%.0f", distMm);
-        else               snprintf(dst, sizeof(dst), "--");
         const char* status = !vis ? (ss.known ? "RADIO" : "UNSEEN")
                                   : arc ? "ARC"
                                   : g_goals.count(id) ? "GOAL" : "IDLE";
 
-        ArucoTracker::drawText(panel, sid,  {CX[0], y}, 16, col);
-        ArucoTracker::drawText(panel, vis_, {CX[1], y}, 16, col);
-        ArucoTracker::drawText(panel, bat,  {CX[2], y}, 16, col);
-        ArucoTracker::drawText(panel, lat,  {CX[3], y}, 16, col);
-        ArucoTracker::drawText(panel, ml,   {CX[4], y}, 16, col);
-        ArucoTracker::drawText(panel, mr,   {CX[5], y}, 16, col);
-        ArucoTracker::drawText(panel, dst,  {CX[6], y}, 16, col);
-        ArucoTracker::drawText(panel, status, {CX[7], y}, 16, col);
-        y += 20;
+        hud.row({
+            DemoHud::fmt("%d", id),
+            vis ? "YES" : "NO",
+            ss.known ? DemoHud::formatBattery(ss.battery) : "--",
+            ss.known ? DemoHud::formatLatency(ss.latencyUs) : "--",
+            vis ? DemoHud::fmt("%+d", (int)motors[id][0]) : "--",
+            vis ? DemoHud::fmt("%+d", (int)motors[id][1]) : "--",
+            distMm >= 0.f ? DemoHud::fmt("%.0f", distMm) : "--",
+            status,
+        }, col);
     }
+    hud.draw(panel, {0, 0}, width);
     return panel;
 }
 
@@ -605,7 +583,7 @@ int main(int argc, char* argv[]) {
         // HUD
         {
             char buf[64];
-            snprintf(buf, sizeof(buf), "FPS %.0f  Robots %d  Goals %d",
+            snprintf(buf, sizeof(buf), "loop_fps:%.0f  Robots:%d  Goals:%d",
                      fps, (int)g_poses.size(), (int)g_goals.size());
             ArucoTracker::drawText(disp, buf, {10, 30}, 18, {200,200,200});
         }
