@@ -39,7 +39,7 @@ OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config -
 
 .PHONY: all clean calibrate
 
-all: $(BUILD_DIR)/swarm_hub $(BUILD_DIR)/swarm_terminal $(BUILD_DIR)/latency_plot $(BUILD_DIR)/swarm_controller $(BUILD_DIR)/game $(BUILD_DIR)/vision_controller $(BUILD_DIR)/circle_demo $(BUILD_DIR)/wingman $(BUILD_DIR)/shape_demo $(BUILD_DIR)/drag_drop_demo $(BUILD_DIR)/marker_eval $(BUILD_DIR)/frame_inspector calibrate
+all: $(BUILD_DIR)/swarm_hub $(BUILD_DIR)/swarm_terminal $(BUILD_DIR)/latency_plot $(BUILD_DIR)/swarm_dashboard $(BUILD_DIR)/swarm_controller $(BUILD_DIR)/game $(BUILD_DIR)/vision_controller $(BUILD_DIR)/circle_demo $(BUILD_DIR)/wingman $(BUILD_DIR)/shape_demo $(BUILD_DIR)/drag_drop_demo $(BUILD_DIR)/marker_eval $(BUILD_DIR)/frame_inspector calibrate
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -54,6 +54,9 @@ $(BUILD_DIR)/swarm_terminal: $(LIBDIR)/swarm/swarm_terminal.cpp $(LIBDIR)/SwarmC
 	$(CXX) $(CXXFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@
 
 $(BUILD_DIR)/latency_plot: $(LIBDIR)/swarm/latency_plot.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@
+
+$(BUILD_DIR)/swarm_dashboard: $(LIBDIR)/swarm/swarm_dashboard.cpp $(LIBDIR)/swarm/telemetry_history.h $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@
 
 $(BUILD_DIR)/swarm_controller: $(LIBDIR)/swarm/swarm_controller.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
