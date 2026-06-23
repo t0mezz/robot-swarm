@@ -16,13 +16,15 @@
 // to drive.
 //
 // Aufruf:
-//   ./swarm_hub_simulation [num_robots]
+//   ./swarm_hub_simulation [--daemon|-d] [num_robots]
+//   ./swarm_hub_simulation --stop
 
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
 #include <cmath>
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <csignal>
 #include <random>
@@ -36,6 +38,8 @@
 #include <sys/un.h>
 
 #define HUB_SOCK_PATH "/tmp/swarm_hub.sock"
+#define SIM_PID_PATH  "/tmp/swarm_hub_simulation.pid"
+#define SIM_LOG_PATH  "/tmp/swarm_hub_simulation.log"
 #define MAX_CLIENTS   16
 #define MAX_SIM_ROBOTS 32
 
@@ -260,13 +264,90 @@ static int hub_server_create() {
     return fd;
 }
 
+// ── Daemon helpers ─────────────────────────────────────────────────
+
+static void daemonize() {
+    pid_t pid = fork();
+    if (pid < 0) { perror("fork"); exit(1); }
+    if (pid > 0) {
+        std::ofstream pidFile(SIM_PID_PATH);
+        if (pidFile) { pidFile << pid << "\n"; pidFile.flush(); }
+        std::cout << "[sim] Daemon started (PID " << pid << ")\n";
+        std::cout << "[sim] Log: " << SIM_LOG_PATH << "\n";
+        exit(0);
+    }
+    setsid();
+    int logFd = open(SIM_LOG_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (logFd >= 0) { dup2(logFd, STDOUT_FILENO); dup2(logFd, STDERR_FILENO); close(logFd); }
+    int nullFd = open("/dev/null", O_RDONLY);
+    if (nullFd >= 0) { dup2(nullFd, STDIN_FILENO); close(nullFd); }
+}
+
+static int sim_stop() {
+    std::ifstream pidFile(SIM_PID_PATH);
+    if (!pidFile) {
+        std::cout << "No PID file — trying pkill swarm_hub_simulation...\n";
+        int r = system("pkill swarm_hub_simulation 2>/dev/null");
+        if (r == 0) {
+            std::cout << "Sent SIGTERM via pkill, waiting...\n";
+            usleep(500000);
+        } else {
+            std::cerr << "No swarm_hub_simulation process found.\n";
+        }
+        unlink(HUB_SOCK_PATH);
+        return 0;
+    }
+    pid_t pid; pidFile >> pid;
+    if (pid <= 0) { std::cerr << "Invalid PID in " << SIM_PID_PATH << "\n"; return 1; }
+
+    if (kill(pid, SIGTERM) < 0) {
+        if (errno == ESRCH) {
+            std::cerr << "swarm_hub_simulation (PID " << pid << ") not running — stale PID file removed.\n";
+            unlink(SIM_PID_PATH);
+            return 0;
+        }
+        perror("kill"); return 1;
+    }
+    std::cout << "Sent SIGTERM to swarm_hub_simulation (PID " << pid << "), waiting..." << std::flush;
+    for (int i = 0; i < 20; i++) {
+        usleep(100000);
+        if (kill(pid, 0) != 0) goto done;
+    }
+    std::cout << " escalating to SIGKILL..." << std::flush;
+    kill(pid, SIGKILL);
+    for (int i = 0; i < 10; i++) {
+        usleep(100000);
+        if (kill(pid, 0) != 0) break;
+    }
+done:
+    std::cout << " done.\n";
+    unlink(HUB_SOCK_PATH);
+    unlink(SIM_PID_PATH);
+    return 0;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════
 
 int main(int argc, char* argv[]) {
-    int numRobots = 5;
-    if (argc > 1) numRobots = std::clamp(std::atoi(argv[1]), 1, MAX_SIM_ROBOTS);
+    bool daemon_mode = false;
+    bool stop_mode   = false;
+    int  numRobots   = 5;
+
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--daemon" || arg == "-d") daemon_mode = true;
+        else if (arg == "--stop")              stop_mode   = true;
+        else                                   numRobots   = std::clamp(std::atoi(argv[i]), 1, MAX_SIM_ROBOTS);
+    }
+
+    if (stop_mode) return sim_stop();
+
+    if (daemon_mode) {
+        daemonize();
+        std::cout << std::unitbuf;  // flush every line — required when stdout is redirected to log file
+    }
 
     SimRobot robots[MAX_SIM_ROBOTS];
     for (int i = 0; i < numRobots; i++) robots[i] = makeSimRobot((uint8_t)i);
