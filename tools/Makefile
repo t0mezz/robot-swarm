@@ -39,7 +39,7 @@ OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config -
 
 .PHONY: all clean calibrate
 
-all: $(BUILD_DIR)/swarm_hub $(BUILD_DIR)/swarm_terminal $(BUILD_DIR)/latency_plot $(BUILD_DIR)/swarm_controller $(BUILD_DIR)/game $(BUILD_DIR)/vision_controller $(BUILD_DIR)/circle_demo $(BUILD_DIR)/wingman $(BUILD_DIR)/shape_demo $(BUILD_DIR)/drag_drop_demo $(BUILD_DIR)/marker_eval $(BUILD_DIR)/frame_inspector calibrate
+all: $(BUILD_DIR)/swarm_hub $(BUILD_DIR)/swarm_terminal $(BUILD_DIR)/latency_plot $(BUILD_DIR)/swarm_controller $(BUILD_DIR)/game $(BUILD_DIR)/vision_controller $(BUILD_DIR)/circle_demo $(BUILD_DIR)/wingman $(BUILD_DIR)/shape_demo $(BUILD_DIR)/drag_drop_demo $(BUILD_DIR)/marker_eval $(BUILD_DIR)/frame_inspector $(BUILD_DIR)/debug_hud_demo calibrate
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -88,6 +88,12 @@ $(BUILD_DIR)/marker_eval: vision/marker_eval.cpp $(LIBDIR)/ArucoTracker/aruco_tr
 $(BUILD_DIR)/frame_inspector: vision/frame_inspector.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS)
+
+# No camera/pylon/hub dependency — pure OpenCV, synthetic data only. See
+# tools/vision/debug_hud_demo.cpp for the rationale.
+$(BUILD_DIR)/debug_hud_demo: vision/debug_hud_demo.cpp $(LIBDIR)/DebugHud/DebugHud.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) -I$(LIBDIR)/DebugHud \
+	    $< -o $@ $(OPENCV_LIBS)
 
 clean:
 	rm -rf $(BUILD_DIR)
