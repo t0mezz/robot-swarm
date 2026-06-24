@@ -63,18 +63,26 @@ static std::string peakMeter(float value, float maxVal, int width) {
 }
 
 // Bipolar peak meter centered at 0, range [-maxVal, +maxVal]. Used for motor
-// power so forward/reverse are visually distinguishable.
+// power so forward/reverse are visually distinguishable. The center column is a
+// fixed '|' divider; magnitude grows outward from it (right = forward/cyan,
+// left = reverse/magenta).
 static std::string bipolarMeter(float value, float maxVal, int width) {
     if (maxVal <= 0) maxVal = 1.0f;
-    int   mid   = width / 2;
-    float frac  = std::clamp(value / maxVal, -1.0f, 1.0f);
-    int   filled = (int)(frac * mid);
+    int   mid  = width / 2;
+    float frac = std::clamp(value / maxVal, -1.0f, 1.0f);
+    float af   = frac < 0 ? -frac : frac;
+    // Round to nearest cell (not truncate), and guarantee any nonzero command
+    // lights at least one cell — otherwise small values (e.g. ±15) floored to
+    // 0 cells and the bar looked identical to a stopped motor.
+    int mag = (int)(af * mid + 0.5f);
+    if (value != 0 && mag == 0) mag = 1;
 
     std::string out;
     for (int i = 0; i < width; i++) {
-        int rel = i - mid;
-        bool on = (filled >= 0) ? (rel >= 0 && rel < filled) : (rel < 0 && rel >= filled);
         if (i == mid) { out += "\033[90m|\033[0m"; continue; }
+        int  rel = i - mid;  // >0: right of divider (forward), <0: left (reverse)
+        bool on  = (value >= 0) ? (rel >= 1 && rel <= mag)
+                                : (rel <= -1 && rel >= -mag);
         if (!on) { out += "\033[90m░\033[0m"; continue; }
         out += (value >= 0) ? "\033[36m█\033[0m" : "\033[35m█\033[0m";
     }

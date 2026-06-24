@@ -241,13 +241,13 @@ public:
 
     // Read incoming bytes from the hub and update robot state.
     // Call this regularly (e.g. every loop iteration) to process
-    // telemetry and announce packets. Also drives the round-robin
-    // auto-ping (see autoPing()), so latency tracking works for any
-    // caller regardless of which program is driving the robots.
+    // telemetry, announce and pong packets. Latency (latencyUs) is
+    // populated from MSG_PONG frames; the round-robin pinging that
+    // produces them is driven centrally by swarm_hub, not per-client,
+    // so exactly one ping is ever in flight regardless of how many
+    // tools are connected.
     void poll() {
         if (m_fd < 0) return;
-
-        autoPing();
 
         uint8_t tmp[512];
         ssize_t n = read(m_fd, tmp, sizeof(tmp));
@@ -331,27 +331,12 @@ private:
     static constexpr size_t SC_DEBUG_LOG_MAX = 200;
     std::vector<DebugEntry> m_debugLog;
 
-    // Round-robin auto-ping: every SC_PING_INTERVAL_MS, ping the next known
-    // robot. Runs from poll() so latency tracking doesn't depend on any
-    // particular client (e.g. swarm_controller) also being active.
-    static constexpr int SC_PING_INTERVAL_MS = 200;
-    std::chrono::steady_clock::time_point m_lastAutoPingAt{};
-    int m_autoPingIdx = -1;
-
-    void autoPing() {
-        auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(
-                now - m_lastAutoPingAt).count() < SC_PING_INTERVAL_MS) return;
-        m_lastAutoPingAt = now;
-
-        for (int attempt = 0; attempt < SC_MAX_ROBOTS; attempt++) {
-            m_autoPingIdx = (m_autoPingIdx + 1) % SC_MAX_ROBOTS;
-            if (m_robots[m_autoPingIdx].known) {
-                sendPing((uint8_t)m_autoPingIdx);
-                break;
-            }
-        }
-    }
+    // Note: round-robin pinging is driven centrally by swarm_hub (it snoops
+    // announce/telemetry/pong frames to learn live robot IDs and emits one
+    // MSG_PING per interval). It used to live here, per-client, but with N
+    // tools connected that produced N independent ping streams that overran
+    // the dongle's single-slot ping tracker (corrupting latency) and added
+    // serial/airtime load. sendPing() remains public for manual/diagnostic use.
 
     // ── Protocol helpers ──────────────────────────────────────────
 

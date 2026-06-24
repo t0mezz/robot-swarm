@@ -1,9 +1,22 @@
 # TODO
 
-## Update Swarm dashboard:
-  - robot motor level meter still does not show the value of the motors (f.e. -15,15 still dark grey lavel meter)
-  - sometimes all robots are lost at the same time for seconds. why? (update here)
-  - especially, when other software, that uses the swarm_hub is running.
+## Update Swarm dashboard: Erledigt (2026-06-24)
+  - ~~robot motor level meter still does not show the value of the motors
+    (f.e. -15,15 still dark grey level meter)~~ Fixed: `bipolarMeter()` in
+    `swarm_dashboard.cpp` truncated `(int)(frac*mid)` toward zero, so small
+    commands (and the divider eating the first positive cell) floored to 0 lit
+    cells. Now rounds to nearest cell, guarantees ≥1 cell for any nonzero value,
+    and lights symmetrically outward from the center divider.
+  - ~~sometimes all robots are lost at the same time for seconds, especially
+    when other software using swarm_hub is running.~~ Root cause: each
+    `SwarmClient` ran its own 200ms round-robin pinger, so N connected tools =
+    N independent ping streams. The dongle (`src/dongle/main.cpp`) tracks only
+    *one* outstanding ping (single `pingTracker`); overlapping pings clobbered
+    it (corrupt RTT) and the extra non-coalescible serial/ESP-NOW traffic could
+    stall telemetry relay link-wide → all robots appear LOST together for a few
+    seconds until it drained. Fix: pinging moved into `swarm_hub` (snoops
+    announce/telemetry/pong for live robot IDs, emits one MSG_PING per interval
+    for all clients). Per-client `autoPing()` removed from `SwarmClient`.
 
 ## Remove ancient code
  - swarm_terminal (replaced by swarm_dashboard)

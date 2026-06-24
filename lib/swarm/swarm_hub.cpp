@@ -7,8 +7,12 @@
 // Forwards complete frames: serial → all socket clients.
 // Forwards raw bytes: any socket client → serial.
 //
-// No protocol logic, no periodic sends, no robot tracking.
-// The controller is responsible for MSG_SWARM and MSG_PING.
+// Mostly a byte bridge, with two pieces of protocol awareness:
+//   - latest-wins coalescing of MSG_SWARM so stale motor frames never pile up
+//   - a centralized round-robin MSG_PING pinger (snoops announce/telemetry/pong
+//     to learn live robot IDs) so latency works for all clients with exactly
+//     one ping in flight, instead of each client pinging independently.
+// Clients are still responsible for sending their own MSG_SWARM motor commands.
 //
 // Kompilieren (macOS):
 //   g++ swarm_hub.cpp -o swarm_hub -std=c++17 -framework IOKit
@@ -27,6 +31,8 @@
 #include <fstream>
 #include <string>
 #include <csignal>
+
+#include <chrono>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -54,6 +60,20 @@
 #define MAGIC_0   0xAA
 #define MAGIC_1   0x55
 #define MSG_SWARM 0x10
+
+// Message types the hub needs to recognise for centralized round-robin pinging:
+// it snoops robot→PC frames (announce/telemetry/pong/debug) to learn which robot
+// IDs are live, then emits MSG_PING itself so there is exactly one pinger for all
+// clients (see maybe_ping()).
+#define MSG_DEBUG     0x02
+#define MSG_PING      0x22
+#define MSG_PONG      0x23
+#define MSG_ANNOUNCE  0x20
+#define MSG_TELEMETRY 0x30
+
+#define HUB_MAX_ROBOTS         32
+#define HUB_PING_INTERVAL_MS   200     // round-robin: one robot pinged per tick
+#define HUB_ROBOT_EXPIRY_MS    10000   // stop pinging a robot unseen this long
 
 // ═══════════════════════════════════════════════════════════════
 // Frame helpers (used only for serial→client extraction)
@@ -156,7 +176,20 @@ static uint8_t g_latestSwarm[250];
 static int     g_latestSwarmLen   = 0;
 static bool    g_latestSwarmDirty = false;
 
+// Live-robot registry for centralized round-robin pinging. Populated by snooping
+// robot→PC frames in serial_read_and_broadcast(); consumed by maybe_ping().
+static bool     g_robotKnown[HUB_MAX_ROBOTS]   = {};
+static uint64_t g_robotSeenMs[HUB_MAX_ROBOTS]  = {};
+static int      g_pingIdx    = -1;
+static uint64_t g_lastPingMs = 0;
+
 void signal_handler(int) { g_running = false; }
+
+static uint64_t now_ms() {
+    using namespace std::chrono;
+    return (uint64_t)duration_cast<milliseconds>(
+        steady_clock::now().time_since_epoch()).count();
+}
 
 // ═══════════════════════════════════════════════════════════════
 // Client Management
@@ -248,6 +281,17 @@ static void serial_read_and_broadcast(int serialFd) {
         if (serialRxLen < flen) return;
 
         if (validateFrame(serialRxBuf, flen)) {
+            // Snoop the robot ID so the hub can round-robin ping live robots.
+            // For these types the first payload byte (serialRxBuf[4]) is the id.
+            uint8_t type = serialRxBuf[2];
+            if (type == MSG_ANNOUNCE || type == MSG_TELEMETRY ||
+                type == MSG_PONG     || type == MSG_DEBUG) {
+                uint8_t id = serialRxBuf[4];
+                if (id < HUB_MAX_ROBOTS) {
+                    g_robotKnown[id]  = true;
+                    g_robotSeenMs[id] = now_ms();
+                }
+            }
             broadcast_to_clients(serialRxBuf, flen);
         }
 
@@ -323,6 +367,70 @@ static void process_client_data(int slot) {
         memmove(c.rxBuf, c.rxBuf + flen, c.rxLen - flen);
         c.rxLen -= flen;
     }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Centralized round-robin pinger (one pinger for all clients)
+// ═══════════════════════════════════════════════════════════════
+//
+// Latency tracking used to be driven per-client inside SwarmClient::poll().
+// With several tools connected that meant several independent ping streams,
+// which overran the dongle's single-slot ping tracker (corrupting RTT) and
+// piled extra non-coalescible traffic onto the shared serial/ESP-NOW link.
+// The hub now owns pinging: at most one ping per HUB_PING_INTERVAL_MS, so a
+// single ping is in flight regardless of how many tools are attached.
+
+static bool any_client_active() {
+    for (int i = 0; i < MAX_CLIENTS; i++)
+        if (clients[i].active) return true;
+    return false;
+}
+
+// Build a MSG_PING frame: [AA 55 22 05 id ts0 ts1 ts2 ts3 crc]. The 4-byte
+// timestamp is unused by the dongle (it measures RTT with its own micros()),
+// but kept for wire-format compatibility with the previous PC-side pinger.
+static void build_ping(uint8_t* buf, uint8_t id) {
+    uint32_t ts = (uint32_t)(now_ms() * 1000ULL);
+    buf[0] = MAGIC_0; buf[1] = MAGIC_1; buf[2] = MSG_PING; buf[3] = 5;
+    buf[4] = id;
+    buf[5] = (uint8_t)ts;        buf[6] = (uint8_t)(ts >> 8);
+    buf[7] = (uint8_t)(ts >> 16); buf[8] = (uint8_t)(ts >> 24);
+    buf[9] = crc8(&buf[2], 7);
+}
+
+// True if any robot is currently a candidate for pinging (known, not expired,
+// and at least one client is listening). Used to decide the poll() timeout.
+static bool ping_due_possible() {
+    if (!any_client_active()) return false;
+    for (int i = 0; i < HUB_MAX_ROBOTS; i++)
+        if (g_robotKnown[i]) return true;
+    return false;
+}
+
+// Emit at most one ping per interval to the next live robot in round-robin
+// order. No clients or no known robots → quietly advance the clock so we never
+// busy-spin or ping into the void.
+static void maybe_ping() {
+    uint64_t now = now_ms();
+    if (now - g_lastPingMs < HUB_PING_INTERVAL_MS) return;
+    if (!any_client_active()) { g_lastPingMs = now; return; }
+
+    for (int attempt = 0; attempt < HUB_MAX_ROBOTS; attempt++) {
+        g_pingIdx = (g_pingIdx + 1) % HUB_MAX_ROBOTS;
+        if (!g_robotKnown[g_pingIdx]) continue;
+        if (now - g_robotSeenMs[g_pingIdx] > HUB_ROBOT_EXPIRY_MS) {
+            g_robotKnown[g_pingIdx] = false;   // gone — drop from rotation
+            continue;
+        }
+        uint8_t frame[10];
+        build_ping(frame, (uint8_t)g_pingIdx);
+        ssize_t written = write(g_serialFd, frame, sizeof(frame));
+        if (written < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+            std::cerr << "[hub] Serial write error (ping): " << strerror(errno) << "\n";
+        g_lastPingMs = now;
+        return;
+    }
+    g_lastPingMs = now;  // no live robot found this pass
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -478,7 +586,16 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        poll(fds, nfds, -1);  // block until event — no artificial delay
+        // Block until an event, but wake in time for the next round-robin ping
+        // when there's a robot to ping and a client listening; otherwise sleep
+        // indefinitely (no artificial delay, no idle wakeups).
+        int timeout = -1;
+        if (ping_due_possible()) {
+            uint64_t since = now_ms() - g_lastPingMs;
+            timeout = (since >= HUB_PING_INTERVAL_MS)
+                          ? 0 : (int)(HUB_PING_INTERVAL_MS - since);
+        }
+        poll(fds, nfds, timeout);
 
         if (fds[0].revents & (POLLHUP | POLLERR)) {
             std::cerr << "[hub] Serial port disconnected — exiting\n";
@@ -497,6 +614,9 @@ int main(int argc, char* argv[]) {
         // SWARM frame enters the serial TX buffer, regardless of how many were
         // queued in the socket since the last poll() wakeup.
         flushLatestSwarm();
+
+        // Centralized latency pinging — one ping per interval for all clients.
+        maybe_ping();
     }
 
     for (int i = 0; i < MAX_CLIENTS; i++) client_close(i);
