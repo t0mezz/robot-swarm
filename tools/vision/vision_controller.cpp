@@ -21,6 +21,7 @@
 #include <csignal>
 #include <string>
 #include <vector>
+#include <set>
 #include <unordered_map>
 #include <chrono>
 #include <thread>
@@ -99,13 +100,15 @@ static constexpr float MAX_SPEED      = 51.7f;   // +10% from 47
 static constexpr float MAX_TURN       = 16.0f;
 static constexpr float ARRIVAL_MM     = 75.0f;
 static constexpr float SEND_INTERVALS = 0.05f;
-// Yaw EMA: lower α = smoother but more lag; higher α = faster tracking, less overshoot.
-// 0.08, not the 0.25 this was tuned at originally: that value matched a
-// ~30fps loop, but the 2026-06-15 sleep_for(50ms->1ms) fix (55e7d938) lets
-// this loop run at the camera's ~115fps now, so the old alpha let raw
-// per-frame ArUco corner-angle noise straight through into the D-term. See
-// circle_demo.cpp's YAW_ALPHA comment for the full derivation.
-static constexpr float YAW_ALPHA      = 0.08f;
+// Yaw low-pass, specified as a time-constant (seconds), NOT a fixed per-frame
+// EMA coefficient: each frame we convert it to alpha = dt/(YAW_TAU_S + dt) using
+// the actual frame dt, so the smoothing holds the same memory in *time* at any
+// loop rate. A fixed per-frame alpha silently over-smooths (heading lag →
+// limit-cycle) when the loop runs slower than it was tuned for — e.g. on a
+// weaker PC or at higher camera resolution. 0.50s matches the value found to
+// kill that oscillation in circle_demo; see its YAW_TAU_S comment for the full
+// derivation. Lower toward ~0.10s on a fast camera/PC if the lag cuts corners.
+static constexpr float YAW_TAU_S      = 0.50f;
 
 static float normAngle(float a) {
     while (a >  180) a -= 360;
@@ -367,11 +370,14 @@ int main(int argc, char* argv[]) {
         std::sort(robotIds.begin(), robotIds.end());
 
         // EMA-smooth yaw to reduce heading noise and lag-induced overshoot.
+        // alpha derived per-frame from controlDt so the time-constant (YAW_TAU_S)
+        // holds regardless of loop rate.
+        float yawAlpha = controlDt / (YAW_TAU_S + controlDt);
         for (auto& [id, pose] : poseById) {
             auto [it, fresh] = smoothedYaw.emplace(id, pose.yaw);
             if (!fresh) {
                 float delta = normAngle(pose.yaw - it->second);
-                it->second = normAngle(it->second + YAW_ALPHA * delta);
+                it->second = normAngle(it->second + yawAlpha * delta);
             }
             pose.yaw = it->second;
         }
@@ -585,6 +591,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        // ── Demo HUD (summary line + uniform per-robot table, top-right) ───────
         DemoHud hud;
         hud.title(DemoHud::fmt(
             "loop_fps:%.0f  Robots:%d  Sel:%s  %s  HUB:%s  Speed:%d(%.2fx)  WASD:%s",
@@ -595,7 +602,26 @@ int main(int argc, char* argv[]) {
             g_speedLevel, (float)g_speedLevel / 255.0f * 4.0f,
             g_wasdActive ? "ON" : "off"),
             g_swarm.isConnected() ? DemoHud::COL_OK : DemoHud::COL_BAD);
-        hud.draw(disp, {10, disp.rows - 36});
+        hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Status"});
+        std::set<int> hudIds;
+        for (auto& [id, _] : poseById)        hudIds.insert(id);
+        for (int id : g_swarm.knownIds())     hudIds.insert(id);
+        for (int id : hudIds) {
+            const auto& ss = g_swarm.robotState((uint8_t)id);
+            bool vis = poseById.count(id) > 0;
+            cv::Scalar col = vis ? DemoHud::COL_OK
+                           : (ss.known ? DemoHud::COL_WARN : DemoHud::COL_TEXT);
+            hud.row({
+                DemoHud::fmt("%d", id),
+                vis ? "YES" : "NO",
+                ss.known ? DemoHud::formatBattery(ss.battery) : "--",
+                ss.known ? DemoHud::formatLatency(ss.latencyUs) : "--",
+                vis ? DemoHud::fmt("%+d", (int)motors[id][0]) : "--",
+                vis ? DemoHud::fmt("%+d", (int)motors[id][1]) : "--",
+                vis ? "ACTIVE" : (ss.known ? "RADIO" : "UNSEEN"),
+            }, col);
+        }
+        hud.drawTopRight(disp);
 
         char wasdState[64];
         snprintf(wasdState, sizeof(wasdState), "W:%c A:%c S:%c D:%c",

@@ -19,6 +19,7 @@
 #include <csignal>
 #include <string>
 #include <vector>
+#include <set>
 #include <unordered_map>
 #include <chrono>
 #include <thread>
@@ -47,13 +48,27 @@ static constexpr float MAX_TURN_RATE = 120.0f;  // turn-units/s
 static constexpr float ARRIVAL_MM       = 40.0f;   // stop when within this distance of slot
 static constexpr float SEND_INTERVAL_S  = 0.01f; // Send intervall in s
 
-// Yaw EMA: smooths the raw per-frame ArUco corner-angle before it reaches any
-// controller. At 115fps (~8.7ms/frame) raw yaw jitters by ~1deg frame-to-frame
-// from corner-detection noise alone; left unfiltered, that noise is what the
-// D-term (divided by a ~10ms dt) blows up into ~30 turn-units of pure buzz per
-// frame. alpha=0.08 gives ~12-frame memory (~105ms), matching the smoothing
-// the old alpha=0.25 gave at 30fps (~4-frame memory, ~133ms).
-static constexpr float YAW_ALPHA = 0.08f;
+// Yaw low-pass: smooths the raw per-frame ArUco corner-angle before it reaches
+// any controller. Raw yaw jitters by ~1deg frame-to-frame from corner-detection
+// noise; left unfiltered, that noise is what the D-term (divided by a ~10ms dt)
+// blows up into ~30 turn-units of pure buzz per frame.
+//
+// Specified as a time-constant (seconds), NOT a fixed per-frame EMA coefficient,
+// so the smoothing is frame-rate INDEPENDENT: each frame we convert it to an EMA
+// coefficient   alpha = dt / (YAW_TAU_S + dt)   using the actual frame dt. A
+// fixed per-frame alpha has a memory measured in *frames*, so it silently
+// over-smooths when the loop runs slower than it was tuned for (e.g. on a weaker
+// PC, or at higher camera resolution) — the smoothed yaw then lags reality by
+// hundreds of ms and the heading loop limit-cycles instead of settling.
+//
+// 0.50s was found empirically (via the now-removed tuning sliders) to eliminate
+// the residual heading oscillation at the reduced loop rate of a weaker PC
+// running 2048x2048. Heavy, but safe here: the orbit feedforward (K_FF_YAW)
+// carries the steady turn, so feedback only corrects residual error and the
+// added heading lag mostly costs disturbance-rejection speed, not path tracking.
+// Lower it (toward ~0.10s, the old 115fps-equivalent) if you ever run a fast
+// camera/PC where the extra lag starts cutting orbit corners.
+static constexpr float YAW_TAU_S = 0.50f;
 
 // D-term rate window: angleErr/yaw rate-of-change is estimated via
 // sample-and-hold over this period rather than per-frame, since
@@ -385,7 +400,7 @@ int main(int argc, char* argv[]) {
     float radiusMm    = -1.f;
     float minGapMm    = -1.f;
     float orbitSpeed  = -1.f;
-    float speedPct    = 70.f;
+    float speedPct    = 35.f;
     bool  doCalibrate = false;
     bool  logPerf     = false;
     bool  logScore    = false;
@@ -554,14 +569,17 @@ int main(int argc, char* argv[]) {
             robotLastSeen[r.id] = now;
         }
 
-        // Apply EMA to yaw before it reaches any controller.
+        // Apply the yaw low-pass before it reaches any controller.
         // emplace seeds the value on first sight; subsequent frames blend in
         // the raw yaw via normAngle so wrap-around is handled correctly.
+        // alpha is derived from the per-frame dt (see YAW_TAU_S) so the smoothing
+        // holds a constant time-constant regardless of loop rate.
+        float yawAlpha = controlDt / (YAW_TAU_S + controlDt);
         for (auto& [id, pose] : poseById) {
             auto [it, fresh] = smoothedYaw.emplace(id, pose.yaw);
             if (!fresh) {
                 float delta = normAngle(pose.yaw - it->second);
-                it->second  = normAngle(it->second + YAW_ALPHA * delta);
+                it->second  = normAngle(it->second + yawAlpha * delta);
             }
             pose.yaw = it->second;
         }
@@ -946,7 +964,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // ── Status bar ────────────────────────────────────────────────────────
+        // ── Demo HUD (summary line + uniform per-robot table, top-right) ───────
         DemoHud hud;
         hud.title(DemoHud::fmt(
             "loop_fps:%.0f  Robots:%d/%d  R:%.0fmm  Gap:%.0fmm  %s  HUB:%s  %s",
@@ -958,7 +976,26 @@ int main(int argc, char* argv[]) {
                 ? cv::format("ORBIT %.0fdeg/s", circle.orbitSpeed).c_str()
                 : "POSITION"),
             swarm.isConnected() ? DemoHud::COL_OK : DemoHud::COL_BAD);
-        hud.draw(disp, {10, disp.rows - 36});
+        hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Status"});
+        std::set<int> hudIds;
+        for (auto& [id, _] : poseById)    hudIds.insert(id);
+        for (int id : swarm.knownIds())   hudIds.insert(id);
+        for (int id : hudIds) {
+            const auto& ss = swarm.robotState((uint8_t)id);
+            bool vis = poseById.count(id) > 0;
+            cv::Scalar col = vis ? DemoHud::COL_OK
+                           : (ss.known ? DemoHud::COL_WARN : DemoHud::COL_TEXT);
+            hud.row({
+                DemoHud::fmt("%d", id),
+                vis ? "YES" : "NO",
+                ss.known ? DemoHud::formatBattery(ss.battery) : "--",
+                ss.known ? DemoHud::formatLatency(ss.latencyUs) : "--",
+                vis ? DemoHud::fmt("%+d", (int)motors[id][0]) : "--",
+                vis ? DemoHud::fmt("%+d", (int)motors[id][1]) : "--",
+                vis ? "ACTIVE" : (ss.known ? "RADIO" : "UNSEEN"),
+            }, col);
+        }
+        hud.drawTopRight(disp);
 
         auto tDrawEnd = std::chrono::steady_clock::now();
         accDraw += std::chrono::duration<double>(tDrawEnd - tControlEnd).count();

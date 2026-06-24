@@ -8,16 +8,17 @@
 //
 // Usage:
 //   DemoHud hud;
-//   hud.row("loop_fps", fmt("%.0f", fps));
-//   hud.row("Robots", fmt("%d", swarm.knownCount()), DemoHud::COL_OK);
-//   hud.draw(frame, {10, 10});
+//   hud.title(fmt("loop_fps:%.0f  Robots:%d  HUB:%s", fps, n, ok ? "OK":"--"));
+//   hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Status"});
+//   for (auto& r : robots) hud.row({id, vis, battery, latency, l, r, st}, color);
+//   hud.drawTopRight(frame);   // canonical: docked to the top-right corner
 //   hud.clear();
 //
-//   // tabular (per-robot) panel — same visual style, multiple columns/row
-//   DemoHud table;
-//   table.header({"ID", "Battery", "Latency"});
-//   for (auto& r : robots) table.row({id, battery, latency}, colorForRow);
-//   table.draw(frame, {10, 10});
+// Every demo follows this same shape — a summary title line + the uniform
+// per-robot table, docked top-right via drawTopRight — so the HUDs all look
+// and sit the same across vision_controller, circle_demo, wingman, shape_demo
+// and drag_drop_demo. Use draw(img, origin) directly only if you need a
+// non-corner placement.
 //
 // LoopFps is a small helper for the "frameCount/lastFpsT, recomputed once a
 // second" pattern that was duplicated identically in every tool's main loop.
@@ -39,11 +40,16 @@ public:
     inline static const cv::Scalar COL_BAD  = {60, 60, 220};
 
     static constexpr int    FONT       = cv::FONT_HERSHEY_SIMPLEX;
-    static constexpr double FONT_SCALE = 0.5;
-    static constexpr int    THICKNESS  = 1;
-    static constexpr int    ROW_H      = 20;
-    static constexpr int    COL_GAP    = 16;
-    static constexpr int    PAD        = 8;
+    // Sizing knobs tuned for a corner overlay: every demo now docks this panel
+    // to the top-right of the live video (see drawTopRight), so the panel has
+    // to be readable without swallowing the frame. These are ~1.4x the original
+    // 0.5/1/20/16/8 values — big enough to read across a room, small enough
+    // that the per-robot table still leaves most of the video visible.
+    static constexpr double FONT_SCALE = 0.7;
+    static constexpr int    THICKNESS  = 2;
+    static constexpr int    ROW_H      = 34;
+    static constexpr int    COL_GAP    = 28;
+    static constexpr int    PAD        = 14;
 
     static std::string fmt(const char* f, ...) {
         char buf[128];
@@ -83,36 +89,23 @@ public:
         title_.clear();
     }
 
+    // Overall pixel size of the panel for the current rows/header/title.
+    // Lets callers right-/bottom-anchor the panel (draw() auto-sizes, so
+    // without this they couldn't know where the right edge would land).
+    cv::Size measure(int minWidth = 0) const {
+        std::vector<int> colWidth;
+        return layout(colWidth, minWidth);
+    }
+
     // Draws the accumulated rows as one panel anchored at `origin`
     // (top-left corner), with a semi-transparent background.
     void draw(cv::Mat& img, cv::Point origin, int minWidth = 0) const {
         if (img.empty() || (rows_.empty() && header_.empty() && title_.empty())) return;
 
-        size_t numCols = header_.size();
-        for (auto& r : rows_) numCols = std::max(numCols, r.cells.size());
+        std::vector<int> colWidth;
+        cv::Size size = layout(colWidth, minWidth);
 
-        std::vector<int> colWidth(numCols, 0);
-        auto measure = [&](const std::vector<std::string>& cells) {
-            for (size_t c = 0; c < cells.size(); ++c) {
-                int w = cv::getTextSize(cells[c], FONT, FONT_SCALE, THICKNESS, nullptr).width;
-                colWidth[c] = std::max(colWidth[c], w);
-            }
-        };
-        if (!header_.empty()) measure(header_);
-        for (auto& r : rows_) measure(r.cells);
-
-        int totalW = 2 * PAD;
-        for (int w : colWidth) totalW += w + COL_GAP;
-        if (!title_.empty()) {
-            int titleW = cv::getTextSize(title_, FONT, FONT_SCALE, THICKNESS, nullptr).width + 2 * PAD;
-            totalW = std::max(totalW, titleW);
-        }
-        totalW = std::max(totalW, minWidth);
-
-        int numRows = (int)rows_.size() + (header_.empty() ? 0 : 1) + (title_.empty() ? 0 : 1);
-        int totalH = 2 * PAD + numRows * ROW_H;
-
-        cv::Rect panel(origin.x, origin.y, totalW, totalH);
+        cv::Rect panel(origin.x, origin.y, size.width, size.height);
         panel &= cv::Rect(0, 0, img.cols, img.rows);
         if (panel.width <= 0 || panel.height <= 0) return;
 
@@ -122,7 +115,7 @@ public:
         overlay.setTo(cv::Scalar(20, 20, 20));
         cv::addWeighted(overlay, 0.55, roi, 0.45, 0, roi);
 
-        int y = origin.y + PAD + ROW_H - 6;
+        int y = origin.y + PAD + ROW_H - 10;  // text baseline within the first row
         if (!title_.empty()) {
             cv::putText(img, title_, {origin.x + PAD, y}, FONT, FONT_SCALE, titleColor_, THICKNESS, cv::LINE_AA);
             y += ROW_H;
@@ -135,6 +128,16 @@ public:
             drawRow(img, origin.x + PAD, y, r.cells, r.color, colWidth);
             y += ROW_H;
         }
+    }
+
+    // Docks the panel to the top-right corner of `img`, `margin` px in from the
+    // top and right edges. This is the canonical placement for every demo HUD
+    // so they all sit in the same spot — callers just build rows and call this
+    // instead of hand-computing an origin from measure().
+    void drawTopRight(cv::Mat& img, int margin = 16, int minWidth = 0) const {
+        if (img.empty()) return;
+        cv::Size size = measure(minWidth);
+        draw(img, {img.cols - size.width - margin, margin}, minWidth);
     }
 
     // Helper for the loop_fps pattern duplicated across every tool's main
@@ -172,6 +175,35 @@ private:
         std::vector<std::string> cells;
         cv::Scalar color;
     };
+
+    // Measures per-column widths and the overall panel size. Shared by
+    // measure() and draw() so both agree on geometry.
+    cv::Size layout(std::vector<int>& colWidth, int minWidth) const {
+        size_t numCols = header_.size();
+        for (auto& r : rows_) numCols = std::max(numCols, r.cells.size());
+
+        colWidth.assign(numCols, 0);
+        auto measureRow = [&](const std::vector<std::string>& cells) {
+            for (size_t c = 0; c < cells.size(); ++c) {
+                int w = cv::getTextSize(cells[c], FONT, FONT_SCALE, THICKNESS, nullptr).width;
+                colWidth[c] = std::max(colWidth[c], w);
+            }
+        };
+        if (!header_.empty()) measureRow(header_);
+        for (auto& r : rows_) measureRow(r.cells);
+
+        int totalW = 2 * PAD;
+        for (int w : colWidth) totalW += w + COL_GAP;
+        if (!title_.empty()) {
+            int titleW = cv::getTextSize(title_, FONT, FONT_SCALE, THICKNESS, nullptr).width + 2 * PAD;
+            totalW = std::max(totalW, titleW);
+        }
+        totalW = std::max(totalW, minWidth);
+
+        int numRows = (int)rows_.size() + (header_.empty() ? 0 : 1) + (title_.empty() ? 0 : 1);
+        int totalH = 2 * PAD + numRows * ROW_H;
+        return {totalW, totalH};
+    }
 
     static void drawRow(cv::Mat& img, int x, int y, const std::vector<std::string>& cells,
                          cv::Scalar color, const std::vector<int>& colWidth) {

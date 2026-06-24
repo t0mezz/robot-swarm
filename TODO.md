@@ -1,5 +1,10 @@
 # TODO
 
+## Update Swarm dashboard:
+  - robot motor level meter still does not show the value of the motors (f.e. -15,15 still dark grey lavel meter)
+  - sometimes all robots are lost at the same time for seconds. why? (update here)
+  - especially, when other software, that uses the swarm_hub is running.
+
 ## Remove ancient code
  - swarm_terminal (replaced by swarm_dashboard)
  - game (maybe if too old to update)

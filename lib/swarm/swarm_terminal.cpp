@@ -90,8 +90,10 @@ static void drawUI(const SwarmClient& swarm) {
         } else {
             const char* sc; const char* st;
             statusParts(r.flags, r.motorL, r.motorR, sc, st);
-            printf(" %2d │ %s │ %s │ %s%s\033[0m │ %s │ %s\n",
-                   i, macStr, latStr, sc, st, motorStr, uptimeStr);
+            // Color the motor cell too: green when driving, dim when idle.
+            const char* motorCol = (r.motorL != 0 || r.motorR != 0) ? "\033[32m" : "\033[90m";
+            printf(" %2d │ %s │ %s │ %s%s\033[0m │ %s%s\033[0m │ %s\n",
+                   i, macStr, latStr, sc, st, motorCol, motorStr, uptimeStr);
         }
     }
 

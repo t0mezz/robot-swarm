@@ -38,7 +38,9 @@ def connected_robot_ports():
 
 def flash(port):
     print(f"--> {port}: deploying {', '.join(f.name for f in FILES)}")
-    cmd = ["mpremote", "connect", port, "cp", *(str(f) for f in FILES), ":", "soft-reset"]
+    # "+" separates mpremote sub-commands: without it, cp greedily swallows
+    # the following "soft-reset" token as a copy destination and fails.
+    cmd = ["mpremote", "connect", port, "cp", *(str(f) for f in FILES), ":", "+", "soft-reset"]
     for attempt in range(1, CONNECT_RETRIES + 1):
         if subprocess.run(cmd).returncode == 0:
             print("    done")

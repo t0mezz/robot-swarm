@@ -10,100 +10,47 @@
 // Keys: r = reset FPS/latency counters,  q / Esc = quit
 
 #include "aruco_tracker.h"
+#include "DemoHud.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <algorithm>
 
 // ── panel ─────────────────────────────────────────────────────────────────────
-
-static constexpr int kW   = 210;
-static constexpr int kPad = 12;
+//
+// The on-screen telemetry panel is built entirely from the shared DemoHud
+// overlay (lib/DemoHud/DemoHud.h) — no bespoke cv::putText/snprintf layout
+// code lives here anymore. DemoHud owns sizing, the translucent background,
+// and column auto-fit; this file only decides *what* to show.
 
 static cv::Scalar tempColor(float t) {
-    if (t < 0.f)  return {110, 110, 110};  // unavailable
-    if (t < 60.f) return { 50, 220,  70};  // normal
-    if (t < 70.f) return { 30, 210, 255};  // warm
-    return               { 40,  60, 230};  // hot
+    if (t < 0.f)  return {110, 110, 110};   // unavailable
+    if (t < 60.f) return DemoHud::COL_OK;    // normal
+    if (t < 70.f) return DemoHud::COL_WARN;  // warm
+    return               DemoHud::COL_BAD;   // hot
 }
 
-static void drawPanel(cv::Mat& img, float fps, float latMs,
+static void drawPanel(cv::Mat& img, float loopFps, float camFps, float latMs,
                       float tempC, int w, int h, int markerCount)
 {
-    // panel height: title + divider + 5 data rows + divider + hint
-    constexpr int kPanelH = 36 + 14 + 5*26 + 14 + 22 + kPad * 2;
-    int panelH = std::min(kPanelH, img.rows);
+    DemoHud hud;
+    hud.title("CAMERA", DemoHud::COL_TEXT);
+    hud.row("Resolution", DemoHud::fmt("%d x %d px", w, h));
+    hud.row("Cam FPS",    DemoHud::fmt("%.1f", camFps));
+    hud.row("Loop FPS",   DemoHud::fmt("%.1f", loopFps), DemoHud::COL_OK);
+    hud.row("Latency",    DemoHud::fmt("%.1f ms", latMs));
+    hud.row("Temp",       tempC >= 0.f ? DemoHud::fmt("%.1f C", tempC) : "n/a",
+                          tempColor(tempC));
+    hud.row("Markers",    DemoHud::fmt("%d", markerCount),
+                          markerCount > 0 ? DemoHud::COL_OK : DemoHud::COL_TEXT);
+    hud.row("Keys",       "r=reset  q=quit");
 
-    int px = img.cols - kW;
-    cv::Mat roi = img(cv::Rect(px, 0, kW, panelH));
-    cv::addWeighted(roi, 0.15, cv::Mat::zeros(roi.size(), roi.type()), 0.85, 0, roi);
-    cv::line(img, {px, 0}, {px, panelH}, {70, 70, 70}, 1);
-
-    int x  = px + kPad;
-    int bw = kW - kPad * 2;
-    int y  = kPad;
-
-    // draw a label on the left and a value right-aligned within bw
-    auto kv = [&](const std::string& label, const std::string& val,
-                  cv::Scalar valCol = {200, 200, 200}) {
-        constexpr float sc = 0.42f;
-        int base = 0;
-        int th = cv::getTextSize("A", cv::FONT_HERSHEY_SIMPLEX, sc, 1, &base).height;
-        y += th;
-        // label (dim)
-        cv::putText(img, label, {x, y}, cv::FONT_HERSHEY_SIMPLEX, sc, {0,0,0}, 2, cv::LINE_AA);
-        cv::putText(img, label, {x, y}, cv::FONT_HERSHEY_SIMPLEX, sc, {100,100,100}, 1, cv::LINE_AA);
-        // value — right-aligned
-        int vw = cv::getTextSize(val, cv::FONT_HERSHEY_SIMPLEX, sc, 1, &base).width;
-        int vx = px + kW - kPad - vw;
-        cv::putText(img, val, {vx, y}, cv::FONT_HERSHEY_SIMPLEX, sc, {0,0,0}, 2, cv::LINE_AA);
-        cv::putText(img, val, {vx, y}, cv::FONT_HERSHEY_SIMPLEX, sc, valCol,  1, cv::LINE_AA);
-        y += base + 8;
-    };
-
-    auto divider = [&](int above = 6, int below = 6) {
-        y += above;
-        cv::line(img, {x, y}, {x+bw, y}, {65, 65, 65}, 1);
-        y += below;
-    };
-
-    // title
-    {
-        constexpr float sc = 0.52f;
-        int base = 0;
-        int th = cv::getTextSize("A", cv::FONT_HERSHEY_SIMPLEX, sc, 1, &base).height;
-        y += th;
-        cv::putText(img, "CAMERA", {x, y}, cv::FONT_HERSHEY_SIMPLEX, sc, {0,0,0},     2, cv::LINE_AA);
-        cv::putText(img, "CAMERA", {x, y}, cv::FONT_HERSHEY_SIMPLEX, sc, {220,220,220}, 1, cv::LINE_AA);
-        y += base + 4;
-    }
-
-    divider(4, 8);
-
-    // data rows
-    char buf[48];
-
-    snprintf(buf, sizeof(buf), "%d × %d px", w, h);
-    kv("Resolution", buf);
-
-    snprintf(buf, sizeof(buf), "%.1f", fps);
-    kv("FPS", buf);
-
-    snprintf(buf, sizeof(buf), "%.1f ms", latMs);
-    kv("Latency", buf);
-
-    if (tempC >= 0.f) snprintf(buf, sizeof(buf), "%.1f °C", tempC);
-    else              snprintf(buf, sizeof(buf), "n/a");
-    kv("Temp", buf, tempColor(tempC));
-
-    snprintf(buf, sizeof(buf), "%d", markerCount);
-    kv("Markers", buf, markerCount > 0 ? cv::Scalar{50,220,70} : cv::Scalar{110,110,110});
-
-    divider(6, 6);
-
-    cv::putText(img, "r=reset  q=quit",
-                {x, panelH - kPad},
-                cv::FONT_HERSHEY_SIMPLEX, 0.34f, {75, 75, 75}, 1, cv::LINE_AA);
+    // Right-anchor the panel: the tracker's debugFrame() burns its own
+    // small cam_fps/tags HUD + legend into the top-left corner, so anchoring
+    // there would put this now-3x panel right on top of that text.
+    cv::Size sz = hud.measure();
+    int x = std::max(10, img.cols - sz.width - 10);
+    hud.draw(img, {x, 10});
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
@@ -142,10 +89,15 @@ int main(int argc, char* argv[]) {
     cv::namedWindow("Camera Eval", cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
     cv::resizeWindow("Camera Eval", sz.width, sz.height);
 
+    // loop_fps = this display/render loop's rate (distinct from tracker.fps(),
+    // which is the camera/detection thread's rate). Tick every iteration.
+    DemoHud::LoopFps loopFps;
+
     while (true) {
+        loopFps.tick();
         if (tracker.update()) {
             cv::Mat frame = tracker.debugFrame();
-            drawPanel(frame, tracker.fps(), tracker.latencyMs(),
+            drawPanel(frame, loopFps.fps(), tracker.fps(), tracker.latencyMs(),
                       tracker.cameraTemperature(),
                       sz.width, sz.height,
                       (int)tracker.robots().size());

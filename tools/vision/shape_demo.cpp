@@ -40,16 +40,18 @@ static constexpr float MAX_SPEED       = 51.7f;
 static constexpr float MAX_TURN        = 16.0f;
 static constexpr float ARRIVAL_MM      = 40.0f;
 static constexpr float SEND_INT_S      = 0.05f;
-// 0.08, not the 0.25 this was tuned at originally: that value matched a
-// ~30fps loop, but the 2026-06-15 sleep_for(50ms->1ms) fix (55e7d938) lets
-// this loop run at the camera's ~115fps now, so the old alpha let raw
-// per-frame ArUco corner-angle noise straight through into the D-term. See
-// circle_demo.cpp's YAW_ALPHA comment for the full derivation.
-static constexpr float YAW_ALPHA       = 0.08f;
+// Yaw low-pass, specified as a time-constant (seconds), NOT a fixed per-frame
+// EMA coefficient: each frame we convert it to alpha = dt/(YAW_TAU_S + dt) using
+// the actual frame dt, so the smoothing holds the same memory in *time* at any
+// loop rate. A fixed per-frame alpha silently over-smooths (heading lag →
+// limit-cycle) when the loop runs slower than it was tuned for — e.g. on a
+// weaker PC or at higher camera resolution. 0.50s matches the value found to
+// kill that oscillation in circle_demo; see its YAW_TAU_S comment for the full
+// derivation. Lower toward ~0.10s on a fast camera/PC if the lag cuts corners.
+static constexpr float YAW_TAU_S       = 0.50f;
 static constexpr float EVICT_S         = 5.0f;
 static constexpr float WAYPOINT_STEP   = 25.0f;  // mm between sampled waypoints
 static constexpr int   MAX_ROBOTS      = 32;
-static constexpr int   TEL_HEIGHT      = 200;
 
 static const char* SHAPE_FILE      = "/tmp/shape_demo.yml";
 static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
@@ -316,12 +318,13 @@ struct RobotTelRow {
     float    distMm;         // -1 = no waypoint assigned
 };
 
-static cv::Mat buildTelPanel(int width, const std::vector<RobotTelRow>& rows,
+// Overlays the demo HUD (summary line + uniform per-robot table) onto the live
+// frame, docked top-right — same style and placement as every other demo.
+static void drawTelHud(cv::Mat& disp, const std::vector<RobotTelRow>& rows,
     float fps, int visible, int registered, float pathMm,
     float speedPct, bool hubOk, Mode mode, Tool tool)
 {
     static const char* TOOL_NAMES[] = {"LINE","RECT","CIRCLE","FREEHAND"};
-    cv::Mat panel(TEL_HEIGHT, width, CV_8UC3, cv::Scalar(18, 18, 18));
 
     DemoHud hud;
     if (mode == Mode::DRAW)
@@ -336,7 +339,7 @@ static cv::Mat buildTelPanel(int width, const std::vector<RobotTelRow>& rows,
             fps, visible, registered, pathMm, speedPct, hubOk ? "OK" : "OFFLINE"),
             hubOk ? DemoHud::COL_OK : DemoHud::COL_BAD);
 
-    hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Dist(mm)", "Status"});
+    hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Status"});
     for (auto& r : rows) {
         cv::Scalar col = r.visible ? DemoHud::COL_OK
                        : (r.known ? DemoHud::COL_WARN : DemoHud::COL_TEXT);
@@ -347,12 +350,10 @@ static cv::Mat buildTelPanel(int width, const std::vector<RobotTelRow>& rows,
             r.known ? DemoHud::formatLatency(r.latencyUs) : "--",
             r.visible ? DemoHud::fmt("%+d", (int)r.motorL) : "--",
             r.visible ? DemoHud::fmt("%+d", (int)r.motorR) : "--",
-            r.distMm >= 0.f ? DemoHud::fmt("%.0f", r.distMm) : "--",
             r.visible ? "ACTIVE" : (r.known ? "RADIO" : "UNSEEN"),
         }, col);
     }
-    hud.draw(panel, {0, 0}, width);
-    return panel;
+    hud.drawTopRight(disp);
 }
 
 // ── Calibration ───────────────────────────────────────────────────────────────
@@ -522,12 +523,14 @@ int main(int argc, char* argv[]) {
             robotLastSeen[r.id] = now;
         }
 
-        // EMA yaw
+        // EMA yaw — alpha derived per-frame from controlDt so the time-constant
+        // (YAW_TAU_S) holds regardless of loop rate.
+        float yawAlpha = controlDt / (YAW_TAU_S + controlDt);
         for (auto& [id, pose] : poseById) {
             auto [it, fresh] = smoothedYaw.emplace(id, pose.yaw);
             if (!fresh) {
                 float delta = normAngle(pose.yaw - it->second);
-                it->second  = normAngle(it->second + YAW_ALPHA * delta);
+                it->second  = normAngle(it->second + yawAlpha * delta);
             }
             pose.yaw = it->second;
         }
@@ -712,13 +715,11 @@ int main(int argc, char* argv[]) {
         for (size_t i = 1; i < g_waypoints.size(); i++)
             pathLen += (float)cv::norm(g_waypoints[i] - g_waypoints[i-1]);
 
-        cv::Mat tel = buildTelPanel(disp.cols, rows, fps,
-                                    (int)poseById.size(), registeredCount,
-                                    pathLen, defaultSpeed * 100.f,
-                                    swarm.isConnected(), g_mode, g_tool);
-        cv::Mat combined;
-        cv::vconcat(disp, tel, combined);
-        cv::imshow(WIN, combined);
+        drawTelHud(disp, rows, fps,
+                   (int)poseById.size(), registeredCount,
+                   pathLen, defaultSpeed * 100.f,
+                   swarm.isConnected(), g_mode, g_tool);
+        cv::imshow(WIN, disp);
 
         // ── Key handling ──────────────────────────────────────────────────────
         int key = cv::waitKey(1) & 0xFF;
