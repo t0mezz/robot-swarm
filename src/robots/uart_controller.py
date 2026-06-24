@@ -6,7 +6,7 @@
 # speeds scaled to [-127..+127] → [-MAX_WHEEL_CPS..+MAX_WHEEL_CPS].
 
 # ─── Feature toggles ───────────────────────────────────────────
-ENGINE_SOUND_ENABLED = True   # False: skip importing/loading engine_sound entirely
+ENGINE_SOUND_ENABLED = False   # False: skip importing/loading engine_sound entirely
 
 from machine import UART, Pin
 from pololu_3pi_2040_robot import robot
