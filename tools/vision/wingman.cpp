@@ -724,46 +724,50 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // ── HUD overlay (top-left info panel) ─────────────────────────────────
+        // ── Demo HUD (summary line + uniform per-robot table, top-right) ───────
         {
-            std::string leaderStr;
-            cv::Scalar  leaderCol;
-            if (!registered) {
-                leaderStr = DemoHud::fmt("Registering... %d/%d", regFrames, REGISTRATION_FRAMES);
-                leaderCol = DemoHud::COL_OK;
-            } else if (leaderId >= 0) {
-                leaderStr = "Leader: Robot " + std::to_string(leaderId) + "  (WASD)";
-                leaderCol = DemoHud::COL_WARN;
-            } else {
-                leaderStr = "Leader: none visible";
-                leaderCol = DemoHud::COL_TEXT;
-            }
+            std::string leaderStr =
+                !registered      ? DemoHud::fmt("Registering %d/%d", regFrames, REGISTRATION_FRAMES)
+              : leaderId >= 0    ? DemoHud::fmt("Leader:R%d(WASD)", leaderId)
+                                 : "Leader:none";
 
             DemoHud hud;
-            hud.title("WINGMAN FORMATION");
-            hud.row({leaderStr}, leaderCol);
-            hud.row({DemoHud::fmt("Spacing: %d mm   Robots: %d",
-                     (int)spacingMm, (int)poseById.size())});
-            hud.row("loop_fps", DemoHud::fmt("%.1f", fps), DemoHud::COL_OK);
-            hud.row("Hub", g_swarm.isConnected() ? "OK" : "DISCONNECTED",
-                    g_swarm.isConnected() ? DemoHud::COL_OK : DemoHud::COL_BAD);
+            hud.title(DemoHud::fmt(
+                "loop_fps:%.1f  Robots:%d  Spacing:%dmm  %s  HUB:%s",
+                fps, (int)poseById.size(), (int)spacingMm, leaderStr.c_str(),
+                g_swarm.isConnected() ? "OK" : "OFFLINE"),
+                g_swarm.isConnected() ? DemoHud::COL_OK : DemoHud::COL_BAD);
 
-            hud.header({"ID", "Role", "Battery", "Latency", "Mot-L", "Mot-R"});
-            for (auto& [id, r] : poseById) {
+            hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Status"});
+            std::set<int> hudIds;
+            for (auto& [id, _] : poseById)  hudIds.insert(id);
+            for (int id : g_swarm.knownIds()) hudIds.insert(id);
+            for (int id : hudIds) {
+                bool vis      = poseById.count(id) > 0;
                 bool isLeader = (id == leaderId);
-                std::string role = isLeader ? "LEADER" : ("Flw S" + std::to_string(
-                    assignment.count(id) ? assignment.at(id) : -1));
-                int8_t mL, mR;
-                { std::lock_guard<std::mutex> lk(g_motorMutex); mL = g_motors[id][0]; mR = g_motors[id][1]; }
                 const auto& ss = g_swarm.robotState((uint8_t)id);
+                // The "Status" column carries this demo's role info when the
+                // robot is tracked, falling back to the shared link states.
+                std::string status =
+                    !vis      ? (ss.known ? "RADIO" : "UNSEEN")
+                  : isLeader  ? "LEADER"
+                              : DemoHud::fmt("Flw S%d", assignment.count(id) ? assignment.at(id) : -1);
+                int8_t mL = 0, mR = 0;
+                if (vis) { std::lock_guard<std::mutex> lk(g_motorMutex); mL = g_motors[id][0]; mR = g_motors[id][1]; }
+                cv::Scalar col = isLeader ? DemoHud::COL_WARN
+                               : vis      ? DemoHud::COL_OK
+                               : (ss.known ? DemoHud::COL_WARN : DemoHud::COL_TEXT);
                 hud.row({
-                    DemoHud::fmt("%d", id), role,
+                    DemoHud::fmt("%d", id),
+                    vis ? "YES" : "NO",
                     ss.known ? DemoHud::formatBattery(ss.battery) : "--",
                     ss.known ? DemoHud::formatLatency(ss.latencyUs) : "--",
-                    DemoHud::fmt("%+d", (int)mL), DemoHud::fmt("%+d", (int)mR),
-                }, isLeader ? DemoHud::COL_WARN : DemoHud::COL_TEXT);
+                    vis ? DemoHud::fmt("%+d", (int)mL) : "--",
+                    vis ? DemoHud::fmt("%+d", (int)mR) : "--",
+                    status,
+                }, col);
             }
-            hud.draw(disp, {10, 10});
+            hud.drawTopRight(disp);
 
             // Controls hint at bottom
             tracker.drawText(disp, "WASD: lead   +/-: spacing   c: calib   q: quit",

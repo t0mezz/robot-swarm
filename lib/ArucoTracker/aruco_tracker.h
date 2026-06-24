@@ -68,6 +68,15 @@ struct ArucoConfig {
     float kfProcVel = 1e-2f;
     float kfMeas    = 4.0f;
     float kfInitCov = 100.0f;
+    // Resolution the kf_* process-noise params above were tuned at. The filter
+    // runs in pixel space, so its process-noise variances scale with the square
+    // of the pixel-per-mm factor; initKalman() rescales them from this reference
+    // to the live frame size so the filter tracks the same *physical* dynamics
+    // at any camera resolution. Without it, raising the resolution leaves Q too
+    // small in px, so the estimate lags the marker during motion — which biases
+    // the corner-derived yaw and surfaces as heading oscillation downstream.
+    int   kfRefWidth  = 1224;
+    int   kfRefHeight = 1024;
 
     // ROI state machine
     float roiPad      = 1.25f;
@@ -120,6 +129,8 @@ inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
     rf("kf_proc_vel",     c.kfProcVel);
     rf("kf_meas",         c.kfMeas);
     rf("kf_init_cov",     c.kfInitCov);
+    ri("kf_ref_width",    c.kfRefWidth);
+    ri("kf_ref_height",   c.kfRefHeight);
     rf("roi_pad",         c.roiPad);
     rf("roi_grow",        c.roiGrow);
     ri("roi_fail_max",    c.roiFailMax);
@@ -260,6 +271,25 @@ public:
         cv::FileStorage fs(path, cv::FileStorage::READ);
         if (!fs.isOpened()) return false;
         fs["H"] >> H_;
+        // A homography is only valid for the resolution it was calibrated at:
+        // pixel coords scale with resolution, so a homography from a different
+        // frame size silently maps the current pixels to mis-scaled world
+        // coords (e.g. 2x off after doubling cam_width/height) — which shows up
+        // downstream as radial overshoot / oscillation, not an obvious error.
+        // Reject the mismatch so the caller falls back / re-calibrates instead.
+        int calW = 0, calH = 0;
+        if (!fs["img_width"].empty())  fs["img_width"]  >> calW;
+        if (!fs["img_height"].empty()) fs["img_height"] >> calH;
+        if (calW > 0 && calH > 0 && (calW != (int)fw_ || calH != (int)fh_)) {
+            fprintf(stderr,
+                "[aruco] Homography '%s' was calibrated at %dx%d but camera is "
+                "%dx%d — ignoring it. Re-run calibration at the current "
+                "resolution.\n",
+                path.c_str(), calW, calH, (int)fw_, (int)fh_);
+            H_.release();
+            hasH_ = false;
+            return false;
+        }
         hasH_ = !H_.empty();
         return hasH_;
     }
@@ -267,6 +297,8 @@ public:
         if (!hasH_) return;
         cv::FileStorage fs(path, cv::FileStorage::WRITE);
         fs << "H" << H_;
+        // Stamp the resolution so loadHomography() can reject a stale calibration.
+        fs << "img_width" << (int)fw_ << "img_height" << (int)fh_;
     }
 
     void prependPreprocessor(std::unique_ptr<IPreprocessor> p) {
@@ -647,9 +679,17 @@ private:
             0, 0, 1, 0,
             0, 0, 0, 1);
         kf.measurementMatrix = (cv::Mat_<float>(2,4) << 1, 0, 0, 0,  0, 1, 0, 0);
-        cv::setIdentity(kf.processNoiseCov,     cv::Scalar(cfg_.kfProcPos));
-        kf.processNoiseCov.at<float>(2,2) = cfg_.kfProcVel;
-        kf.processNoiseCov.at<float>(3,3) = cfg_.kfProcVel;
+        // Rescale pixel-space process noise from the tuned reference resolution
+        // to the live frame size (area ratio = linear pixel-scale²). Measurement
+        // noise is left as-is: sub-pixel corner error is ~constant in px
+        // regardless of marker size, so only Q needs to follow the resolution.
+        // See cfg_.kfRefWidth for why.
+        float resScale2 = 1.0f;
+        if (cfg_.kfRefWidth > 0 && cfg_.kfRefHeight > 0)
+            resScale2 = (fw_ * fh_) / ((float)cfg_.kfRefWidth * (float)cfg_.kfRefHeight);
+        cv::setIdentity(kf.processNoiseCov,     cv::Scalar(cfg_.kfProcPos * resScale2));
+        kf.processNoiseCov.at<float>(2,2) = cfg_.kfProcVel * resScale2;
+        kf.processNoiseCov.at<float>(3,3) = cfg_.kfProcVel * resScale2;
         cv::setIdentity(kf.measurementNoiseCov, cv::Scalar(cfg_.kfMeas));
         cv::setIdentity(kf.errorCovPost,        cv::Scalar(cfg_.kfInitCov));
         kf.statePost = (cv::Mat_<float>(4,1) << x, y, 0.f, 0.f);

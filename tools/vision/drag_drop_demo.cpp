@@ -36,18 +36,20 @@ static constexpr float MAX_SPEED     = 60.0f;
 static constexpr float MAX_TURN      = 16.0f;
 static constexpr float ARRIVAL_MM    = 20.0f;
 static constexpr float SEND_INT_S    = 0.05f;
-// 0.08, not the 0.25 this was tuned at originally: that value matched a
-// ~30fps loop, but the 2026-06-15 sleep_for(50ms->1ms) fix (55e7d938) lets
-// this loop run at the camera's ~115fps now, so the old alpha let raw
-// per-frame ArUco corner-angle noise straight through into the D-term. See
-// circle_demo.cpp's YAW_ALPHA comment for the full derivation.
-static constexpr float YAW_ALPHA     = 0.08f;
+// Yaw low-pass, specified as a time-constant (seconds), NOT a fixed per-frame
+// EMA coefficient: each frame we convert it to alpha = dt/(YAW_TAU_S + dt) using
+// the actual frame dt, so the smoothing holds the same memory in *time* at any
+// loop rate. A fixed per-frame alpha silently over-smooths (heading lag →
+// limit-cycle) when the loop runs slower than it was tuned for — e.g. on a
+// weaker PC or at higher camera resolution. 0.50s matches the value found to
+// kill that oscillation in circle_demo; see its YAW_TAU_S comment for the full
+// derivation. Lower toward ~0.10s on a fast camera/PC if the lag cuts corners.
+static constexpr float YAW_TAU_S     = 0.50f;
 static constexpr float DANGER_MM     = 120.0f;
 static constexpr float SAFE_MM       = 230.0f;
 static constexpr float AVOID_BLEND   = 0.70f;
 static constexpr float DRAG_RADIUS_PX = 38.0f;  // pixel hit radius for drag pick
 static constexpr int   MAX_ROBOTS    = 32;
-static constexpr int   TEL_HEIGHT    = 200;
 
 static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
 
@@ -282,17 +284,21 @@ static bool runCalibration(ArucoTracker& tracker, const char* win) {
 
 // ── Telemetry panel ───────────────────────────────────────────────────────────
 
-static cv::Mat buildTelPanel(int width,
+// Overlays the demo HUD (summary line + uniform per-robot table) onto the live
+// frame, docked top-right — same style and placement as every other demo.
+static void drawTelHud(cv::Mat& disp,
     const std::unordered_map<int, RobotPose>& poses,
     const std::unordered_map<int, AvoidState>& avoidance,
     const int8_t motors[][2],
-    SwarmClient& swarm)
+    SwarmClient& swarm, float fps)
 {
-    cv::Mat panel(TEL_HEIGHT, width, CV_8UC3, cv::Scalar(18,18,18));
-
     DemoHud hud;
-    hud.title("Drag-Drop Demo");
-    hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Dist", "Status"});
+    hud.title(DemoHud::fmt(
+        "loop_fps:%.0f  Robots:%d  Goals:%d  HUB:%s",
+        fps, (int)poses.size(), (int)g_goals.size(),
+        swarm.isConnected() ? "OK" : "OFFLINE"),
+        swarm.isConnected() ? DemoHud::COL_OK : DemoHud::COL_BAD);
+    hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Status"});
 
     std::set<int> allIds;
     for (auto& [id, _] : poses) allIds.insert(id);
@@ -306,14 +312,6 @@ static cv::Mat buildTelPanel(int width,
         cv::Scalar col = !vis ? (ss.known ? DemoHud::COL_WARN : DemoHud::COL_TEXT)
                                : arc ? DemoHud::COL_WARN : DemoHud::COL_OK;
 
-        // Distance to goal
-        float distMm = -1.f;
-        if (vis && g_goals.count(id)) {
-            const auto& p = poses.at(id);
-            auto& g = g_goals.at(id);
-            distMm = sqrtf((g.x-p.x)*(g.x-p.x) + (g.y-p.y)*(g.y-p.y));
-        }
-
         const char* status = !vis ? (ss.known ? "RADIO" : "UNSEEN")
                                   : arc ? "ARC"
                                   : g_goals.count(id) ? "GOAL" : "IDLE";
@@ -325,12 +323,10 @@ static cv::Mat buildTelPanel(int width,
             ss.known ? DemoHud::formatLatency(ss.latencyUs) : "--",
             vis ? DemoHud::fmt("%+d", (int)motors[id][0]) : "--",
             vis ? DemoHud::fmt("%+d", (int)motors[id][1]) : "--",
-            distMm >= 0.f ? DemoHud::fmt("%.0f", distMm) : "--",
             status,
         }, col);
     }
-    hud.draw(panel, {0, 0}, width);
-    return panel;
+    hud.drawTopRight(disp);
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -423,14 +419,16 @@ int main(int argc, char* argv[]) {
         float fpsDt = std::chrono::duration<float>(now - lastFpsT).count();
         if (fpsDt >= 1.f) { fps = frameCount/fpsDt; frameCount = 0; lastFpsT = now; }
 
-        // Build pose map with smoothed yaw
+        // Build pose map with smoothed yaw. alpha derived per-frame from
+        // controlDt so the time-constant (YAW_TAU_S) holds regardless of loop rate.
+        float yawAlpha = controlDt / (YAW_TAU_S + controlDt);
         g_poses.clear();
         for (auto& r : tracker.robots()) {
             RobotPose pose = r;
             auto [it, fresh] = smoothedYaw.emplace(r.id, r.yaw);
             if (!fresh) {
                 float delta = normAngle(r.yaw - it->second);
-                it->second += YAW_ALPHA * delta;
+                it->second += yawAlpha * delta;
             }
             pose.yaw = it->second;
             g_poses[r.id] = pose;
@@ -580,20 +578,9 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // HUD
-        {
-            char buf[64];
-            snprintf(buf, sizeof(buf), "loop_fps:%.0f  Robots:%d  Goals:%d",
-                     fps, (int)g_poses.size(), (int)g_goals.size());
-            ArucoTracker::drawText(disp, buf, {10, 30}, 18, {200,200,200});
-        }
-
-        // Telemetry panel
-        cv::Mat tel = buildTelPanel(disp.cols, g_poses, avoidance, motors, swarm);
-        cv::Mat canvas(disp.rows + TEL_HEIGHT, disp.cols, CV_8UC3);
-        disp.copyTo(canvas(cv::Rect(0, 0, disp.cols, disp.rows)));
-        tel.copyTo(canvas(cv::Rect(0, disp.rows, disp.cols, TEL_HEIGHT)));
-        cv::imshow(WIN, canvas);
+        // Demo HUD (summary line + uniform per-robot table, docked top-right)
+        drawTelHud(disp, g_poses, avoidance, motors, swarm, fps);
+        cv::imshow(WIN, disp);
 
         // Key handling
         int key = cv::waitKey(1);
