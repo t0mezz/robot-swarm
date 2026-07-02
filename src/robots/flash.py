@@ -2,10 +2,10 @@
 # Batch-deploys this directory's robot firmware over USB serial.
 #
 # Watches for a Pololu 3pi+ 2040's serial port to appear, copies every
-# *.py file in this directory (except main.py, which is Pololu's stock
-# splash loader and isn't ours to overwrite) onto the board via mpremote,
-# soft-resets it so the new code starts running, then waits for it to be
-# unplugged before watching for the next one.
+# *.py file in this directory (including main.py — our customized splash
+# loader whose default_program chains to uart_controller.py) onto the
+# board via mpremote, soft-resets it so the new code starts running, then
+# waits for it to be unplugged before watching for the next one.
 #
 # Requires: pip install mpremote
 
@@ -17,7 +17,7 @@ from pathlib import Path
 import serial.tools.list_ports
 
 ROBOT_DIR = Path(__file__).resolve().parent
-SKIP_FILES = {".main.py", Path(__file__).name}
+SKIP_FILES = {Path(__file__).name}  # glob("*.py") skips dotfiles already; only exclude this script
 FILES = sorted(p for p in ROBOT_DIR.glob("*.py") if p.name not in SKIP_FILES)
 
 POLL_INTERVAL_S = 0.5
