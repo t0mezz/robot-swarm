@@ -36,6 +36,18 @@ def connected_robot_ports():
     }
 
 
+def eject_micropython_volume():
+    # On macOS the board also mounts as a "MicroPython" disk; force-eject it
+    # so it doesn't linger (and nag about improper removal) after unplugging.
+    vol = Path("/Volumes/MicroPython")
+    if not vol.exists():
+        return
+    if subprocess.run(["diskutil", "eject", str(vol)]).returncode == 0:
+        print("    ejected MicroPython volume")
+    else:
+        print("    could not eject MicroPython volume")
+
+
 def flash(port):
     print(f"--> {port}: deploying {', '.join(f.name for f in FILES)}")
     # "+" separates mpremote sub-commands: without it, cp greedily swallows
@@ -44,6 +56,7 @@ def flash(port):
     for attempt in range(1, CONNECT_RETRIES + 1):
         if subprocess.run(cmd).returncode == 0:
             print("    done")
+            eject_micropython_volume()
             return
         if attempt < CONNECT_RETRIES:
             time.sleep(SETTLE_DELAY_S)
