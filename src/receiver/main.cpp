@@ -131,6 +131,12 @@ static portMUX_TYPE rxMux    = portMUX_INITIALIZER_UNLOCKED;
 
 static unsigned long lastAnnounce      = 0;
 static unsigned long lastSwarmReceived = 0;
+// Any frame that only the dongle emits (SWARM/ACK/PING/PONG) proves the link is
+// alive. The announce timeout keys off this instead of lastSwarmReceived: when no
+// tool is driving motors there are no SWARM frames at all (the hub's round-robin
+// pings keep the dongle's serial watchdog quiet), and keying off SWARM alone made
+// every idle robot flap back to ANNOUNCING every ANNOUNCE_TIMEOUT_MS.
+static unsigned long lastDongleSeen    = 0;
 static unsigned long lastSpeedApplied  = 0;
 static unsigned long lastDebugUpdate   = 0;
 static unsigned long lastUartSpeed     = 0;  // last time uart_send_speed was called
@@ -207,6 +213,14 @@ static void processIncoming(const uint8_t* data, uint8_t len) {
     uint8_t type       = data[2];
     uint8_t payloadLen = data[3];
     const uint8_t* payload = &data[4];
+
+    // Link liveness: these types are only ever sent by the dongle (robot-to-robot
+    // broadcasts are ANNOUNCE/TELEMETRY), so any of them — even addressed to
+    // another robot — means the dongle is reachable.
+    if (type == MSG_SWARM || type == MSG_ANNOUNCE_ACK ||
+        type == MSG_PING  || type == MSG_PONG) {
+        lastDongleSeen = millis();
+    }
 
     switch (type) {
         case MSG_ANNOUNCE_ACK: {
@@ -296,8 +310,11 @@ static void processUartFrame(const uint8_t* data, uint8_t len) {
         buildFrame(frame, MSG_DEBUG, outPayload, payloadLen + 1);
         Transport::sendToDongle(frame, frameSize(payloadLen + 1));
     } else if (data[2] == MSG_METRICS) {
-        // Batteriespannung vom RP2040: [battery] (uint8, 0-255 -> 0-5V)
-        if (data[3] >= 1) lastBattery = data[4];
+        // Batteriespannung vom RP2040: [battery] (uint8, 40mV/LSB)
+        if (data[3] >= 1) {
+            lastBattery  = data[4];
+            statusFlags |= STATUS_BAT_VALID;
+        }
     }
 }
 
@@ -305,7 +322,12 @@ static void pollUart() {
     while (UART.available()) {
         uint8_t b = (uint8_t)UART.read();
         if (uartRxIdx == 0 && b != MAGIC_0) continue;
-        if (uartRxIdx == 1 && b != MAGIC_1) { uartRxIdx = 0; continue; }
+        if (uartRxIdx == 1 && b != MAGIC_1) {
+            // Resync: a stray 0xAA followed by the real frame start ("AA AA 55")
+            // must keep this byte as a candidate MAGIC_0, not discard it.
+            uartRxIdx = (b == MAGIC_0) ? 1 : 0;
+            continue;
+        }
         uartRxBuf[uartRxIdx++] = b;
         if (uartRxIdx >= 4) {
             uint8_t needed = frameSize(uartRxBuf[3]);
@@ -361,7 +383,7 @@ static bool isMyTDMASlot() {
     // packets arrive faster than the slot width (e.g. 50ms controller rate vs 100ms
     // slot): each packet reset the cycle to 0, so robots with ID > 0 could never
     // reach their slot offset and never sent telemetry.
-    if (lastSwarmReceived == 0) return false;  // don't send before first SWARM received
+    if (lastDongleSeen == 0) return false;  // don't send before first dongle contact
     unsigned long cycleDuration = (unsigned long)MAX_ROBOTS * TDMA_SLOT_MS;
     unsigned long cyclePos  = millis() % cycleDuration;
     unsigned long slotStart = (unsigned long)ROBOT_ID * TDMA_SLOT_MS;
@@ -450,8 +472,8 @@ void loop() {
             lastAnnounce = now;
         }
     } else {
-        // Timeout -> re-announce
-        if (now - lastSwarmReceived > ANNOUNCE_TIMEOUT_MS) {
+        // Timeout -> re-announce (no frame of any kind from the dongle)
+        if (now - lastDongleSeen > ANNOUNCE_TIMEOUT_MS) {
             state = State::ANNOUNCING;
             statusFlags |= STATUS_ANNOUNCING;
             Transport::resetDongle();

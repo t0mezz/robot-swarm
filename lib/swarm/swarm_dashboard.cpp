@@ -135,7 +135,7 @@ static RobotRowLayout computeLayout(int termWidth, int robotCount) {
 // ── Draw ──────────────────────────────────────────────────────────
 
 static constexpr float LATENCY_MAX_US = 5000.0f;
-static constexpr float BATTERY_MAX    = 255.0f;
+static constexpr float BATTERY_MAX_V  = 6.5f;   // meter full-scale; fresh 4xAAA pack ≈ 6.4V
 static constexpr float MOTOR_MAX      = 127.0f;
 
 static void drawUI(const SwarmClient& swarm, const TelemetryHistory& hist) {
@@ -170,8 +170,15 @@ static void drawUI(const SwarmClient& swarm, const TelemetryHistory& hist) {
         printf("lat \033[36m%s\033[0m %5uus  ",
                sparkline(latBuf, LATENCY_MAX_US, layout.sparkWidth).c_str(), r.latencyUs);
 
-        printf("bat %s %3d  ",
-               peakMeter((float)r.battery, BATTERY_MAX, layout.meterWidth).c_str(), r.battery);
+        // Battery byte is 40mV/LSB; without STATUS_BAT_VALID the robot's ESP32 has
+        // never received a metrics frame from the RP2040 — show "--", not 0.0V.
+        if (r.flags & SC_STATUS_BAT_VALID) {
+            printf("bat %s %4.2fV  ",
+                   peakMeter(scBatteryVolts(r.battery), BATTERY_MAX_V, layout.meterWidth).c_str(),
+                   scBatteryVolts(r.battery));
+        } else {
+            printf("bat %s %5s  ", peakMeter(0.0f, BATTERY_MAX_V, layout.meterWidth).c_str(), "--");
+        }
 
         printf("L %s%+4d\033[0m  ", bipolarMeter((float)r.motorL, MOTOR_MAX, layout.meterWidth).c_str(), r.motorL);
         printf("R %s%+4d\033[0m\n", bipolarMeter((float)r.motorR, MOTOR_MAX, layout.meterWidth).c_str(), r.motorR);

@@ -61,8 +61,12 @@ BAT_INTERVAL_MS = 2000    # read voltage every 2 s
 
 
 def _battery_byte(mv: int) -> int:
-    """Battery millivolts -> wire-protocol byte (0-255 representing 0-5V, see MSG_TELEMETRY)."""
-    return min(255, max(0, int(mv / 1000.0 / 5.0 * 255)))
+    """Battery millivolts -> wire-protocol byte, 40mV/LSB (0-255 -> 0-10.2V).
+
+    The old 0-5V scale clipped at 255 for any healthy 4xAAA pack (4.8-6.4V),
+    so the telemetry byte carried no information. See MSG_TELEMETRY.
+    """
+    return min(255, max(0, mv // 40))
 
 
 # ─── PID Controller ───────────────────────────────────────────

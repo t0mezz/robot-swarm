@@ -143,7 +143,7 @@ class UARTProtocol:
         """
         Sendet die Batteriespannung an den ESP32 (MSG_METRICS).
 
-        :param battery_byte: Spannung skaliert auf 0..255 (0-5V), wird vom
+        :param battery_byte: Spannung, 40mV/LSB (0..255 -> 0-10.2V), wird vom
                              ESP32 1:1 in den MSG_TELEMETRY-Batterie-Byte übernommen
         """
         self.send(MSG_METRICS, bytes([battery_byte & 0xFF]))

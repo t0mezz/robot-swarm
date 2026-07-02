@@ -49,6 +49,7 @@
 
 static constexpr uint8_t STATUS_LOW_BATTERY = 0x04;
 static constexpr uint8_t STATUS_ANNOUNCING  = 0x08;
+static constexpr uint8_t STATUS_BAT_VALID   = 0x10;
 
 // ── Frame helpers ────────────────────────────────────────────────
 
@@ -127,7 +128,7 @@ static void client_accept(int serverFd) {
 struct SimRobot {
     uint8_t  id;
     uint8_t  mac[6];
-    float    batteryF;     // 0..255, drains slowly with a slight ripple
+    float    batteryF;     // telemetry byte, 40mV/LSB; drains slowly with a slight ripple
     float    motorPhase;   // drives a sine-wave motor pattern
     uint16_t baseLatencyUs;
     uint16_t uptime = 0;
@@ -139,7 +140,7 @@ static SimRobot makeSimRobot(uint8_t id) {
     SimRobot r;
     r.id = id;
     for (int i = 0; i < 6; i++) r.mac[i] = (uint8_t)(0xC0 + id * 7 + i);
-    std::uniform_real_distribution<float> battDist(180.0f, 255.0f);
+    std::uniform_real_distribution<float> battDist(120.0f, 160.0f);  // 4.8-6.4V at 40mV/LSB
     std::uniform_real_distribution<float> phaseDist(0.0f, 6.28f);
     std::uniform_int_distribution<int>    latDist(800, 3000);
     r.batteryF      = battDist(rng);
@@ -158,14 +159,14 @@ static void sendAnnounce(const SimRobot& r) {
 static void sendTelemetry(SimRobot& r, double t) {
     // Slow drain with a small ripple so the battery meter isn't static.
     r.batteryF -= 0.01f;
-    if (r.batteryF < 20.0f) r.batteryF = 255.0f;  // simulate a "swap" once drained
+    if (r.batteryF < 100.0f) r.batteryF = 160.0f;  // simulate a "swap" once drained (4.0V -> 6.4V)
     uint8_t battery = (uint8_t)std::clamp(r.batteryF, 0.0f, 255.0f);
 
     float   motor = 100.0f * (float)std::sin(t * 0.5 + r.motorPhase);
     int8_t  motorL = (int8_t)std::clamp(motor, -127.0f, 127.0f);
     int8_t  motorR = (int8_t)std::clamp(motor * 0.9f, -127.0f, 127.0f);
 
-    uint8_t flags = (battery < 40) ? STATUS_LOW_BATTERY : 0;
+    uint8_t flags = STATUS_BAT_VALID | ((battery < 115) ? STATUS_LOW_BATTERY : 0);  // low < 4.6V
     r.uptime++;
 
     uint8_t payload[7] = {

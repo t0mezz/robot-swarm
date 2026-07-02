@@ -152,12 +152,13 @@ MSG_TELEMETRY = 0x30
 Payload (8 Bytes):
   - Byte 0: Robot-ID (uint8)
   - Byte 1: WiFi RSSI (int8, dBm)
-  - Byte 2: Batterie-Spannung (uint8, 0-255 → 0-5V)
+  - Byte 2: Batterie-Spannung (uint8, 40mV/LSB, 0-255 → 0-10.2V)
   - Byte 3: Status-Flags (uint8)
       Bit 0: Motor aktiv
       Bit 1: Sensor-Fehler
       Bit 2: Low Battery
       Bit 3: Announce-Modus (noch nicht registriert)
+      Bit 4: Batterie-Byte gültig (MSG_METRICS vom RP2040 empfangen; sonst ist 0 = "keine Daten")
   - Byte 4-5: Aktueller Motor L/R (int8, int8) — Ist-Werte
   - Byte 6-7: Uptime (uint16, Sekunden, little-endian)
 

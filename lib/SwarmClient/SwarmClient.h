@@ -58,6 +58,11 @@ static constexpr uint8_t SC_DBG_STRING  = 0x04;
 
 static constexpr uint8_t SC_STATUS_LOW_BATTERY = 0x04;
 static constexpr uint8_t SC_STATUS_ANNOUNCING  = 0x08;
+static constexpr uint8_t SC_STATUS_BAT_VALID   = 0x10;  // battery byte is real data, not "never measured"
+
+// Battery telemetry byte -> volts (40mV/LSB). Only meaningful when the robot's
+// flags carry SC_STATUS_BAT_VALID.
+static inline float scBatteryVolts(uint8_t raw) { return raw * 0.04f; }
 
 // ── SwarmClient ───────────────────────────────────────────────────────────────
 

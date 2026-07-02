@@ -16,8 +16,8 @@
                                  //   receiver prepends robot_id and relays to dongle/PC:
                                  //   PC sees [robot_id, field_id, value_type, data...] (debug log)
 #define MSG_METRICS       0x03   // RP2040 -> ESP32 (UART): [battery]
-                                 //   battery: uint8, 0-255 -> 0-5V, forwarded as-is into
-                                 //   MSG_TELEMETRY's battery byte
+                                 //   battery: uint8, 40mV/LSB (0-255 -> 0-10.2V), forwarded
+                                 //   as-is into MSG_TELEMETRY's battery byte
 #define MSG_ROBOT_ID      0x04   // ESP32 -> RP2040 (UART): [robot_id]
 #define MSG_SWARM         0x10   // PC -> Broadcast: [id|L|R] x MAX_ROBOTS
 #define MSG_ANNOUNCE      0x20   // Robot -> Broadcast: [id, mac x6]
@@ -31,6 +31,8 @@
 // ─── Telemetrie Status-Flags ─────────────────────────────────
 #define STATUS_LOW_BATTERY    0x04
 #define STATUS_ANNOUNCING     0x08
+#define STATUS_BAT_VALID      0x10   // set once the ESP32 has received MSG_METRICS;
+                                     // without it the battery byte is 0 = "no data", not 0V
 
 // ─── Limits ──────────────────────────────────────────────────
 #define MAX_ROBOTS        32

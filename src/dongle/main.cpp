@@ -47,13 +47,27 @@ static PingTracker pingTracker = {false, 0, 0};
 // We queue packets and dispatch the next one from the send callback.
 
 #define TX_QUEUE_SIZE 8
-struct TxPacket { uint8_t data[250]; uint8_t len; bool isPing; };
+struct TxPacket { uint8_t data[250]; uint8_t len; bool isPing; uint8_t dest[6]; };
 
 static TxPacket      txQueue[TX_QUEUE_SIZE];
 static uint8_t       txHead     = 0;
 static uint8_t       txTail     = 0;
 static volatile bool txBusy     = false;
 static portMUX_TYPE  txMux      = portMUX_INITIALIZER_UNLOCKED;
+
+// Register a robot MAC as an ESP-NOW peer so robot-targeted frames (ACK, ping,
+// pong echo) go unicast — MAC-layer ACK+retries instead of fire-and-forget
+// broadcast, and the other robots don't burn airtime/CPU on them. Returns false
+// if the peer can't be registered (e.g. peer table full: ESP-NOW allows ~20
+// unencrypted peers, MAX_ROBOTS is 32) — callers then fall back to broadcast.
+static bool ensurePeer(const uint8_t* mac) {
+    if (esp_now_is_peer_exist(mac)) return true;
+    esp_now_peer_info_t peer = {};
+    memcpy(peer.peer_addr, mac, 6);
+    peer.channel = ESPNOW_CHANNEL;
+    peer.encrypt = false;
+    return esp_now_add_peer(&peer) == ESP_OK;
+}
 
 static void txDispatchNext() {
     // Fix: hold spinlock while touching txHead/txTail so Core 1 (enqueueSend)
@@ -67,17 +81,22 @@ static void txDispatchNext() {
     // esp_now_send copies data internally before returning, so slot can be
     // reused by enqueueSend immediately after this call.
     if (txQueue[slot].isPing) pingTracker.sentAt = micros();
-    if (esp_now_send(broadcastMAC, txQueue[slot].data, txQueue[slot].len) != ESP_OK) {
+    if (esp_now_send(txQueue[slot].dest, txQueue[slot].data, txQueue[slot].len) != ESP_OK) {
         // Send failed — callback will NOT fire, so release the lock immediately
         txBusy = false;
     }
 }
 
-static void enqueueSend(const uint8_t* data, uint8_t len, bool isPing = false) {
+// dest == nullptr → broadcast. Unicast dests must already be registered via
+// ensurePeer(); on esp_now_send failure the frame is lost either way, so the
+// caller-side fallback is choosing broadcast when ensurePeer() fails.
+static void enqueueSend(const uint8_t* data, uint8_t len, bool isPing = false,
+                        const uint8_t* dest = nullptr) {
+    if (dest == nullptr) dest = broadcastMAC;
     if (!txBusy) {
         txBusy = true;
         if (isPing) pingTracker.sentAt = micros();
-        if (esp_now_send(broadcastMAC, data, len) != ESP_OK) {
+        if (esp_now_send(dest, data, len) != ESP_OK) {
             txBusy = false;  // callback won't fire on error — release immediately
         }
         return;
@@ -88,6 +107,7 @@ static void enqueueSend(const uint8_t* data, uint8_t len, bool isPing = false) {
         memcpy(txQueue[txTail].data, data, len);
         txQueue[txTail].len    = len;
         txQueue[txTail].isPing = isPing;
+        memcpy(txQueue[txTail].dest, dest, 6);
         txTail = next;
     } else if (!isPing && data[2] == MSG_SWARM) {
         // Fix: queue full but this is a SWARM (latest-wins) — overwrite the most
@@ -175,11 +195,14 @@ static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) 
             memcpy(robots[robotId].mac, mac, 6);
             robots[robotId].lastSeen = millis();
 
-            // ACK
+            // ACK — unicast so the MAC layer retries it; a lost broadcast ACK
+            // left the robot re-announcing (and without telemetry) for another
+            // 500ms round.
+            bool unicast = ensurePeer(mac);
             uint8_t ackPayload[1] = {robotId};
             uint8_t ackFrame[6];
             buildFrame(ackFrame, MSG_ANNOUNCE_ACK, ackPayload, 1);
-            enqueueSend(ackFrame, 6);
+            enqueueSend(ackFrame, 6, false, unicast ? mac : nullptr);
 
             // An PC: [id][mac x6]
             uint8_t regPayload[7] = {robotId};
@@ -214,7 +237,8 @@ static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) 
                 uint8_t pongFrame[8];
                 buildFrame(pongFrame, MSG_PONG, pongPayload, 3);
                 serialWrite(pongFrame, 8);
-                enqueueSend(pongFrame, 8);   // also broadcast RTT back to robot
+                // RTT back to the robot — unicast to the sender we just heard from
+                enqueueSend(pongFrame, 8, false, ensurePeer(mac) ? mac : nullptr);
             }
             break;
         }
@@ -240,9 +264,18 @@ static void processSerialPacket(const uint8_t* data, uint8_t len) {
         case MSG_PING: {
             uint8_t payloadLen = data[3];
             if (payloadLen >= 1) {
-                pingTracker.robotId = data[4];
+                uint8_t targetId = data[4];
+                pingTracker.robotId = targetId;
                 pingTracker.pending = true;
-                enqueueSend(data, len, /*isPing=*/true);
+                // Unicast to the target when its MAC is registered (0xFF = all →
+                // broadcast). Broadcast pings woke every robot and had no MAC
+                // retries, which showed up as pong gaps and RTT jitter.
+                const uint8_t* dest = nullptr;
+                if (targetId < MAX_ROBOTS && robots[targetId].active &&
+                    ensurePeer(robots[targetId].mac)) {
+                    dest = robots[targetId].mac;
+                }
+                enqueueSend(data, len, /*isPing=*/true, dest);
             }
             break;
         }
@@ -342,6 +375,7 @@ void loop() {
     for (int i = 0; i < MAX_ROBOTS; i++) {
         if (robots[i].active && now - robots[i].lastSeen > ROBOT_EXPIRY_MS) {
             robots[i].active = false;
+            esp_now_del_peer(robots[i].mac);  // free the peer slot (~20 available)
         }
     }
 
