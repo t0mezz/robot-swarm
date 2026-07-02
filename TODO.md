@@ -1,5 +1,58 @@
 # TODO
 
+## URGENT: Robot MicroPython crashes after redeploy + swarm_dashboard shows no entries (2026-07-02)
+
+State after the telemetry-pipeline overhaul (commits `fc2734a`, `958667b`, `7fe13c3`:
+receiver link-liveness fix, dongle unicast for ACK/ping/pong, battery scale
+40mV/LSB + `STATUS_BAT_VALID`, robot_uart.py EOF newline) and a fleet redeploy
+of the MicroPython files:
+
+**Symptom 1 — some robots crash on boot with
+`SyntaxError: invalid syntax, line 14,344` (traceback via `main.py` line 14 =
+`from robot_uart import ...`).**
+  - The repo sources are verified valid: all five robot `.py` files compile
+    clean under `mpy-cross` (real MicroPython grammar) and CPython.
+  - `robot_uart.py` is only ~343 lines — an error at line 344/14344 means the
+    parser ran past the real EOF, i.e. the **on-device copy** is truncated or
+    has trailing garbage. Recurring even after redeploy suggests it's not a
+    one-off interrupted `mpremote cp`:
+    - flash filesystem full or corrupted (littlefs) on the affected boards?
+      Check: `mpremote exec "import os; print(os.statvfs('/'))"` and compare
+      on-device size/line count vs repo
+      (`mpremote exec "print(sum(1 for _ in open('robot_uart.py')))"`).
+    - deploy while `main.py`/`uart_controller.py` is running and holding the
+      UART/filesystem? `flash.py` copies without stopping the running program
+      first — consider `mpremote ... exec "raise SystemExit" + cp ... + reset`
+      or interrupting to raw REPL before cp.
+    - if corrupt: wipe and re-deploy (`mpremote rm :robot_uart.py` then cp, or
+      reformat littlefs / re-flash the MicroPython UF2 as last resort).
+
+**Symptom 2 — swarm_dashboard suddenly shows no entries at all ("Waiting for
+robots to announce...").**
+  - Crashed RP2040s alone can't explain this: the ESP32 receivers announce and
+    send telemetry independently of the RP2040 (only battery needs it). Empty
+    dashboard = no announce/telemetry frames reach the PC. Check in order:
+    1. hub alive and on the right port? `pgrep -a swarm_hub`,
+       `tail /tmp/swarm_hub.log` (dongle unplug/replug kills the hub:
+       "Serial port disconnected — exiting", and a client may auto-relaunch it
+       on a wrong/stale `/dev/ttyACM*`).
+    2. dongle diagnostics over a separate USB terminal: `[DIAG] rx_drops/
+       serial_drops` and whether announces arrive at all.
+    3. robot ESP32 diagnostics: `[DIAG] swarm_rx=... state=ANN/ACT` — if stuck
+       in ANN, the new unicast `MSG_ANNOUNCE_ACK` path (`ensurePeer()` +
+       `enqueueSend(..., mac)` in `src/dongle/main.cpp`, commit `fc2734a`) is
+       the prime suspect: if unicast ACK delivery fails (peer add OK but send
+       fails / wrong channel), robots never leave ANNOUNCING under the new
+       firmware. Quick falsification test: revert ACK (or all targeted frames)
+       to broadcast and reflash the dongle only.
+  - Also verify: idle ping RTT rose from ~2.7ms to ~4.5ms after the unicast
+    change — measure properly and decide whether unicast pings are worth it.
+
+**Goal:** fleet back to: robots boot into uart_controller, dashboard shows all
+robots with real battery volts (new 40mV/LSB scale needs the redeployed
+`_battery_byte()`; old MicroPython never sent MSG_METRICS at all, which is why
+battery always read 0 or a constant 255 before).
+
 ## Fix swarm dashboard (maybe other tools aswell) flickering on ubuntu, working fine on macos tahoe
 
 ## Update Swarm dashboard: Erledigt (2026-06-24)
