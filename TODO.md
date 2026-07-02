@@ -53,6 +53,12 @@ robots with real battery volts (new 40mV/LSB scale needs the redeployed
 `_battery_byte()`; old MicroPython never sent MSG_METRICS at all, which is why
 battery always read 0 or a constant 255 before).
 
+## Change default marker height in generate_marker_stl.py to 0.5mm
+
+`tools/generate_marker_stl.py` currently defaults `--height` to 1.0mm
+(line ~158); change the default to 0.5. Also update the usage examples in the
+header docstring.
+
 ## Fix swarm dashboard (maybe other tools aswell) flickering on ubuntu, working fine on macos tahoe
 
 ## Update Swarm dashboard: Erledigt (2026-06-24)
