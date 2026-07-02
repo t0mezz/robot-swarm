@@ -92,6 +92,10 @@ struct ArucoConfig {
     bool debugOverlay = false;
     bool mirrorInput  = false;
 
+    // Pixel-space offset applied to detected marker centroids before any
+    // homography transform (positive X shifts right, positive Y shifts down).
+    int offsetX = 0, offsetY = 0;
+
     static ArucoConfig fromFile(const std::string& path = kDefaultConfigPath);
 };
 
@@ -140,6 +144,8 @@ inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
     ri("clahe_tile",      c.claheTile);
     rb("debug_overlay",   c.debugOverlay);
     rb("mirror_input",    c.mirrorInput);
+    ri("offset_x",        c.offsetX);
+    ri("offset_y",        c.offsetY);
     return c;
 }
 
@@ -583,8 +589,8 @@ private:
                 for (auto& [id, b] : best) {
                     auto& c  = b.c;
                     auto& ms = markerStates_[id];
-                    float pcx = ms.kfInit ? ms.center.x : centroid(c, 0);
-                    float pcy = ms.kfInit ? ms.center.y : centroid(c, 1);
+                    float pcx = (ms.kfInit ? ms.center.x : centroid(c, 0)) + cfg_.offsetX;
+                    float pcy = (ms.kfInit ? ms.center.y : centroid(c, 1)) + cfg_.offsetY;
                     cv::Point2f fwd = (c[0] + c[1]) * 0.5f - cv::Point2f(pcx, pcy);
 
                     float wx, wy, wyaw;

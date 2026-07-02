@@ -30,5 +30,7 @@
     "clahe_clip": 1.0,
     "clahe_tile": 8,
     "debug_overlay": 1,
-    "mirror_input": 0
+    "mirror_input": 0,
+    "offset_x": 160,
+    "offset_y": 0
 }
