@@ -1,5 +1,7 @@
 # TODO
 
+## Fix swarm dashboard (maybe other tools aswell) flickering on ubuntu, working fine on macos tahoe
+
 ## Update Swarm dashboard: Erledigt (2026-06-24)
   - ~~robot motor level meter still does not show the value of the motors
     (f.e. -15,15 still dark grey level meter)~~ Fixed: `bipolarMeter()` in

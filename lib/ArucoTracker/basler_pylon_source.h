@@ -30,11 +30,34 @@ public:
             camera_.Open();
 
             auto& nm = camera_.GetNodeMap();
+
+            // Zero the ROI offset before resizing: GenICam rejects Width/Height
+            // changes that would push offset+size past the sensor bounds, and a
+            // nonzero offset left over from a previous run can trigger exactly
+            // that if the new width is larger.
+            try { Pylon::CIntegerParameter(nm, "OffsetX").SetValue(0); } catch (...) {}
+            try { Pylon::CIntegerParameter(nm, "OffsetY").SetValue(0); } catch (...) {}
+
             Pylon::CIntegerParameter(nm, "Width").SetValue(cfg.width);
             Pylon::CIntegerParameter(nm, "Height").SetValue(cfg.height);
 
+            // Sensor ROI offset — shifts the readout window on the sensor itself
+            // (camera.OffsetX.SetValue()/OffsetY per Basler's pylon API), rather
+            // than nudging detected pixel coordinates after the fact.
+            if (cfg.offsetX != 0 || cfg.offsetY != 0) {
+                try {
+                    Pylon::CIntegerParameter(nm, "OffsetX").SetValue(cfg.offsetX);
+                    Pylon::CIntegerParameter(nm, "OffsetY").SetValue(cfg.offsetY);
+                } catch (const Pylon::GenericException& e) {
+                    fprintf(stderr, "[basler] failed to set OffsetX/OffsetY (%d,%d): %s\n",
+                            cfg.offsetX, cfg.offsetY, e.GetDescription());
+                }
+            }
+
             width_  = (int)Pylon::CIntegerParameter(nm, "Width").GetValue();
             height_ = (int)Pylon::CIntegerParameter(nm, "Height").GetValue();
+            int offsetX = (int)Pylon::CIntegerParameter(nm, "OffsetX").GetValue();
+            int offsetY = (int)Pylon::CIntegerParameter(nm, "OffsetY").GetValue();
 
             // Set target frame rate so the camera doesn't produce more frames than
             // the detection pipeline can consume. Not all firmware versions support
@@ -58,9 +81,9 @@ public:
             try { resultingFps = (float)Pylon::CFloatParameter(nm, "ResultingFrameRate").GetValue(); }
             catch (...) {}
 
-            printf("[basler] open  serial=%s  %dx%d  fps=%d\n",
+            printf("[basler] open  serial=%s  %dx%d  offset=(%d,%d)  fps=%d\n",
                    camera_.GetDeviceInfo().GetSerialNumber().c_str(),
-                   width_, height_, cfg.fps);
+                   width_, height_, offsetX, offsetY, cfg.fps);
             if (resultingFps >= 0.f)
                 printf("[basler] camera-reported sustainable rate right now: %.1f fps "
                        "(depends on current exposure/bandwidth, not fixed)\n", resultingFps);

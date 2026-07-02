@@ -49,6 +49,12 @@ struct ArucoConfig {
     int         width = 1920, height = 1080, fps = 30;
     std::string baslerSerial = "";
     std::string baslerIp     = "";
+    // Sensor ROI offset (GenICam OffsetX/OffsetY) — shifts the readout window
+    // on the sensor itself, applied directly to the camera via pylon at
+    // open() time (BaslerPylonSource::open()), not a post-detection pixel
+    // nudge. Must satisfy offsetX + width <= sensor width (and similarly for
+    // Y) or pylon rejects it — see the camera's WidthMax/HeightMax nodes.
+    int         offsetX = 0, offsetY = 0;
 
     // ArUco detector
     int   dictId        = cv::aruco::DICT_4X4_50;
@@ -91,10 +97,6 @@ struct ArucoConfig {
 
     bool debugOverlay = false;
     bool mirrorInput  = false;
-
-    // Pixel-space offset applied to detected marker centroids before any
-    // homography transform (positive X shifts right, positive Y shifts down).
-    int offsetX = 0, offsetY = 0;
 
     static ArucoConfig fromFile(const std::string& path = kDefaultConfigPath);
 };
@@ -589,8 +591,8 @@ private:
                 for (auto& [id, b] : best) {
                     auto& c  = b.c;
                     auto& ms = markerStates_[id];
-                    float pcx = (ms.kfInit ? ms.center.x : centroid(c, 0)) + cfg_.offsetX;
-                    float pcy = (ms.kfInit ? ms.center.y : centroid(c, 1)) + cfg_.offsetY;
+                    float pcx = ms.kfInit ? ms.center.x : centroid(c, 0);
+                    float pcy = ms.kfInit ? ms.center.y : centroid(c, 1);
                     cv::Point2f fwd = (c[0] + c[1]) * 0.5f - cv::Point2f(pcx, pcy);
 
                     float wx, wy, wyaw;
