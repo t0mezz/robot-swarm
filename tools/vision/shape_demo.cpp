@@ -39,6 +39,12 @@ static constexpr float K_YAW_D         = 0.08f;
 static constexpr float MAX_SPEED       = 51.7f;
 static constexpr float MAX_TURN        = 16.0f;
 static constexpr float ARRIVAL_MM      = 40.0f;
+// Carrot distance for path following. Must be far enough that K_DIST * dist
+// commands well above the motors' static-friction threshold — the robot's
+// open-loop power mapping is linear with no deadband compensation, so a
+// carrot hovering just past ARRIVAL_MM yields single-digit commands that
+// hum without moving and freeze the robot right on the track.
+static constexpr float LOOKAHEAD_MM    = 80.0f;
 static constexpr float SEND_INT_S      = 0.05f;
 // Yaw low-pass, specified as a time-constant (seconds), NOT a fixed per-frame
 // EMA coefficient: each frame we convert it to alpha = dt/(YAW_TAU_S + dt) using
@@ -596,10 +602,11 @@ int main(int argc, char* argv[]) {
                     motors[id][0] = motors[id][1] = 0;
                     continue;
                 }
-                // Advance past every waypoint already within the arrival radius
-                // so the robot keeps tracking the path instead of parking on its
-                // first waypoint. Bounded to one lap: if the whole path is inside
-                // the radius (tiny shape), there is nowhere to go — stop.
+                // Advance past every waypoint inside the lookahead radius so
+                // the carrot always sits a full LOOKAHEAD_MM ahead and the
+                // robot keeps tracking the path instead of parking on its
+                // first waypoint. Bounded to one lap: if the whole path is
+                // inside the radius (tiny shape), there is nowhere to go — stop.
                 int  M    = (int)g_waypoints.size();
                 int& wi   = robotWaypoint[id];
                 cv::Point2f wp = g_waypoints[wi];
@@ -607,20 +614,19 @@ int main(int argc, char* argv[]) {
                 float dy   = wp.y - pose.y;
                 float dist = sqrtf(dx*dx + dy*dy);
                 int hops = 0;
-                while (dist < ARRIVAL_MM && hops < M) {
+                while (dist < LOOKAHEAD_MM && hops < M) {
                     wi = (wi + 1) % M;
                     wp = g_waypoints[wi];
                     dx = wp.x - pose.x; dy = wp.y - pose.y;
                     dist = sqrtf(dx*dx + dy*dy);
                     hops++;
                 }
-                if (dist < ARRIVAL_MM) { motors[id][0] = motors[id][1] = 0; continue; }
+                if (dist < LOOKAHEAD_MM) { motors[id][0] = motors[id][1] = 0; continue; }
 
                 float tgtAngle  = atan2f(dy, dx) * 180.f / (float)M_PI;
                 float angleErr  = normAngle(tgtAngle - pose.yaw);
                 float headingN  = clampf(fabsf(angleErr) / 90.f, 0.f, 1.f);
                 float headingSc = 1.f - headingN * headingN;
-                float brakeSc   = clampf((dist - ARRIVAL_MM) / ARRIVAL_MM, 0.f, 1.f);
                 float maxSpd    = MAX_SPEED * robotSpeed(id);
 
                 float dAngleErr = 0.f;
@@ -632,7 +638,9 @@ int main(int argc, char* argv[]) {
                     prevAngleErr[id] = angleErr;
                 }
 
-                float forward = clampf(K_DIST * dist, 0.f, maxSpd) * headingSc * brakeSc;
+                // No brake term: the path loops, so there is no terminal stop
+                // to ease into — the carrot is always >= LOOKAHEAD_MM away.
+                float forward = clampf(K_DIST * dist, 0.f, maxSpd) * headingSc;
                 float turn    = clampf(K_ANGLE * angleErr + K_YAW_D * dAngleErr,
                                        -MAX_TURN, MAX_TURN);
                 motors[id][0] = (int8_t)clampf(forward + turn, -100, 100);
