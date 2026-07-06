@@ -1,5 +1,9 @@
 # TODO
 
+## Genera aruco tracker issue:
+- When a set of markers are registered for some time, the tracker is not picking up now markers.
+- resolved by restarting the demo (maybe due to lazy search????)
+
 ## Clean up Swarmhub code and terminal output, make it run as deamon on default.
 
 ## Clean up unnessary comments
