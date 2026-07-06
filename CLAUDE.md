@@ -27,7 +27,7 @@ ROBOT_ID=3 pio run -e receiver -t upload # flash a robot with a specific ID (def
 cd tools
 make              # builds all tools + the CMA-ES calibrator into tools/build/
 make clean        # removes tools/build/
-make tools/build/vision_controller   # build a single tool
+make build/vision_controller         # build a single tool (targets are build/<name> from within tools/)
 ```
 
 Requires OpenCV, SFML 3 (not `sfml@2`), and Basler pylon 8.1.0 on the host — see README.md "Prerequisites" for the per-OS setup (Homebrew vs apt, `dialout`/`input` group membership on Linux, pylon rpath quirk).

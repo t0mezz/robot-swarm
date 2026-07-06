@@ -1,15 +1,14 @@
 // telemetry_history.h — generic per-robot, per-metric rolling sample history.
 //
-// Decoupled from rendering: call sample() once per poll tick with the latest
-// SwarmClient::RobotState, then read back fixed-size windows via get() for
-// whatever UI (ASCII plot, SFML, web) wants to draw them.
+// Decoupled from rendering: call sample() once per robot per update tick with
+// the latest SwarmClient::RobotState, then read back fixed-size windows via
+// get() for whatever UI (ASCII plot, SFML, web) wants to draw them.
 
 #pragma once
 
 #include "SwarmClient.h"
 
 #include <array>
-#include <chrono>
 #include <cstddef>
 #include <unordered_map>
 #include <vector>
@@ -65,15 +64,11 @@ public:
     static constexpr size_t kWindow = 60;
     using Buffer = RingBuffer<kWindow>;
 
-    // Call once per poll tick (e.g. right after swarm.poll()) for every
-    // currently-known robot. Only pushes a new sample when the robot's
-    // lastSeen timestamp has advanced, so repeated calls within one tick
-    // (or robots with no fresh data) don't pollute the window.
+    // Call exactly once per robot per update tick. Pushes unconditionally, so
+    // the window is a uniform time base (kWindow x tick interval) — columns
+    // line up across robots, and a silent robot holds its last value flat.
     void sample(uint8_t robotId, const SwarmClient::RobotState& s) {
         auto& entry = perRobot_[robotId];
-        if (s.lastSeen == entry.lastSampledAt) return;
-        entry.lastSampledAt = s.lastSeen;
-
         entry.buffers[(size_t)Metric::Latency].push((float)s.latencyUs);
         entry.buffers[(size_t)Metric::Battery].push((float)s.battery);
         entry.buffers[(size_t)Metric::MotorL].push((float)s.motorL);
@@ -96,7 +91,6 @@ public:
 private:
     struct PerRobot {
         std::array<Buffer, (size_t)Metric::Count> buffers;
-        std::chrono::steady_clock::time_point lastSampledAt{};
     };
 
     std::unordered_map<uint8_t, PerRobot> perRobot_;

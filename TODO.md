@@ -26,6 +26,24 @@ of the MicroPython files:
       or interrupting to raw REPL before cp.
     - if corrupt: wipe and re-deploy (`mpremote rm :robot_uart.py` then cp, or
       reformat littlefs / re-flash the MicroPython UF2 as last resort).
+  - Update (2026-07-06): confirmed the deploy path was silently unreliable and
+    `flash.py` was hardened accordingly:
+    - mpremote logged `Input/Output error` during `cp` while `flash.py` still
+      printed "done" (it only checked the exit code). Re-flashing seconds later
+      showed a mix of "Up to date" and re-copied files — mpremote's hash check
+      saying those on-device copies never matched what was just written.
+    - Prime corruption suspect on Ubuntu: the board's USB mass-storage volume
+      is auto-mounted by GNOME and stayed mounted read-write while mpremote
+      rewrote the littlefs underneath (the old eject only handled macOS, and
+      only *after* copying).
+    - `flash.py` now: unmounts the MicroPython volume before copying (Linux
+      via `udisksctl`/`umount`, macOS eject), prepends a `soft-reset` so no
+      program is running during the copy, verifies every file on-device by
+      size+sha256 after the copy, and treats any mpremote error line or
+      mismatch as a loud red FAILED (retried up to 3x) instead of "done".
+    - Still open: re-deploy the fleet with the fixed script and confirm the
+      symptoms below are gone (battery volts appearing in the dashboard is the
+      tell that the new `uart_controller.py` is actually running).
 
 **Symptom 2 — swarm_dashboard suddenly shows no entries at all ("Waiting for
 robots to announce...").**
@@ -59,7 +77,21 @@ battery always read 0 or a constant 255 before).
 (line ~158); change the default to 0.5. Also update the usage examples in the
 header docstring.
 
-## Fix swarm dashboard (maybe other tools aswell) flickering on ubuntu, working fine on macos tahoe
+## Fix swarm dashboard flickering on ubuntu. Erledigt (2026-07-06)
+~~Fix swarm dashboard (maybe other tools aswell) flickering on ubuntu, working
+fine on macos tahoe~~ Root cause: `drawUI()` started with a full-screen erase
+(`\033[H\033[J`) followed by dozens of separately flushed writes (stdout is
+line-buffered on a tty); GNOME Terminal/VTE repaints between flushes and kept
+catching the just-erased blank screen. macOS Terminal coalesces reads more, so
+it never showed. Fix: each frame is built into one string and emitted as a
+single `write()`, wrapped in DEC synchronized-update (`\033[?2026h/l`), with
+per-line `\033[K` + trailing `\033[J` instead of a leading full clear, and the
+cursor hidden while drawing. Check `swarm_terminal.cpp`/`latency_plot.cpp` for
+the same pattern if they're kept (swarm_terminal is slated for removal below).
+In the same pass the dashboard moved to snapshot-then-render: all robot states
+are copied at one instant every `UPDATE_INTERVAL_MS` (250ms) and history gets
+exactly one sample per robot per tick (uniform 15s sparkline window), so
+values update in lockstep instead of whenever a frame arrives.
 
 ## Update Swarm dashboard: Erledigt (2026-06-24)
   - ~~robot motor level meter still does not show the value of the motors
