@@ -37,6 +37,10 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 // ── Protocol constants (mirrors lib/SwarmProtocol/protocol.h) ────────────────
 
 static constexpr uint8_t SC_MAGIC_0       = 0xAA;
@@ -126,8 +130,11 @@ public:
         }
 
         fprintf(stderr, "[SwarmClient] starting swarm_hub on %s\n", port.c_str());
+        std::string hubPath = siblingHubPath();  // resolve before fork()
         pid_t pid = fork();
         if (pid == 0) {
+            if (!hubPath.empty())
+                execl(hubPath.c_str(), hubPath.c_str(), "--daemon", port.c_str(), nullptr);
             execlp("./swarm_hub", "./swarm_hub", "--daemon", port.c_str(), nullptr);
             execlp("swarm_hub",   "swarm_hub",   "--daemon", port.c_str(), nullptr);
             _exit(1);
@@ -473,6 +480,26 @@ private:
         if (fscanf(f, "%d", &pid) != 1) pid = 0;
         fclose(f);
         return pid > 0 && kill(pid, 0) == 0;
+    }
+
+    // Path to a swarm_hub binary next to the running executable, or "" if
+    // the executable's own path can't be determined. Keeps auto-start working
+    // regardless of the caller's cwd, since the Makefile puts all tools into
+    // the same build directory.
+    static std::string siblingHubPath() {
+        char buf[4096];
+#ifdef __APPLE__
+        uint32_t size = sizeof(buf);
+        if (_NSGetExecutablePath(buf, &size) != 0) return {};
+#else
+        ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+        if (n <= 0) return {};
+        buf[n] = '\0';
+#endif
+        std::string path(buf);
+        size_t slash = path.rfind('/');
+        if (slash == std::string::npos) return {};
+        return path.substr(0, slash + 1) + "swarm_hub";
     }
 
     static std::string findSerialPort() {
