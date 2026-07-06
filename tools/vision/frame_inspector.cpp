@@ -53,7 +53,7 @@ static void drawDetections(cv::Mat& img, const FrameDetections& d) {
 int main(int argc, char* argv[]) {
     setvbuf(stdout, nullptr, _IOLBF, 0);  // flush progress lines even when piped/redirected
 
-    std::string configPath = ArucoConfig::kDefaultConfigPath;
+    std::string configPath = ArucoConfig::defaultConfigPath();
     std::string serial, ip;
     bool   cfg_mirror = false;
     double seconds    = 1.0;

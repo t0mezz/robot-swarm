@@ -15,6 +15,11 @@
 #include <cmath>
 #include <chrono>
 
+#include <unistd.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 // ─── ICameraSource ────────────────────────────────────────────────────────────
 
 struct ArucoConfig;
@@ -41,9 +46,16 @@ struct RobotPose {
 // aruco_tracker_config.json — missing keys fall back to the defaults below.
 
 struct ArucoConfig {
-    // Default location of aruco_tracker_config.json, relative to tools/build/
-    // (where the demo binaries are run from).
+    // Cwd-relative fallback location of aruco_tracker_config.json (assumes the
+    // demo is run from tools/build/). Prefer defaultConfigPath(), which
+    // resolves the same file relative to the executable instead, so demos work
+    // from any cwd.
     static constexpr const char* kDefaultConfigPath = "../vision/aruco_tracker_config.json";
+
+    // <exe_dir>/../vision/aruco_tracker_config.json if it exists (demo
+    // binaries land in tools/build/, the config lives in tools/vision/),
+    // otherwise falls back to kDefaultConfigPath.
+    static std::string defaultConfigPath();
 
     // Camera — Basler ace2 GigE
     int         width = 1920, height = 1080, fps = 30;
@@ -98,8 +110,26 @@ struct ArucoConfig {
     bool debugOverlay = false;
     bool mirrorInput  = false;
 
-    static ArucoConfig fromFile(const std::string& path = kDefaultConfigPath);
+    static ArucoConfig fromFile(const std::string& path = defaultConfigPath());
 };
+
+inline std::string ArucoConfig::defaultConfigPath() {
+    char buf[4096];
+#ifdef __APPLE__
+    uint32_t size = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &size) != 0) return kDefaultConfigPath;
+#else
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n <= 0) return kDefaultConfigPath;
+    buf[n] = '\0';
+#endif
+    std::string path(buf);
+    size_t slash = path.rfind('/');
+    if (slash == std::string::npos) return kDefaultConfigPath;
+    path = path.substr(0, slash + 1) + "../vision/aruco_tracker_config.json";
+    if (access(path.c_str(), R_OK) != 0) return kDefaultConfigPath;
+    return path;
+}
 
 inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
     ArucoConfig c;

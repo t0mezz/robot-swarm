@@ -56,7 +56,7 @@ static void drawPanel(cv::Mat& img, float loopFps, float camFps, float latMs,
 // ── main ─────────────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
-    std::string configPath = ArucoConfig::kDefaultConfigPath;
+    std::string configPath = ArucoConfig::defaultConfigPath();
     std::string serial, ip;
     bool cfg_mirror = false;
 
