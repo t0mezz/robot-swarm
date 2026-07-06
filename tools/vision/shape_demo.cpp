@@ -473,6 +473,18 @@ int main(int argc, char* argv[]) {
     int8_t motors[MAX_ROBOTS][2]     = {};
     int8_t lastMotors[MAX_ROBOTS][2] = {};
 
+    // Spread the registered robots evenly along the current path. Must run not
+    // only when the registry changes but also whenever g_waypoints is rebuilt:
+    // old indices point into the old list (robots typically register while the
+    // path is still empty, so without this they'd never get a waypoint at all).
+    auto redistributeWaypoints = [&]() {
+        robotWaypoint.clear();
+        if (registeredCount <= 0 || g_waypoints.empty()) return;
+        int M = (int)g_waypoints.size();
+        for (auto& [id, si] : robotSlotIndex)
+            robotWaypoint[id] = (si * M / registeredCount) % M;
+    };
+
     auto t0         = std::chrono::steady_clock::now();
     auto lastSend   = t0;
     auto lastFpsT   = t0;
@@ -512,6 +524,7 @@ int main(int argc, char* argv[]) {
         if (g_waypointsDirty) {
             g_waypoints = buildWaypoints(g_shapes);
             g_waypointsDirty = false;
+            redistributeWaypoints();
             printf("[shape] %d waypoints\n", (int)g_waypoints.size());
         }
 
@@ -571,11 +584,7 @@ int main(int argc, char* argv[]) {
                 printf("[shape] Robot %d evicted. Remaining: %d\n", id, registeredCount);
             }
 
-            if (changed && registeredCount > 0 && !g_waypoints.empty()) {
-                int M = (int)g_waypoints.size();
-                for (auto& [id, si] : robotSlotIndex)
-                    robotWaypoint[id] = (si * M / registeredCount) % M;
-            }
+            if (changed) redistributeWaypoints();
         }
 
         // ── Motor control ─────────────────────────────────────────────────────
@@ -587,11 +596,24 @@ int main(int argc, char* argv[]) {
                     motors[id][0] = motors[id][1] = 0;
                     continue;
                 }
-                cv::Point2f wp  = g_waypoints[robotWaypoint[id]];
-                float dx        = wp.x - pose.x;
-                float dy        = wp.y - pose.y;
-                float dist      = sqrtf(dx*dx + dy*dy);
-
+                // Advance past every waypoint already within the arrival radius
+                // so the robot keeps tracking the path instead of parking on its
+                // first waypoint. Bounded to one lap: if the whole path is inside
+                // the radius (tiny shape), there is nowhere to go — stop.
+                int  M    = (int)g_waypoints.size();
+                int& wi   = robotWaypoint[id];
+                cv::Point2f wp = g_waypoints[wi];
+                float dx   = wp.x - pose.x;
+                float dy   = wp.y - pose.y;
+                float dist = sqrtf(dx*dx + dy*dy);
+                int hops = 0;
+                while (dist < ARRIVAL_MM && hops < M) {
+                    wi = (wi + 1) % M;
+                    wp = g_waypoints[wi];
+                    dx = wp.x - pose.x; dy = wp.y - pose.y;
+                    dist = sqrtf(dx*dx + dy*dy);
+                    hops++;
+                }
                 if (dist < ARRIVAL_MM) { motors[id][0] = motors[id][1] = 0; continue; }
 
                 float tgtAngle  = atan2f(dy, dx) * 180.f / (float)M_PI;
