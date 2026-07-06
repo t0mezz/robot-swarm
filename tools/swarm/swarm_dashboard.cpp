@@ -19,6 +19,7 @@
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -109,6 +110,47 @@ static std::string sparkline(const TelemetryHistory::Buffer& buf, float maxVal, 
     return out;
 }
 
+// Renders `buf` as a braille line graph (2x4 dots per cell), `cells` wide and
+// `rows` tall, scaled to [0, maxVal], newest sample at the right edge.
+// Consecutive points are joined vertically so the trace reads as a continuous
+// line. Returns one string per row.
+static std::vector<std::string> brailleGraph(const TelemetryHistory::Buffer& buf,
+                                             int cells, int rows, float maxVal) {
+    if (maxVal <= 0) maxVal = 1.0f;
+    const int dotW = cells * 2, dotH = rows * 4;
+    std::vector<std::vector<bool>> dots((size_t)dotH, std::vector<bool>((size_t)dotW, false));
+
+    int n  = std::min((int)buf.size(), dotW);
+    int x0 = dotW - n;  // right-align: newest sample at the right edge
+    int prevY = -1;
+    for (int i = 0; i < n; i++) {
+        float v    = buf.at(buf.size() - (size_t)n + (size_t)i);
+        float frac = std::clamp(v / maxVal, 0.0f, 1.0f);
+        int   y    = (int)((1.0f - frac) * (dotH - 1) + 0.5f);
+        int from = (prevY < 0) ? y : prevY;
+        for (int yy = std::min(from, y); yy <= std::max(from, y); yy++)
+            dots[(size_t)yy][(size_t)(x0 + i)] = true;
+        prevY = y;
+    }
+
+    // Braille dot bit positions within a cell: [dy][dx]
+    static const int BIT[4][2] = { {0x01, 0x08}, {0x02, 0x10}, {0x04, 0x20}, {0x40, 0x80} };
+    std::vector<std::string> out((size_t)rows);
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cells; c++) {
+            int mask = 0;
+            for (int dy = 0; dy < 4; dy++)
+                for (int dx = 0; dx < 2; dx++)
+                    if (dots[(size_t)(r * 4 + dy)][(size_t)(c * 2 + dx)]) mask |= BIT[dy][dx];
+            unsigned cp = 0x2800u + (unsigned)mask;  // UTF-8 encode U+2800..U+28FF
+            out[(size_t)r] += (char)(0xE0 | (cp >> 12));
+            out[(size_t)r] += (char)(0x80 | ((cp >> 6) & 0x3F));
+            out[(size_t)r] += (char)(0x80 | (cp & 0x3F));
+        }
+    }
+    return out;
+}
+
 // ── Layout ────────────────────────────────────────────────────────
 
 struct RobotRowLayout {
@@ -162,8 +204,17 @@ static void appendf(std::string& out, const char* fmt, ...) {
     out += buf;
 }
 
+// Repeats a (possibly multi-byte UTF-8) glyph `n` times — std::string(n, c)
+// only works for single-byte chars.
+static std::string hline(const char* glyph, int n) {
+    std::string out;
+    for (int i = 0; i < n; i++) out += glyph;
+    return out;
+}
+
 static void drawUI(const Snapshot& snap, const TelemetryHistory& hist,
-                   const std::vector<SwarmClient::DebugEntry>& log) {
+                   const std::vector<SwarmClient::DebugEntry>& log,
+                   const TelemetryHistory::Buffer& avgLat) {
     int termWidth = terminalWidth();
 
     // One frame = one atomic write(), wrapped in DEC synchronized-update
@@ -176,9 +227,14 @@ static void drawUI(const Snapshot& snap, const TelemetryHistory& hist,
     f.reserve(16384);
     f += "\033[?2026h\033[H";
 
-    appendf(f, "\033[1;36m%s\033[0m\033[K\n", std::string((size_t)termWidth, '=').c_str());
-    f += "\033[1;37m  SWARM TELEMETRY DASHBOARD\033[0m\033[K\n";
-    appendf(f, "\033[1;36m%s\033[0m\033[K\n\033[K\n", std::string((size_t)termWidth, '=').c_str());
+    // Rule lines are appended directly, not via appendf: "─" is 3 bytes in
+    // UTF-8, so a full-width rule overflows appendf's fixed buffer and loses
+    // its trailing newline (title ended up on the same line as the rule).
+    static const char* TITLE = "SWARM TELEMETRY DASHBOARD";
+    int titlePad = std::max(0, (termWidth - (int)strlen(TITLE)) / 2);
+    f += "\033[1;36m" + hline("─", termWidth) + "\033[0m\033[K\n";
+    appendf(f, "%*s\033[1;37m%s\033[0m\033[K\n", titlePad, "", TITLE);
+    f += "\033[1;36m" + hline("─", termWidth) + "\033[0m\033[K\n\033[K\n";
 
     auto layout = computeLayout(termWidth, (int)snap.robots.size());
 
@@ -220,7 +276,7 @@ static void drawUI(const Snapshot& snap, const TelemetryHistory& hist,
         f += "\033[K\n";
     }
 
-    appendf(f, "\033[90m%s\033[0m\033[K\n", std::string((size_t)termWidth, '-').c_str());
+    f += "\033[90m" + hline("─", termWidth) + "\033[0m\033[K\n";
     appendf(f, "\033[37m  Known: %zu    via swarm_hub (/tmp/swarm_hub.sock)    Ctrl+C to exit\033[0m\033[K\n", snap.robots.size());
 
     if (!log.empty()) {
@@ -232,6 +288,38 @@ static void drawUI(const Snapshot& snap, const TelemetryHistory& hist,
             double age = std::chrono::duration_cast<std::chrono::milliseconds>(snap.at - e.at).count() / 1000.0;
             appendf(f, "\033[90m  -%5.1fs \033[36mR%-3d\033[0m %s\033[K\n", age, e.robotId, e.text.c_str());
         }
+    }
+
+    // Swarm-average latency line graph, centered. One braille dot column per
+    // sample: kWindow samples x UPDATE_INTERVAL_MS = the visible time window.
+    if (avgLat.size() >= 2) {
+        const int rows  = 6;
+        const int cells = (int)TelemetryHistory::kWindow / 2;
+        float maxVal = std::max(avgLat.max() * 1.15f, 1000.0f);
+
+        char title[96];
+        snprintf(title, sizeof(title), "AVG LATENCY (all robots)  %.0f us", avgLat.latest());
+        const int labelW = 9;  // "12345 ┤ " incl. axis glyph
+        int blockW = labelW + cells;
+        int pad    = std::max(0, (termWidth - blockW) / 2);
+
+        f += "\033[K\n";
+        appendf(f, "%*s\033[1;37m%s\033[0m\033[K\n\033[K\n",
+                std::max(0, (termWidth - (int)strlen(title)) / 2), "", title);
+
+        auto g = brailleGraph(avgLat, cells, rows, maxVal);
+        for (int r = 0; r < rows; r++) {
+            char label[16];
+            if      (r == 0)        snprintf(label, sizeof(label), "%5.0f", maxVal);
+            else if (r == rows - 1) snprintf(label, sizeof(label), "%5d", 0);
+            else                    snprintf(label, sizeof(label), "%5s", "");
+            appendf(f, "%*s\033[90m%s ┤ \033[0m\033[36m%s\033[0m\033[K\n",
+                    pad, "", label, g[(size_t)r].c_str());
+        }
+        appendf(f, "%*s\033[90m%5s └ %s\033[0m\033[K\n", pad, "", "",
+                hline("─", cells).c_str());
+        appendf(f, "%*s\033[90mlast %.0f s\033[0m\033[K\n", pad + labelW, "",
+                (float)TelemetryHistory::kWindow * UPDATE_INTERVAL_MS / 1000.0f);
     }
 
     f += "\033[J\033[?2026l";
@@ -255,6 +343,7 @@ int main() {
     (void)!::write(STDOUT_FILENO, "\033[?25l", 6);  // hide cursor while drawing
 
     TelemetryHistory hist;
+    TelemetryHistory::Buffer avgLat;  // swarm-wide mean latency, one sample per tick
     auto lastTick = std::chrono::steady_clock::now();
 
     while (running) {
@@ -268,7 +357,12 @@ int main() {
                 snap.robots.emplace_back(id, swarm.robotState(id));
             for (const auto& [id, st] : snap.robots)
                 hist.sample(id, st);
-            drawUI(snap, hist, swarm.debugLog());
+            if (!snap.robots.empty()) {
+                float sum = 0.0f;
+                for (const auto& [id, st] : snap.robots) sum += (float)st.latencyUs;
+                avgLat.push(sum / (float)snap.robots.size());
+            }
+            drawUI(snap, hist, swarm.debugLog(), avgLat);
             lastTick = now;
         }
 
