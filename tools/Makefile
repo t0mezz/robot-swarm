@@ -3,6 +3,7 @@
 CXX      = g++
 CXXFLAGS = -std=c++17 -Wall -O2
 LIBDIR   = ../lib
+SWARMDIR = swarm
 BUILD_DIR = build
 
 UNAME := $(shell uname)
@@ -29,7 +30,7 @@ else
     PYLON_LIBS         = $(shell pylon-config --libs 2>/dev/null) -Wl,-rpath,/opt/pylon/lib
     SFML_CFLAGS       := $(shell pkg-config --cflags sfml-all 2>/dev/null)
     SFML_LIBS         := $(shell pkg-config --libs   sfml-all 2>/dev/null)
-    # WASD multi-key polling reads /dev/input/eventN directly (see lib/swarm/evdev_keys.h);
+    # WASD multi-key polling reads /dev/input/eventN directly (see swarm/evdev_keys.h);
     # no extra link flags needed beyond libc.
     CONTROLLER_LDFLAGS =
 endif
@@ -47,35 +48,35 @@ $(BUILD_DIR):
 calibrate: | $(BUILD_DIR)
 	$(MAKE) -C vision/calibration
 
-$(BUILD_DIR)/swarm_hub: $(LIBDIR)/swarm/swarm_hub.cpp | $(BUILD_DIR)
+$(BUILD_DIR)/swarm_hub: $(SWARMDIR)/swarm_hub.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $< -o $@ $(HUB_LDFLAGS)
 
-$(BUILD_DIR)/swarm_hub_simulation: $(LIBDIR)/swarm/swarm_hub_simulation.cpp | $(BUILD_DIR)
+$(BUILD_DIR)/swarm_hub_simulation: $(SWARMDIR)/swarm_hub_simulation.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $< -o $@
 
-$(BUILD_DIR)/swarm_terminal: $(LIBDIR)/swarm/swarm_terminal.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
+$(BUILD_DIR)/swarm_terminal: $(SWARMDIR)/swarm_terminal.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@
 
-$(BUILD_DIR)/latency_plot: $(LIBDIR)/swarm/latency_plot.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
+$(BUILD_DIR)/latency_plot: $(SWARMDIR)/latency_plot.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@
 
-$(BUILD_DIR)/swarm_dashboard: $(LIBDIR)/swarm/swarm_dashboard.cpp $(LIBDIR)/swarm/telemetry_history.h $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
+$(BUILD_DIR)/swarm_dashboard: $(SWARMDIR)/swarm_dashboard.cpp $(SWARMDIR)/telemetry_history.h $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@
 
-$(BUILD_DIR)/swarm_controller: $(LIBDIR)/swarm/swarm_controller.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
+$(BUILD_DIR)/swarm_controller: $(SWARMDIR)/swarm_controller.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@ $(CONTROLLER_LDFLAGS)
 
 $(BUILD_DIR)/game: game.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(SFML_CFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@ $(SFML_LIBS)
 
-$(BUILD_DIR)/vision_controller: vision/vision_controller.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/swarm/evdev_keys.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/swarm -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
+$(BUILD_DIR)/vision_controller: vision/vision_controller.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(SWARMDIR)/evdev_keys.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(SWARMDIR) -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
 $(BUILD_DIR)/circle_demo: vision/circle_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-$(BUILD_DIR)/wingman: vision/wingman.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/swarm/evdev_keys.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/swarm -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
+$(BUILD_DIR)/wingman: vision/wingman.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(SWARMDIR)/evdev_keys.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(SWARMDIR) -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
 $(BUILD_DIR)/shape_demo: vision/shape_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \

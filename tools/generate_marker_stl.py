@@ -3,8 +3,8 @@
 Generate a thin STL model of an ArUco 4x4 marker — black cells only.
 
 Usage:
-    python generate_marker_model.py --id 0 --size 50 --height 1.0
-    python generate_marker_model.py --id 7 --size 30 --height 0.5 -o marker7.stl
+    python generate_marker_model.py --id 0 --size 50 --height 0.5
+    python generate_marker_model.py --id 7 --size 30 --height 1.0 -o marker7.stl
 """
 
 import argparse
@@ -155,7 +155,7 @@ def main():
                         help="Marker ID")
     parser.add_argument("--size",   type=float, default=65.0,      metavar="MM",
                         help="Total marker size in mm")
-    parser.add_argument("--height", type=float, default=1.0,       metavar="MM",
+    parser.add_argument("--height", type=float, default=0.5,       metavar="MM",
                         help="Extrusion height (thickness) in mm")
     parser.add_argument("--dict",   type=str,   default="4x4_50",
                         choices=["4x4_50", "4x4_100", "4x4_250", "4x4_1000"],

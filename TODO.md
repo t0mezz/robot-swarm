@@ -85,7 +85,13 @@ header docstring.
   - if we update we need to add more cool features
  - ...
 
-## Verify is /lib/swarm/* is correctly placed there.
+## Verify is /lib/swarm/* is correctly placed there. Erledigt (2026-07-06)
+Moved to `tools/swarm/` — the files there (`swarm_hub.cpp`, `swarm_terminal.cpp`,
+etc.) are standalone PC-tool entry points, not reusable libraries linked into
+firmware or multiple targets, so they belong under `tools/` alongside
+`vision/*.cpp` and `game.cpp` rather than in `lib/` next to `SwarmClient`/
+`SwarmProtocol`/`ArucoTracker`. Updated `tools/Makefile` (`SWARMDIR` var),
+`CLAUDE.md`, and `README.md` accordingly.
 
 ## Clean up Swarmhub code and terminal output, make it run as deamon on default.
 
@@ -158,7 +164,7 @@ power button.
       (kombiniert mit Remote-Latency-Test oben, auch ohne Vision-Pipeline auf dem
       Client nutzbar)
     - Bestehendes Telemetrie-Parsing (RobotStatus, parsePacket für MSG_ANNOUNCE/
-      MSG_TELEMETRY/MSG_PONG) steckt aktuell in lib/swarm/swarm_terminal.cpp -> in
+      MSG_TELEMETRY/MSG_PONG) steckt aktuell in tools/swarm/swarm_terminal.cpp -> in
       gemeinsames Modul extrahieren, von Dashboard + swarm_terminal nutzen lassen,
       danach die alte Implementierung in swarm_terminal löschen
 

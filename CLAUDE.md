@@ -60,7 +60,7 @@ When changing a message type or payload layout, all three need updating; there's
 
 ### `swarm_hub` is the only process that owns the serial port
 
-PC tools never open the dongle's serial device directly. `swarm_hub` (`lib/swarm/swarm_hub.cpp`) bridges the USB-serial connection to a Unix socket at `/tmp/swarm_hub.sock`, and every other PC tool connects to that socket. Vision tools auto-launch `swarm_hub` as a daemon if a USB dongle is detected and the hub isn't already running.
+PC tools never open the dongle's serial device directly. `swarm_hub` (`tools/swarm/swarm_hub.cpp`) bridges the USB-serial connection to a Unix socket at `/tmp/swarm_hub.sock`, and every other PC tool connects to that socket. Vision tools auto-launch `swarm_hub` as a daemon if a USB dongle is detected and the hub isn't already running.
 
 For new PC tools, use `lib/SwarmClient/SwarmClient.h` rather than talking to the socket directly — it auto-connects (and will auto-launch `swarm_hub` via `fork`/`exec` if needed), builds outgoing `MSG_SWARM` frames from a `setSpeed()`/`flush()` call pair, and parses incoming `MSG_ANNOUNCE`/`MSG_TELEMETRY`/`MSG_PONG` frames into per-robot `RobotState`. Calling `poll()` regularly is required even if you don't care about telemetry — it's what reads and parses incoming frames (including the `MSG_PONG`s that populate `latencyUs`). The round-robin pinging that produces those pongs is driven centrally by `swarm_hub` (it snoops announce/telemetry/pong frames to learn live robot IDs and emits one `MSG_PING` per interval), **not** per-client: this keeps exactly one ping in flight no matter how many tools are connected, since the dongle's latency tracker (`src/dongle/main.cpp`, single `pingTracker`) only holds one outstanding ping at a time — multiple independent pingers would clobber it and corrupt RTT.
 
@@ -90,8 +90,7 @@ src/robots/                — MicroPython firmware for the RP2040, deployed wit
 lib/SwarmProtocol/         — wire protocol shared by both firmware targets (canonical C++ definition)
 lib/SwarmClient/           — header-only PC client library; new PC tools should build on this
 lib/ArucoTracker/          — camera + ArUco tracking abstraction (Basler pylon + OpenCV)
-lib/swarm/                 — PC-side host tools' source (swarm_hub, swarm_terminal, swarm_controller, latency_plot)
-tools/                     — Makefile + PC tool entry points (game.cpp, vision/*.cpp); binaries land in tools/build/
+tools/                     — Makefile + PC tool entry points (game.cpp, vision/*.cpp, swarm/*.cpp); binaries land in tools/build/
 docs/architecture.md       — protocol/timing design doc (German)
 ```
 

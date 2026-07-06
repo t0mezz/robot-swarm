@@ -103,7 +103,7 @@ sudo usermod -aG dialout,input $USER
 > * `dialout` is required for USB serial access to the robots/dongle.
 > * `input` is required for multi-key WASD input in `vision_controller`, `wingman`,
 >   and `swarm_controller`. They poll `/dev/input/eventN` directly via evdev
->   (`lib/swarm/evdev_keys.h`) rather than the X11 `XQueryKeymap`, because
+>   (`tools/swarm/evdev_keys.h`) rather than the X11 `XQueryKeymap`, because
 >   `XQueryKeymap` only reflects keys delivered to an X11 surface — under a
 >   Wayland session (the Ubuntu default) it silently reports nothing pressed,
 >   since XWayland never receives input meant for native Wayland clients like
