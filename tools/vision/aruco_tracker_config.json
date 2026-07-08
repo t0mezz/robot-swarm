@@ -3,7 +3,7 @@
     "basler_ip": "",
     "cam_width": 2048,
     "cam_height": 2048,
-    "cam_fps": 100, // dont change
+    "cam_fps": 115, // dont change
     "aruco_dict": 0,
     "win_min": 3,
     "win_max": 23,
