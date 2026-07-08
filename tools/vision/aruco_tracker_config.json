@@ -17,7 +17,7 @@
     "min_otsu_stddev": 12.0,
     "corner_win": 5,
     "corner_max_iter": 30,
-    "half_res_sweep": 0,
+    "half_res_sweep": 1,
     "kf_proc_pos": 10e-05,
     "kf_proc_vel": 0.063,
     "kf_meas": 20.0,
@@ -27,10 +27,11 @@
     "roi_fail_max": 5,
     "roi_area_max": 0.6,
     "global_reset": 30,
+    "robot_count": 0,
     "clahe_clip": 1.0,
     "clahe_tile": 8,
     "debug_overlay": 1,
     "mirror_input": 0,
-    "offset_x": 284,
+    "offset_x": 240,
     "offset_y": 0
 }
