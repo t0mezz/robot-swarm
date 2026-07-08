@@ -1,9 +1,17 @@
 # Performance Tracking
 
-Tracks measured performance (loop_fps, cam_fps, per-section timings, etc.) of
+Tracks measured performance (loop_fps, det_fps, per-section timings, etc.) of
 the PC-side vision/control tools (`tools/build/*`), and what changes were made
 to improve it. Goal: keep a before/after record per tool so improvements can
 be visualized over time, instead of relying on memory/anecdote.
+
+Naming note (2026-07): the tracker's detection-thread rate was labeled
+`cam_fps` in the HUD and in the historical entries below; it has been renamed
+`det_fps` because it measures frames *processed* by the detection thread, not
+the camera's acquisition rate (the two diverge whenever detection can't keep
+up — the camera keeps grabbing and frames are skipped). Old entries keep the
+old name. The config key `cam_fps` (requested AcquisitionFrameRate) is
+unchanged.
 
 Until the generalized DEBUG-util exists (see `TODO.md` → "Tooling / Tests"),
 numbers come from ad-hoc `[perf]` instrumentation added directly to each demo

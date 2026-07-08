@@ -1,7 +1,7 @@
 // DemoHud.h — header-only on-screen debug overlay for the PC vision *demo*
 // tools (vision_controller, circle_demo, wingman, shape_demo, drag_drop_demo,
 // demo_hud_preview). Not a general-purpose UI/HUD library — it exists purely
-// so these interactive demos can show loop_fps, cam_fps, latency, battery,
+// so these interactive demos can show loop_fps, det_fps, latency, battery,
 // hub status, and per-robot tables without each one rolling its own ad-hoc
 // cv::putText/snprintf HUD code. Production/headless tools (swarm_hub,
 // swarm_terminal, latency_plot, swarm_controller) have no use for this.

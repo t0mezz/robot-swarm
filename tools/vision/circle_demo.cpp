@@ -473,9 +473,9 @@ int main(int argc, char* argv[]) {
     float fps         = 0;
 
     // ── Phase-1 perf instrumentation (see TODO.md "Performance: loop_fps vs
-    // cam_fps") ──────────────────────────────────────────────────────────
+    // cam_fps" — that historical name is today's det_fps) ────────────────
     // Coarse per-section timings, printed once per second alongside loop_fps,
-    // to locate where the loop falls behind cam_fps before optimizing.
+    // to locate where the loop falls behind det_fps before optimizing.
     auto   prevIterT  = lastSend;
     double accTotal   = 0, accControl = 0, accDraw = 0, accImshow = 0, accWaitKey = 0;
 

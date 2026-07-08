@@ -30,13 +30,13 @@ static cv::Scalar tempColor(float t) {
     return               DemoHud::COL_BAD;   // hot
 }
 
-static void drawPanel(cv::Mat& img, float loopFps, float camFps, float latMs,
+static void drawPanel(cv::Mat& img, float loopFps, float detFps, float latMs,
                       float tempC, int w, int h, int markerCount)
 {
     DemoHud hud;
     hud.title("CAMERA", DemoHud::COL_TEXT);
     hud.row("Resolution", DemoHud::fmt("%d x %d px", w, h));
-    hud.row("Cam FPS",    DemoHud::fmt("%.1f", camFps));
+    hud.row("Det FPS",    DemoHud::fmt("%.1f", detFps));
     hud.row("Loop FPS",   DemoHud::fmt("%.1f", loopFps), DemoHud::COL_OK);
     hud.row("Latency",    DemoHud::fmt("%.1f ms", latMs));
     hud.row("Temp",       tempC >= 0.f ? DemoHud::fmt("%.1f C", tempC) : "n/a",
@@ -46,7 +46,7 @@ static void drawPanel(cv::Mat& img, float loopFps, float camFps, float latMs,
     hud.row("Keys",       "r=reset  q=quit");
 
     // Right-anchor the panel: the tracker's debugFrame() burns its own
-    // small cam_fps/tags HUD + legend into the top-left corner, so anchoring
+    // small det_fps/tags HUD + legend into the top-left corner, so anchoring
     // there would put this now-3x panel right on top of that text.
     cv::Size sz = hud.measure();
     int x = std::max(10, img.cols - sz.width - 10);
@@ -89,15 +89,15 @@ int main(int argc, char* argv[]) {
     cv::namedWindow("Camera Eval", cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
     cv::resizeWindow("Camera Eval", sz.width, sz.height);
 
-    // loop_fps = this display/render loop's rate (distinct from tracker.fps(),
-    // which is the camera/detection thread's rate). Tick every iteration.
+    // loop_fps = this display/render loop's rate (distinct from
+    // tracker.detectionFps(), the detection thread's rate). Tick every iteration.
     DemoHud::LoopFps loopFps;
 
     while (true) {
         loopFps.tick();
         if (tracker.update()) {
             cv::Mat frame = tracker.debugFrame();
-            drawPanel(frame, loopFps.fps(), tracker.fps(), tracker.latencyMs(),
+            drawPanel(frame, loopFps.fps(), tracker.detectionFps(), tracker.latencyMs(),
                       tracker.cameraTemperature(),
                       sz.width, sz.height,
                       (int)tracker.robots().size());

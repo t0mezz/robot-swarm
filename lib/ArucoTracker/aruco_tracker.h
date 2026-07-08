@@ -363,7 +363,12 @@ public:
     cv::Mat  debugFrame() const { return debug_; }
     cv::Size frameSize()  const { return {(int)fw_, (int)fh_}; }
     bool     isOpen()     const { return source_ != nullptr; }
-    float    fps()        const { return fps_; }
+    // Detection-thread throughput (frames actually processed per second), NOT
+    // the camera's acquisition rate — with GrabStrategy_LatestImageOnly the
+    // camera can deliver faster while this thread skips frames it can't keep
+    // up with. The camera's own sustainable rate is printed at open() time
+    // (ResultingFrameRate in basler_pylon_source.h).
+    float    detectionFps() const { return fps_; }
     float    latencyMs()  const { return latencyMs_; }
     float    cameraTemperature() { return source_ ? source_->temperature() : -1.f; }
 
@@ -773,7 +778,7 @@ private:
                 cv::line(debug, {px,py-6},{px,py+6},{255,255,255},1);
             }
         }
-        std::string hud = "cam_fps:" + std::to_string((int)fps)
+        std::string hud = "det_fps:" + std::to_string((int)fps)
                         + "  tags:" + std::to_string(robotCount)
                         + (hasH_ ? "  world" : "  px");
         for (auto& [id, ms] : markerStates_)
