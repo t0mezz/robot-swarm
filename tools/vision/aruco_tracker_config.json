@@ -31,6 +31,6 @@
     "clahe_tile": 8,
     "debug_overlay": 1,
     "mirror_input": 0,
-    "offset_x": 160,
+    "offset_x": 284,
     "offset_y": 0
 }
