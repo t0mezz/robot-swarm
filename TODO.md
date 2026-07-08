@@ -1,9 +1,5 @@
 # TODO
 
-## Genera aruco tracker issue:
-- When a set of markers are registered for some time, the tracker is not picking up now markers.
-- resolved by restarting the demo (maybe due to lazy search????)
-
 ## Clean up Swarmhub code and terminal output, make it run as deamon on default.
 
 ## Clean up unnessary comments
@@ -53,6 +49,22 @@
       einfacher umzusetzen
 
 # ================== FIXED ===================
+## Genera aruco tracker issue: Erledigt (2026-07-08)
+~~When a set of markers are registered for some time, the tracker is not
+picking up now markers. resolved by restarting the demo (maybe due to lazy
+search????)~~ Root cause: the full-frame global sweep in
+`ArucoTracker::detectionLoop()` (`lib/ArucoTracker/aruco_tracker.h`) — the
+only path that can discover a marker ID with no prior ROI state — only ran
+when `markerStates_` was empty or some already-known marker had fully lost
+tracking (`RoiState::GLOBAL`). Once every currently-known marker settled into
+`LOCAL` ROI tracking, the global sweep stopped running entirely, so a
+new/late-appearing robot was never picked up until an existing marker lost
+tracking (or the demo was restarted, which cleared `markerStates_`). Fixed by
+adding a `robot_count` config option (`aruco_tracker_config.json`,
+`ArucoConfig::robotCount`, default 0 = uncapped): the global sweep now runs
+every frame until that many distinct marker IDs have been discovered, then
+drops back to the old on-demand behavior to save full-frame detection cost.
+
 ## Fix swarm dashboard flickering on ubuntu. Erledigt (2026-07-06)
 ~~Fix swarm dashboard (maybe other tools aswell) flickering on ubuntu, working
 fine on macos tahoe~~ Root cause: `drawUI()` started with a full-screen erase

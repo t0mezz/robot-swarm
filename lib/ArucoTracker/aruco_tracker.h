@@ -102,6 +102,18 @@ struct ArucoConfig {
     int   roiFailMax  = 5;
     float roiAreaMax  = 0.40f;
     int   globalReset = 30;
+    // Expected number of distinct markers (robots) in the scene. Once that
+    // many distinct IDs have ever been seen (markerStates_.size() reaches
+    // this count), the forced full-frame sweep below is dropped and the
+    // detector goes back to pure per-marker ROI tracking. Below that count,
+    // a global sweep runs every frame (regardless of per-marker ROI state)
+    // so newly-appearing markers keep getting picked up even while every
+    // already-known marker is locked into a tight local ROI — otherwise the
+    // global sweep only fires when markerStates_ is empty or some existing
+    // marker has fully lost tracking, so a marker that never had an entry
+    // stays invisible indefinitely. 0 = unknown/uncapped: always keep
+    // sweeping every frame.
+    int   robotCount  = 0;
 
     // CLAHE — applied lazily (only to the image actually passed to detectMarkers)
     float claheClip = 2.0f;
@@ -172,6 +184,7 @@ inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
     ri("roi_fail_max",    c.roiFailMax);
     rf("roi_area_max",    c.roiAreaMax);
     ri("global_reset",    c.globalReset);
+    ri("robot_count",     c.robotCount);
     rf("clahe_clip",      c.claheClip);
     ri("clahe_tile",      c.claheTile);
     rb("debug_overlay",   c.debugOverlay);
@@ -507,9 +520,19 @@ private:
                 }
 
                 // ── Global sweep — CLAHE only on the sweep image ──────────────
+                // Force a global sweep every frame until we've discovered as many
+                // distinct markers as expected (cfg_.robotCount) — this is the
+                // only path that can find a marker ID with no ROI state yet, so
+                // without it, once every currently-known marker is happily
+                // LOCAL-tracked, a new/late-appearing robot is never picked up
+                // (see TODO.md). Once we've seen enough markers, drop back to
+                // sweeping only when needed (no markers yet, or one has fully
+                // lost tracking) to save the full-frame detection cost.
                 bool needGlobal = markerStates_.empty();
                 for (auto& [_, ms] : markerStates_)
                     if (ms.state == RoiState::GLOBAL) { needGlobal = true; break; }
+                if (cfg_.robotCount <= 0 || (int)markerStates_.size() < cfg_.robotCount)
+                    needGlobal = true;
 
                 struct Best { float perim; std::vector<cv::Point2f> c; };
                 std::unordered_map<int, Best> best;
