@@ -91,9 +91,9 @@ catching the just-erased blank screen. macOS Terminal coalesces reads more, so
 it never showed. Fix: each frame is built into one string and emitted as a
 single `write()`, wrapped in DEC synchronized-update (`\033[?2026h/l`), with
 per-line `\033[K` + trailing `\033[J` instead of a leading full clear, and the
-cursor hidden while drawing. Check `swarm_terminal.cpp`/`latency_plot.cpp` for
-the same pattern if they're kept (swarm_terminal is slated for removal below).
-In the same pass the dashboard moved to snapshot-then-render: all robot states
+cursor hidden while drawing. Same pattern applied to `swarm_terminal.cpp`/
+`latency_plot.cpp` (2026-07-11) — both still had the old leading-full-clear
+form. In the same pass the dashboard moved to snapshot-then-render: all robot states
 are copied at one instant every `UPDATE_INTERVAL_MS` (250ms) and history gets
 exactly one sample per robot per tick (uniform 15s sparkline window), so
 values update in lockstep instead of whenever a frame arrives.

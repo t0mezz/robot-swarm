@@ -14,6 +14,7 @@
 
 #include "SwarmClient.h"
 
+#include <cstdarg>
 #include <cstdint>
 #include <cstring>
 #include <cmath>
@@ -22,6 +23,7 @@
 #include <chrono>
 #include <thread>
 #include <csignal>
+#include <unistd.h>
 
 static constexpr int MAX_ROBOTS = SC_MAX_ROBOTS;
 
@@ -41,18 +43,36 @@ static void statusParts(uint8_t flags, int8_t motorL, int8_t motorR,
     color = "\033[36m"; text = "IDLE    ";
 }
 
+static void appendf(std::string& out, const char* fmt, ...) {
+    char buf[512];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    out += buf;
+}
+
+// One frame = one atomic write(), wrapped in DEC synchronized-update
+// (\033[?2026h/l, ignored where unsupported), same fix as swarm_dashboard.cpp
+// (see TODO.md "Fixed swarm dashboard flickering"): GNOME Terminal/VTE
+// repaints between stdout's line-buffered flushes and kept catching a
+// just-erased blank screen. No leading full-screen erase — every line ends
+// with \033[K and the frame ends with \033[J to clear leftovers from a
+// previous, possibly taller frame.
 static void drawUI(const SwarmClient& swarm) {
     auto now = std::chrono::steady_clock::now();
 
-    std::cout << "\033[H\033[J";
+    std::string f;
+    f.reserve(8192);
+    f += "\033[?2026h\033[H";
 
-    std::cout << "\033[1;36m═══════════════════════════════════════════════════════════════════════════\033[0m\n";
-    std::cout << "\033[1;37m  ROBOT SWARM MONITOR                                                     \033[0m\n";
-    std::cout << "\033[1;36m═══════════════════════════════════════════════════════════════════════════\033[0m\n";
-    std::cout << "\n";
+    f += "\033[1;36m═══════════════════════════════════════════════════════════════════════════\033[0m\033[K\n";
+    f += "\033[1;37m  ROBOT SWARM MONITOR                                                     \033[0m\033[K\n";
+    f += "\033[1;36m═══════════════════════════════════════════════════════════════════════════\033[0m\033[K\n";
+    f += "\033[K\n";
 
-    std::cout << "\033[1;37m ID │ MAC               │ Latency │ Status   │ Motors    │ Uptime\033[0m\n";
-    std::cout << "\033[90m────┼───────────────────┼─────────┼──────────┼───────────┼────────\033[0m\n";
+    f += "\033[1;37m ID │ MAC               │ Latency │ Status   │ Motors    │ Uptime\033[0m\033[K\n";
+    f += "\033[90m────┼───────────────────┼─────────┼──────────┼───────────┼────────\033[0m\033[K\n";
 
     int activeCount = 0;
     int totalCount  = 0;
@@ -85,34 +105,34 @@ static void drawUI(const SwarmClient& swarm) {
         snprintf(uptimeStr, sizeof(uptimeStr), "%4ds", r.uptime);
 
         if (lost) {
-            printf("\033[31m %2d │ %s │ %s │ LOST     │ %s │ %s\033[0m\n",
-                   i, macStr, latStr, motorStr, uptimeStr);
+            appendf(f, "\033[31m %2d │ %s │ %s │ LOST     │ %s │ %s\033[0m\033[K\n",
+                    i, macStr, latStr, motorStr, uptimeStr);
         } else {
             const char* sc; const char* st;
             statusParts(r.flags, r.motorL, r.motorR, sc, st);
             // Color the motor cell too: green when driving, dim when idle.
             const char* motorCol = (r.motorL != 0 || r.motorR != 0) ? "\033[32m" : "\033[90m";
-            printf(" %2d │ %s │ %s │ %s%s\033[0m │ %s%s\033[0m │ %s\n",
-                   i, macStr, latStr, sc, st, motorCol, motorStr, uptimeStr);
+            appendf(f, " %2d │ %s │ %s │ %s%s\033[0m │ %s%s\033[0m │ %s\033[K\n",
+                    i, macStr, latStr, sc, st, motorCol, motorStr, uptimeStr);
         }
     }
 
     if (totalCount == 0) {
-        std::cout << "\033[90m  Waiting for robots to announce...\033[0m\n";
+        f += "\033[90m  Waiting for robots to announce...\033[0m\033[K\n";
     }
 
-    std::cout << "\n";
-    std::cout << "\033[90m────────────────────────────────────────────────────────────────────────────\033[0m\n";
-    printf("\033[37m  Active: %d/%d    Registered: %d/%d\033[0m\n",
-           activeCount, MAX_ROBOTS, totalCount, MAX_ROBOTS);
-    std::cout << "\033[90m  via swarm_hub (/tmp/swarm_hub.sock)   Ctrl+C to exit\033[0m\n";
+    f += "\033[K\n";
+    f += "\033[90m────────────────────────────────────────────────────────────────────────────\033[0m\033[K\n";
+    appendf(f, "\033[37m  Active: %d/%d    Registered: %d/%d\033[0m\033[K\n",
+            activeCount, MAX_ROBOTS, totalCount, MAX_ROBOTS);
+    f += "\033[90m  via swarm_hub (/tmp/swarm_hub.sock)   Ctrl+C to exit\033[0m\033[K\n";
 
     // Debug log — only shown once a robot has sent at least one MSG_DEBUG line.
     const auto& log = swarm.debugLog();
     if (!log.empty()) {
-        std::cout << "\n\033[1;37m  DEBUG LOG\033[0m\n";
-        std::cout << "\033[90m  age     robot  message\033[0m\n";
-        std::cout << "\033[90m────────────────────────────────────────────────────────────────────────────\033[0m\n";
+        f += "\033[K\n\033[1;37m  DEBUG LOG\033[0m\033[K\n";
+        f += "\033[90m  age     robot  message\033[0m\033[K\n";
+        f += "\033[90m────────────────────────────────────────────────────────────────────────────\033[0m\033[K\n";
 
         const int shown = 12;
         int start = (int)log.size() > shown ? (int)log.size() - shown : 0;
@@ -120,10 +140,13 @@ static void drawUI(const SwarmClient& swarm) {
             const auto& e = log[i];
             double age = std::chrono::duration_cast<std::chrono::milliseconds>(
                              now - e.at).count() / 1000.0;
-            printf("\033[90m  -%5.1fs \033[36mR%-3d\033[0m %s\n",
-                   age, e.robotId, e.text.c_str());
+            appendf(f, "\033[90m  -%5.1fs \033[36mR%-3d\033[0m %s\033[K\n",
+                    age, e.robotId, e.text.c_str());
         }
     }
+
+    f += "\033[J\033[?2026l";
+    (void)!::write(STDOUT_FILENO, f.data(), f.size());
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -138,6 +161,9 @@ int main(int /*argc*/, char* argv[]) {
     std::cout << "Connected to swarm_hub (/tmp/swarm_hub.sock)\n\n";
 
     signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);  // restore the cursor on `kill`, too
+
+    (void)!::write(STDOUT_FILENO, "\033[?25l", 6);  // hide cursor while drawing
 
     auto lastDraw = std::chrono::steady_clock::now();
 
@@ -154,6 +180,7 @@ int main(int /*argc*/, char* argv[]) {
     }
 
     swarm.disconnect();
-    std::cout << "\n\033[0mStopped.\n";
+    std::cout << "\033[2J\033[H\033[0m\033[?25h";
+    std::cout << "Stopped.\n";
     return 0;
 }

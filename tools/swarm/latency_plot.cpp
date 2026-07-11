@@ -14,6 +14,7 @@
 
 #include "SwarmClient.h"
 
+#include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
@@ -22,6 +23,7 @@
 #include <thread>
 #include <csignal>
 #include <deque>
+#include <unistd.h>
 
 // ═══════════════════════════════════════════════════════════════
 // State
@@ -73,26 +75,42 @@ static void onPong(uint16_t us) {
 
 static const char* BLOCKS[] = { " ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█" };
 
-static void drawPlot(uint8_t robotId) {
-    std::cout << "\033[2J\033[H";
+static void appendf(std::string& out, const char* fmt, ...) {
+    char buf[512];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    out += buf;
+}
 
-    std::cout << "\033[1;37mLatency Plot\033[0m";
-    std::cout << "  Robot \033[1;33m" << (int)robotId << "\033[0m";
-    std::cout << "  \033[90mvia swarm_hub\033[0m\n";
+// One frame = one atomic write(), wrapped in DEC synchronized-update
+// (\033[?2026h/l, ignored where unsupported), same fix as swarm_dashboard.cpp
+// (see TODO.md "Fixed swarm dashboard flickering"): GNOME Terminal/VTE
+// repaints between stdout's line-buffered flushes and kept catching a
+// just-erased blank screen. No leading full-screen erase — every line ends
+// with \033[K and the frame ends with \033[J to clear leftovers from a
+// previous, possibly taller frame.
+static void drawPlot(uint8_t robotId) {
+    std::string f;
+    f.reserve(4096);
+    f += "\033[?2026h\033[H";
+
+    appendf(f, "\033[1;37mLatency Plot\033[0m  Robot \033[1;33m%d\033[0m  \033[90mvia swarm_hub\033[0m\033[K\n",
+            (int)robotId);
 
     if (sampleCount == 0) {
-        std::cout << "\n  \033[90mWaiting for pong from robot " << (int)robotId << "...\033[0m\n";
-        std::cout.flush();
+        appendf(f, "\033[K\n  \033[90mWaiting for pong from robot %d...\033[0m\033[K\n", (int)robotId);
+        f += "\033[J\033[?2026l";
+        (void)!::write(STDOUT_FILENO, f.data(), f.size());
         return;
     }
 
     uint16_t avgUs = (uint16_t)(sumUs / sampleCount);
 
-    std::cout << "  Now: \033[1;32m" << latestUs << " µs\033[0m"
-              << "   Min: \033[32m"  << minUs    << " µs\033[0m"
-              << "   Max: \033[31m"  << maxUs    << " µs\033[0m"
-              << "   Avg: \033[36m"  << avgUs    << " µs\033[0m"
-              << "   n=" << sampleCount << '\n';
+    appendf(f, "  Now: \033[1;32m%u µs\033[0m   Min: \033[32m%u µs\033[0m   Max: \033[31m%u µs\033[0m"
+               "   Avg: \033[36m%u µs\033[0m   n=%u\033[K\n",
+            latestUs, minUs, maxUs, avgUs, sampleCount);
 
     uint16_t lo = minUs;
     uint16_t hi = maxUs;
@@ -110,40 +128,42 @@ static void drawPlot(uint8_t robotId) {
         } else {
             snprintf(rowLabel, sizeof(rowLabel), "          |");
         }
-        std::cout << rowLabel;
+        f += rowLabel;
 
-        for (int c = 0; c < padCols; c++) std::cout << ' ';
+        for (int c = 0; c < padCols; c++) f += ' ';
 
         for (int c = 0; c < N; c++) {
             float v     = (float)samples[c];
             float rowLo = lo + (float)row * (hi - lo) / PLOT_HEIGHT;
             if (v <= rowLo) {
-                std::cout << ' ';
+                f += ' ';
             } else if (v >= rowHi) {
                 uint16_t s = samples[c];
-                if      (s <= avgUs)          std::cout << "\033[32m█\033[0m";
-                else if (s <= avgUs * 3 / 2)  std::cout << "\033[33m█\033[0m";
-                else                          std::cout << "\033[31m█\033[0m";
+                if      (s <= avgUs)          f += "\033[32m█\033[0m";
+                else if (s <= avgUs * 3 / 2)  f += "\033[33m█\033[0m";
+                else                          f += "\033[31m█\033[0m";
             } else {
                 float fill   = (v - rowLo) / (rowHi - rowLo);
                 int   eighth = (int)(fill * 8.0f + 0.5f);
                 if (eighth < 1) eighth = 1;
                 if (eighth > 8) eighth = 8;
                 uint16_t s = samples[c];
-                if      (s <= avgUs)          std::cout << "\033[32m" << BLOCKS[eighth] << "\033[0m";
-                else if (s <= avgUs * 3 / 2)  std::cout << "\033[33m" << BLOCKS[eighth] << "\033[0m";
-                else                          std::cout << "\033[31m" << BLOCKS[eighth] << "\033[0m";
+                if      (s <= avgUs)          { f += "\033[32m"; f += BLOCKS[eighth]; f += "\033[0m"; }
+                else if (s <= avgUs * 3 / 2)  { f += "\033[33m"; f += BLOCKS[eighth]; f += "\033[0m"; }
+                else                          { f += "\033[31m"; f += BLOCKS[eighth]; f += "\033[0m"; }
             }
         }
-        std::cout << '\n';
+        f += "\033[K\n";
     }
 
-    std::cout << "         └";
-    for (int c = 0; c < PLOT_WIDTH; c++) std::cout << '-';
-    std::cout << '\n';
-    std::cout << "\033[90m           ← " << PLOT_WIDTH << " samples ("
-              << (PLOT_WIDTH * PING_MS / 1000) << "s window, hub ping=" << PING_MS << "ms)\033[0m\n";
-    std::cout.flush();
+    f += "         └";
+    for (int c = 0; c < PLOT_WIDTH; c++) f += '-';
+    f += "\033[K\n";
+    appendf(f, "\033[90m           ← %d samples (%ds window, hub ping=%dms)\033[0m\033[K\n",
+            PLOT_WIDTH, PLOT_WIDTH * PING_MS / 1000, PING_MS);
+
+    f += "\033[J\033[?2026l";
+    (void)!::write(STDOUT_FILENO, f.data(), f.size());
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -169,6 +189,9 @@ int main(int argc, char* argv[]) {
     if (!swarm.connect()) return 1;
 
     signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);  // restore the cursor on `kill`, too
+
+    (void)!::write(STDOUT_FILENO, "\033[?25l", 6);  // hide cursor while drawing
 
     using Clock = std::chrono::steady_clock;
     auto lastDraw   = Clock::now();
@@ -191,6 +214,6 @@ int main(int argc, char* argv[]) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
-    std::cout << "\033[2J\033[H\033[0m";
+    std::cout << "\033[2J\033[H\033[0m\033[?25h";
     return 0;
 }
