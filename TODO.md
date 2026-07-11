@@ -1,13 +1,16 @@
 # TODO
 
-## Clean up Swarmhub code and terminal output, make it run as deamon on default.
+(NEXT UP) ## Clean up Swarmhub code and terminal output, make it run as deamon on default.
 
-## Clean up unnessary comments
+(NEXT UP) ## Clean up unnessary comments
 
 ## Think about if its a good idea to: (is this already done?????)
-- Create a unified, well tuned PID unit taking in referenced of robot poses and desired poses (maybe in vector space)
+- Create a unified, well tuned PID unit taking in references of the robot poses and desired poses (maybe in vector space)
 - Every demo is dependent of a good PID controller
 - we dont want unnessarary computational or memory costs though (references, vecor space conversion)
+
+## questions to answer:
+- is the kalmann filter implemented in aruco_tracker or redundant in every demo?
 
 ## Webserver / Headless
 - Webserver-Fähigkeit hinzufügen, komplett headless
