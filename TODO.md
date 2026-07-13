@@ -1,5 +1,12 @@
 # TODO
 
+Fix inconsistancies in SWARM_DASHBOARD and ROBOT communication:
+- in some cases, runnnig circle_demo works as expected and the robots move properly, but SWARM_DASHBOARD has issues
+  communicating properly with the robots.
+- i suspect the culprit beeing the receivers not getting registered well to the dongle, resulting in them not sending telemetry
+  reliably
+- this is fixable by restarting each robot (suggesting my suspection of the receivers possible sort of exiting the registration/announcing mode)
+
 (NEXT UP) ## Clean up Swarmhub code and terminal output, make it run as deamon on default.
 
 (NEXT UP) ## Clean up unnessary comments
