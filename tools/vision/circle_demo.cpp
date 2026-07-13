@@ -1,7 +1,7 @@
 // circle_demo.cpp — Circle orbit formation controller
 // Usage: ./circle_demo [--serial SN] [--ip IP] [--calibrate]
 //                      [--radius MM] [--min-gap MM] [--orbit-speed DEG_S]
-//                      [--speed PCT] [--log-perf] [--log-score]
+//                      [--speed PCT] [--count N] [--log-perf] [--log-score]
 // Controls: left-click = set circle centre, s = stop, c = calibrate,
 //           0-9 = select robot (again to deselect),
 //           +/- = radius ±25mm  (or robot speed ±10% when robot selected),
@@ -453,6 +453,7 @@ int main(int argc, char* argv[]) {
     float minGapMm    = -1.f;
     float orbitSpeed  = -1.f;
     float speedPct    = 35.f;
+    int   robotCount  = -1;
     bool  doCalibrate = false;
     bool  logPerf     = false;
     bool  logScore    = false;
@@ -464,6 +465,7 @@ int main(int argc, char* argv[]) {
         if (!strcmp(argv[i], "--min-gap")      && i+1<argc) minGapMm   = atof(argv[++i]);
         if (!strcmp(argv[i], "--orbit-speed")  && i+1<argc) orbitSpeed = atof(argv[++i]);
         if (!strcmp(argv[i], "--speed")        && i+1<argc) speedPct   = atof(argv[++i]);
+        if (!strcmp(argv[i], "--count")        && i+1<argc) robotCount = atoi(argv[++i]);
         if (!strcmp(argv[i], "--calibrate"))                doCalibrate = true;
         if (!strcmp(argv[i], "--log-perf"))                 logPerf     = true;
         if (!strcmp(argv[i], "--log-score"))                logScore    = true;
@@ -477,6 +479,7 @@ int main(int argc, char* argv[]) {
     auto cfg = ArucoConfig::fromFile();
     if (!serial.empty()) cfg.baslerSerial = serial;
     if (!ip.empty())     cfg.baslerIp     = ip;
+    if (robotCount > 0)  cfg.robotCount   = robotCount;
     cfg.debugOverlay = true;
     ArucoTracker tracker(cfg);
     if (!tracker.open()) { fprintf(stderr, "Could not open Basler camera.\n"); return 1; }
