@@ -20,7 +20,6 @@ from pathlib import Path
 import serial.tools.list_ports
 
 ROBOT_DIR = Path(__file__).resolve().parent.parent / 'src' / 'robots'
-print(ROBOT_DIR)
 SKIP_FILES = {Path(__file__).name}  # glob("*.py") skips dotfiles already; only exclude this script
 FILES = sorted(p for p in ROBOT_DIR.glob("*.py") if p.name not in SKIP_FILES)
 
@@ -165,6 +164,25 @@ def deploy_problems(result):
         elif got[1] != "-" and got[1] != hashlib.sha256(data).hexdigest():
             problems.append(f"{f.name}: content mismatch (corrupt copy)")
     return problems
+
+
+def onboard_verify_problems(port):
+    """Reconnects fresh (soft-reset, so nothing else is running) and
+    verifies on-device content by size+sha256 against FILES.
+
+    Reuses deploy_problems' comparison logic, which only cares about the
+    VERIFY lines in an mpremote result, not how that result was produced —
+    msc-flash.py uses this for its real check: verifying post-reboot,
+    after a non-mpremote write, since that's the only way to catch
+    corruption that a same-session verify can't see.
+    """
+    verify_code = VERIFY_CODE_TEMPLATE.format(names=repr([f.name for f in FILES]))
+    cmd = ["mpremote", "connect", port,
+           "soft-reset", "+",
+           "exec", verify_code, "+",
+           "soft-reset"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return deploy_problems(result)
 
 
 def flash(port):
