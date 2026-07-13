@@ -9,11 +9,9 @@
 
 class BaslerPylonSource : public ICameraSource {
 public:
-    BaslerPylonSource()  { Pylon::PylonInitialize(); }
     ~BaslerPylonSource() {
         if (camera_.IsGrabbing()) camera_.StopGrabbing();
         if (camera_.IsOpen())    camera_.Close();
-        Pylon::PylonTerminate();
     }
 
     bool open(const ArucoConfig& cfg) override {
@@ -121,6 +119,10 @@ public:
     }
 
 private:
+    // Declared first so it is destroyed last: PylonTerminate must not run
+    // until every other pylon object (camera_, converter_) is gone, or their
+    // destructors touch an already-torn-down runtime and segfault.
+    Pylon::PylonAutoInitTerm             pylonRuntime_;
     Pylon::CBaslerUniversalInstantCamera camera_;
     Pylon::CImageFormatConverter         converter_;
     int width_  = 0;
