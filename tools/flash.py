@@ -19,12 +19,14 @@ from pathlib import Path
 
 import serial.tools.list_ports
 
-ROBOT_DIR = Path(__file__).resolve().parent
+ROBOT_DIR = Path(__file__).resolve().parent.parent / 'src' / 'robots'
+print(ROBOT_DIR)
 SKIP_FILES = {Path(__file__).name}  # glob("*.py") skips dotfiles already; only exclude this script
 FILES = sorted(p for p in ROBOT_DIR.glob("*.py") if p.name not in SKIP_FILES)
 
 POLL_INTERVAL_S = 0.5
 SETTLE_DELAY_S = 1.0
+EJECT_SETTLE_DELAY_S = 0.3
 CONNECT_RETRIES = 3
 
 RED = "\033[1;31m"
@@ -167,10 +169,17 @@ def deploy_problems(result):
 
 def flash(port):
     print(f"--> {port}: deploying {', '.join(f.name for f in FILES)}")
-    unmount_micropython_volume()
     for attempt in range(1, CONNECT_RETRIES + 1):
         if attempt > 1:
             time.sleep(SETTLE_DELAY_S)
+        # Re-eject on every attempt, not just the first: the host can silently
+        # remount this volume mid-copy (macOS Disk Arbitration re-mounts
+        # removable volumes it can still see a filesystem on, even after an
+        # explicit eject, as long as the device stays connected) at any point
+        # during a prior attempt's cp, leaving later retries racing against an
+        # already-remounted drive with no protection at all.
+        unmount_micropython_volume()
+        time.sleep(EJECT_SETTLE_DELAY_S)
         result = subprocess.run(deploy_cmd(port), capture_output=True, text=True)
         for line in (result.stdout + result.stderr).splitlines():
             if not line.startswith("VERIFY "):
