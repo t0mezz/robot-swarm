@@ -279,10 +279,12 @@ static bool runCalibration(ArucoTracker& tracker) {
 //
 // Slot assignment:
 //   N robots → N evenly-spaced slots around the circle.
-//   Each frame we solve the assignment that minimises total angular travel
-//   (greedy nearest-slot, which is optimal for ≤~8 robots in practice).
-//   Robots drive to their slot; once all are within ARRIVAL_MM the formation
-//   is "locked" and each robot just holds its slot.
+//   Whenever membership changes (register/evict) or the centre moves, the
+//   assignment is recomputed from current positions by assignNearestSlots():
+//   robots sorted by angle take consecutive slots (order-preserving matching
+//   on a circle minimises travel and keeps approach paths from crossing),
+//   with the best cyclic shift and pattern rotation chosen by least squares.
+//   Between such events assignments are stable — see "Stable slot registry".
 //
 // Minimum-gap enforcement:
 //   After slot assignment we check every adjacent pair.  If their current
@@ -374,6 +376,56 @@ static void enforceMinGap(std::unordered_map<int,float>& slots,
     }
 
     for (auto& [id, a] : vec) slots[id] = a;
+}
+
+// Permute slot indices so each robot heads for the nearest free slot.
+// Robots sorted by current angle take consecutive slot indices — on a circle
+// the travel-optimal matching to evenly spaced slots is order-preserving, so
+// only the N cyclic shifts need checking, and it guarantees approach paths
+// don't cross.  For each shift the whole pattern is additionally rotated by
+// the circular-mean residual (least-squares optimal phase).  Returns that
+// phase in degrees: slot angle = slotIndex * 360/N + phase.
+// Falls back to the existing indices (phase 0) while any robot's angle is
+// still unknown (e.g. centre not yet set when it was registered).
+static float assignNearestSlots(std::unordered_map<int,int>& slotIndex,
+                                const std::unordered_map<int,float>& angleById)
+{
+    int N = (int)slotIndex.size();
+    if (N == 0) return 0.f;
+    for (auto& [id, _] : slotIndex)
+        if (!angleById.count(id)) return 0.f;
+
+    std::vector<std::pair<float,int>> byAngle;   // {current angle deg, id}
+    byAngle.reserve(N);
+    for (auto& [id, _] : slotIndex) byAngle.push_back({angleById.at(id), id});
+    std::sort(byAngle.begin(), byAngle.end());
+
+    const float slotStep = 360.f / N;
+    const float DEG2RAD  = (float)M_PI / 180.f;
+    float bestCost = 1e30f;
+    int   bestShift = 0;
+    float bestPhase = 0.f;
+    std::vector<float> res(N);
+
+    for (int s = 0; s < N; ++s) {
+        float sumSin = 0.f, sumCos = 0.f;
+        for (int k = 0; k < N; ++k) {
+            res[k] = normAngle(byAngle[k].first - (float)((k + s) % N) * slotStep);
+            sumSin += sinf(res[k] * DEG2RAD);
+            sumCos += cosf(res[k] * DEG2RAD);
+        }
+        float phase = atan2f(sumSin, sumCos) / DEG2RAD;
+        float cost  = 0.f;
+        for (int k = 0; k < N; ++k) {
+            float d = normAngle(res[k] - phase);
+            cost += d * d;
+        }
+        if (cost < bestCost) { bestCost = cost; bestShift = s; bestPhase = phase; }
+    }
+
+    for (int k = 0; k < N; ++k)
+        slotIndex[byAngle[k].second] = (k + bestShift) % N;
+    return bestPhase;
 }
 
 // ── Mouse ─────────────────────────────────────────────────────────────────────
@@ -483,14 +535,17 @@ int main(int argc, char* argv[]) {
     std::unordered_map<int, std::chrono::steady_clock::time_point> robotLostSince;
 
     // Stable slot registry.
-    // Each robot is assigned a slot index on first detection; the slot angle is
-    // slotIndex * (360 / registeredCount).  Slots only change when a genuinely
-    // new robot joins or when one has been absent for > EVICT_TIMEOUT_S.
-    // Temporary detection drops (50 % detection rate, etc.) leave the count and
-    // angles untouched, so no spurious reassignment occurs.
+    // Each robot gets a provisional slot index on first detection; whenever the
+    // registered count changes (or the centre moves) assignNearestSlots()
+    // permutes the indices so everyone drives to the nearest slot, and the slot
+    // angle becomes slotIndex * (360 / registeredCount) + phase.  Between those
+    // events slots are stable: temporary detection drops (50 % detection rate,
+    // etc.) leave the count and angles untouched, so no spurious reassignment
+    // occurs.
     std::unordered_map<int, int>   robotSlotIndex;    // id → slot index
     int                             registeredCount = 0;
     std::unordered_map<int, float> persistentSlots;   // id → slot angle (deg)
+    std::unordered_map<int, float> lastAngleById;     // id → last-known angle (deg) around centre
 
     // Per-robot EMA-smoothed yaw.  Seeded on first detection; updated only when
     // the robot is visible.  Handles angle wrap via normAngle delta.
@@ -506,6 +561,12 @@ int main(int argc, char* argv[]) {
     std::unordered_map<int, ControlScore> robotScore;
 
     printf("\nLeft-click = centre  +/- = radius\nt = orbit  [ / ] = orbit speed  s = stop  c = calibrate  q = quit\n\n");
+
+    // Slot assignment needs recomputing outside of membership changes: set when
+    // the centre moves or orbit tracking ends (robots are at new angles).
+    // Persists across iterations because key handling runs after the
+    // reassignment block; cleared once consumed.
+    bool slotsDirty = false;
 
     while (g_running) {
         if (!tracker.update()) {
@@ -556,6 +617,7 @@ int main(int argc, char* argv[]) {
             cv::Point2f w = pixelToWorld({(float)g_clickPt.x, (float)g_clickPt.y});
             circle.centre    = w;
             circle.centreSet = true;
+            slotsDirty       = true;   // robot angles changed → reassign slots
             printf("Circle centre: (%.0f, %.0f)  radius: %.0f mm\n", w.x, w.y, circle.radius);
             saveCircle(circle);
             g_leftClick = false;
@@ -582,6 +644,16 @@ int main(int argc, char* argv[]) {
                 it->second  = normAngle(it->second + yawAlpha * delta);
             }
             pose.yaw = it->second;
+        }
+
+        // Remember each visible robot's angle around the centre — used by
+        // assignNearestSlots() so briefly-undetected robots keep a usable angle.
+        if (circle.centreSet) {
+            for (auto& [id, pose] : poseById) {
+                float a = atan2f(pose.y - circle.centre.y, pose.x - circle.centre.x) * 180.f / (float)M_PI;
+                if (a < 0) a += 360.f;
+                lastAngleById[id] = a;
+            }
         }
 
         // ── Registration / eviction ───────────────────────────────────────────
@@ -623,6 +695,7 @@ int main(int argc, char* argv[]) {
                     robotSlotIndex.erase(id);
                     robotLostSince.erase(id);
                     persistentSlots.erase(id);
+                    lastAngleById.erase(id);
                     smoothedYaw.erase(id);
                     angleErrRate.erase(id);
                     yawRateEst.erase(id);
@@ -637,11 +710,14 @@ int main(int argc, char* argv[]) {
                 }
             }
 
-            // Recompute all slot angles whenever the count changes.
-            if (countChanged && registeredCount > 0) {
+            // Recompute the assignment and all slot angles whenever the count
+            // changes or the centre was moved.
+            if ((countChanged || slotsDirty) && registeredCount > 0) {
+                slotsDirty = false;
+                float phase = assignNearestSlots(robotSlotIndex, lastAngleById);
                 persistentSlots.clear();
                 for (auto& [id, slotIdx] : robotSlotIndex)
-                    persistentSlots[id] = slotIdx * 360.f / registeredCount;
+                    persistentSlots[id] = fmodf(slotIdx * 360.f / registeredCount + phase + 360.f, 360.f);
                 enforceMinGap(persistentSlots, circle.radius, circle.minGapMm);
             }
         }
@@ -1028,6 +1104,9 @@ int main(int argc, char* argv[]) {
         }
         if (key == 't') {
             circle.tracking = !circle.tracking;
+            // Returning to position mode: robots have orbited away from their
+            // old slots, so reassign from current angles next frame.
+            if (!circle.tracking) slotsDirty = true;
             printf("Tracking: %s\n", circle.tracking ? "ON" : "OFF");
         }
         if (key == ']') {
