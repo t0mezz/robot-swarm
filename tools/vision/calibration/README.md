@@ -7,57 +7,66 @@ set up in a new room, change the lighting, or notice detection quality degrading
 ## Quick start
 
 ```sh
-cd tools/calibration
+cd tools/vision/calibration
 make
 
-# Static — tune for still markers (good baseline, run first)
+# Tune for still markers (interactive capture, then offline optimisation)
 ../../build/calibrate
 
-# Motion — tune for moving robots
-../../build/calibrate --motion
+# Re-run the optimiser on the frames saved by the last run (no camera needed)
+../../build/calibrate --use-cache
+
+# Score the current config without optimising
+../../build/calibrate --eval
 ```
 
 ## How it works
 
-**Phase 1 — Capture (once):**
-Frames are captured from the live camera and stored in memory.
-- Static: 60 frames (~2 s), markers held still
-- Motion: 120 frames (~4 s), robots driving at operating speed
+**Phase 1 — Capture (interactive):**
+A live preview window opens.  Press SPACE to capture a frame; press ENTER or Q
+when you have enough.  At least 5 frames are recommended — more pictures from
+varied positions give the optimiser a broader dataset.  Captured frames are
+saved as PNGs to `--cache-dir` so later runs can skip this phase with
+`--use-cache`.
 
 **Phase 2 — Optimisation (offline):**
 CMA-ES runs for up to 150 generations.  Each generation evaluates ~11 candidate
-configs by replaying the detector against the cached frames — the camera is never
-touched again.  At ~1 ms per detection, one generation takes ~660 ms and a full
-run completes in roughly 2 minutes.
+configs by replaying the detector against the captured frames — the camera is
+never touched again.  At ~1 ms per detection, one generation takes ~660 ms and
+a full run completes in roughly 2 minutes.
 
 **Output:**
-The winning config is written back to `aruco_tracker_config.json` and a diff of
-changed parameters is printed.
+The winning config is written to `aruco_tracker_config_optimised.json` (or
+`--output`) and a diff of changed parameters is printed.
 
 ## All flags
 
 | Flag | Default | Description |
 |---|---|---|
-| `--static` | ✓ | Optimise for still markers |
-| `--motion` | | Optimise for moving robots |
-| `--camera <idx>` | 0 | Camera index |
-| `--frames <n>` | 60 / 120 | Frames to capture (static / motion) |
+| `--eval` | | Evaluate the current config only (no optimisation) |
+| `--use-cache` | | Skip capture and reuse frames saved by the last run |
+| `--cache-dir <path>` | `/tmp/calib_frame_cache` | Directory for the frame cache |
+| `--serial <sn>` | from config | Basler camera serial number |
+| `--ip <addr>` | from config | Basler camera IP address |
+| `--ids <n>` | auto-detect | Treat IDs 0…n as the expected marker set (e.g. `--ids 2` → markers 0, 1, 2) |
 | `--iters <n>` | 150 | CMA-ES generations |
 | `--sigma <f>` | 0.30 | Initial step size in [0,1] space |
 | `--config <path>` | `../aruco_tracker_config.json` | Base config to start from |
-| `--output <path>` | same as `--config` | Where to write the result |
+| `--output <path>` | `../aruco_tracker_config_optimised.json` | Where to write the result |
 
 ## File structure
 
 ```
-calibration/
+tools/vision/calibration/
 ├── calib_main.cpp        CLI entry point — ties optimizer + objective together
+├── Makefile
+└── README.md
+
+lib/Calibration/
 ├── cmaes.h               IOptimizer interface + full CMA-ES implementation
 ├── param_space.h         Search space: bounds, encode/decode, makeDetector, writeConfig
 ├── objective.h           IObjective interface + detectFrame/preprocessGray helpers
-├── objective_static.h    StaticObjective  — still-scene scoring
-├── objective_motion.h    MotionObjective  — moving-robot scoring
-└── Makefile
+└── objective_static.h    StaticObjective  — still-scene scoring
 ```
 
 ## Scoring
@@ -70,16 +79,6 @@ score = 0.7 · detection_rate + 0.3 · corner_stability
   was successfully found
 - **corner_stability** — 1 − (mean per-corner std-dev / 5% of marker perimeter);
   rewards configs where detected corner positions are consistent across frames
-
-### Motion objective
-```
-score = 0.5 · detection_rate + 0.3 · streak_ratio + 0.2 · smoothness
-```
-- **detection_rate** — same as static
-- **streak_ratio** — longest consecutive detection run / total frames; penalises
-  flickering configs that break the Kalman tracker's prediction window
-- **smoothness** — 1 − velocity_std / mean_speed; a config that drops and
-  re-acquires a marker produces large apparent velocity jumps — this catches that
 
 ## Parameters being optimised
 
@@ -104,9 +103,19 @@ are preserved from the base config.
 
 ## Planned extensions
 
-### Motion objective improvements
-The current motion scoring assumes all robots move continuously.
-Two refinements worth adding:
+### Motion objective (`objective_motion.h`)
+A `MotionObjective : IObjective` scored on frames of robots driving at
+operating speed, e.g.:
+```
+score = 0.5 · detection_rate + 0.3 · streak_ratio + 0.2 · smoothness
+```
+- **detection_rate** — same as static
+- **streak_ratio** — longest consecutive detection run / total frames; penalises
+  flickering configs that break the Kalman tracker's prediction window
+- **smoothness** — 1 − velocity_std / mean_speed; a config that drops and
+  re-acquires a marker produces large apparent velocity jumps — this catches that
+
+Refinements worth adding beyond the basic scoring:
 - **Occlusion tolerance** — exclude frames where a robot is legitimately out of
   frame from the detection rate denominator (use a convex-hull visibility estimate)
 - **Per-robot speed weighting** — robots at the edge of the frame move through

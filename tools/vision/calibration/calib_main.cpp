@@ -56,8 +56,8 @@ struct Args {
     int         idsMax   = -1;
     int         maxIter  = 150;
     double      sigma0   = 0.30;
-    std::string config   = "../aruco_tracker_config.json";
-    std::string output   = "../aruco_tracker_config_optimised.json";
+    std::string config   = "../vision/aruco_tracker_config.json";
+    std::string output   = "../vision/aruco_tracker_config_optimised.json";
 };
 
 static Args parseArgs(int argc, char** argv) {

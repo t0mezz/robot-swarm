@@ -20,7 +20,10 @@ ifeq ($(UNAME), Darwin)
 else
     PYLON_CFLAGS   = $(shell pylon-config --cflags 2>/dev/null) \
                      -Wno-overloaded-virtual -Wno-unused-variable
-    PYLON_LIBS     = $(shell pylon-config --libs 2>/dev/null)
+    # pylon-config only emits -L/opt/pylon/lib (a link-time path); without an
+    # rpath the binary can't find libpylonbase.so.10 etc. at runtime since
+    # /opt/pylon/lib isn't registered with ldconfig.
+    PYLON_LIBS     = $(shell pylon-config --libs 2>/dev/null) -Wl,-rpath,/opt/pylon/lib
 endif
 
 LIBHDRS  = $(LIBDIR)/ArucoTracker/aruco_tracker.h \
