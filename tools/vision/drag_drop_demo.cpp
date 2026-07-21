@@ -12,6 +12,8 @@
 #include "aruco_tracker.h"
 #include "SwarmClient.h"
 #include "DemoHud.h"
+#include "goto_controller.h"
+#include "avoidance.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -29,27 +31,43 @@
 
 // ── Tunables ──────────────────────────────────────────────────────────────────
 
+// The control law itself lives in lib/SwarmControl/goto_controller.h; these are
+// this demo's tuned gains for it. See that header before changing any of them —
+// the other demos deliberately run different values.
 static constexpr float K_DIST        = 0.40f;
 static constexpr float K_ANGLE       = 0.50f;
 static constexpr float K_YAW_D       = 0.08f;
-static constexpr float MAX_SPEED     = 60.0f;
-static constexpr float MAX_TURN      = 16.0f;
+// MAX_SPEED and MAX_TURN must be raised TOGETHER. computeGoto emits
+// forward ± turn into a ±100 motor clamp, so a faster robot with unchanged turn
+// authority saturates the outer wheel and turns lazily — and a lazy turn needs a
+// longer dodge runway (see AvoidParams::dangerMm). Scaling both keeps the turn
+// rate proportional to speed, which leaves the avoidance geometry intact:
+// verified in sim at 1.5x (60/16 -> 90/24), all four encounter types still clear.
+static constexpr float MAX_SPEED     = 90.0f;   // 1.5x
+static constexpr float MAX_TURN      = 24.0f;   // 1.5x, in step with MAX_SPEED
 static constexpr float ARRIVAL_MM    = 20.0f;
 static constexpr float SEND_INT_S    = 0.05f;
-// Yaw low-pass, specified as a time-constant (seconds), NOT a fixed per-frame
-// EMA coefficient: each frame we convert it to alpha = dt/(YAW_TAU_S + dt) using
-// the actual frame dt, so the smoothing holds the same memory in *time* at any
-// loop rate. A fixed per-frame alpha silently over-smooths (heading lag →
-// limit-cycle) when the loop runs slower than it was tuned for — e.g. on a
-// weaker PC or at higher camera resolution. 0.50s matches the value found to
-// kill that oscillation in circle_demo; see its YAW_TAU_S comment for the full
-// derivation. Lower toward ~0.10s on a fast camera/PC if the lag cuts corners.
-static constexpr float YAW_TAU_S     = 0.50f;
-static constexpr float DANGER_MM     = 120.0f;
-static constexpr float SAFE_MM       = 230.0f;
-static constexpr float AVOID_BLEND   = 0.70f;
-static constexpr float DRAG_RADIUS_PX = 38.0f;  // pixel hit radius for drag pick
+// Yaw low-pass time-constant, seconds — see YawSmoother in goto_controller.h
+// for why this is a time-constant and not a per-frame EMA coefficient.
+static constexpr float YAW_TAU_S     = 0.70f;
+// Avoidance is dodge-based, not brake-based — see lib/SwarmControl/avoidance.h.
+// DANGER_MM triggers the dodge, SAFE_MM releases it (the gap between them is
+// the hysteresis that keeps a maneuver committed). AVOID_BLEND is high and
+// DODGE_SPEED_FRAC near full speed on purpose: the dodger needs to actually get
+// around, and only the dodger is ever slowed.
+// NOTE: DANGER_MM is bounded below by MAX_SPEED — a dodge cannot complete in
+// less distance than it takes to turn (see AvoidParams::dangerMm for the
+// inequality). At MAX_SPEED 60 that floor is ~340mm, hence 500. If the arena is
+// too small to give pairs that much room, lower MAX_SPEED rather than this.
+static constexpr float DANGER_MM     = 500.0f;
+static constexpr float SAFE_MM       = 1000.0f;
+static constexpr float AVOID_BLEND   = 0.95f;
+static constexpr float DODGE_SPEED_FRAC = 0.70f;
+static constexpr float DRAG_RADIUS_PX= 38.0f;  // pixel hit radius for drag pick
 static constexpr int   MAX_ROBOTS    = 32;
+
+using swarmctl::normAngle;
+using swarmctl::clampf;
 
 static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
 
@@ -74,17 +92,6 @@ struct MouseState {
 };
 static MouseState g_mouse;
 
-// ── Math helpers ──────────────────────────────────────────────────────────────
-
-static float normAngle(float a) {
-    while (a >  180.f) a -= 360.f;
-    while (a < -180.f) a += 360.f;
-    return a;
-}
-static float clampf(float v, float lo, float hi) {
-    return v < lo ? lo : v > hi ? hi : v;
-}
-
 // ── World coordinate helpers ──────────────────────────────────────────────────
 
 static cv::Point2f pixelToWorld(cv::Point2f px) {
@@ -102,29 +109,29 @@ static cv::Point2f worldToPixel(cv::Point2f w) {
 }
 
 // ── Avoidance ─────────────────────────────────────────────────────────────────
+// Pair scan, priority rules and detour math live in lib/SwarmControl/avoidance.h.
+// This demo supplies only its own policy: what counts as "moving" (has a goal,
+// and is not yet within the arrival radius).
+//
+// The engine is stateful — it latches each dodge so the maneuver holds instead
+// of cancelling itself — so it must persist across frames, not be rebuilt.
 
-struct AvoidState {
-    float minDist = 1e6f;  // closest robot — speed scaling + hard stop
-    bool  arc     = false; // this robot should arc around an obstacle
-    float arcDx   = 0.f;
-    float arcDy   = 0.f;
+static const swarmctl::AvoidParams AVOID_PARAMS = {
+    .dangerMm = DANGER_MM,
+    .safeMm   = SAFE_MM,
+    .blend    = AVOID_BLEND,
+    .faceDot  = 0.25f,
+    .dodgeSpeedFrac = DODGE_SPEED_FRAC,
+    // Scaled with MAX_SPEED: the last-resort stop has to fire early enough to
+    // bleed off a proportionally faster approach (160 at MAX_SPEED 60).
+    .emergencyMm = 240.0f,
 };
 
-// O(N²/2) pair scan.
-//   Moving → Stationary : moving robot always arcs (ignores ID priority)
-//   Moving → Moving     : face-to-face → lower priority (higher ID) arcs
-//   Either pair         : both get proximity minDist for speed scaling
-static std::unordered_map<int, AvoidState> buildAvoidance(
-    const std::unordered_map<int, RobotPose>& poses)
+static swarmctl::AvoidanceEngine g_avoid(AVOID_PARAMS);
+
+static std::unordered_map<int, swarmctl::AvoidState> buildAvoidance(
+    const std::unordered_map<int, RobotPose>& poses, float dt)
 {
-    std::unordered_map<int, AvoidState> result;
-    for (auto& [id, _] : poses) result[id] = {};
-
-    std::vector<int> ids;
-    ids.reserve(poses.size());
-    for (auto& [id, _] : poses) ids.push_back(id);
-    std::sort(ids.begin(), ids.end());
-
     auto isMoving = [&](int id) -> bool {
         auto git = g_goals.find(id);
         if (git == g_goals.end()) return false;
@@ -132,71 +139,7 @@ static std::unordered_map<int, AvoidState> buildAvoidance(
         float dx = git->second.x - p.x, dy = git->second.y - p.y;
         return sqrtf(dx*dx + dy*dy) > ARRIVAL_MM;
     };
-
-    // Add arc perpendicular to (a→b) choosing the side that keeps `who` moving forward
-    auto giveArc = [&](int who, float ny_ab, float nx_ab, float hx, float hy) {
-        auto& cs  = result[who];
-        cs.arc    = true;
-        // two candidate perps to the a→b line
-        float p1x = -ny_ab, p1y =  nx_ab;
-        float p2x =  ny_ab, p2y = -nx_ab;
-        if (hx*p1x + hy*p1y >= hx*p2x + hy*p2y)
-            { cs.arcDx += p1x; cs.arcDy += p1y; }
-        else
-            { cs.arcDx += p2x; cs.arcDy += p2y; }
-    };
-
-    for (size_t i = 0; i < ids.size(); i++) {
-        for (size_t j = i + 1; j < ids.size(); j++) {
-            int lo = ids[i], hi = ids[j];   // lo < hi  ⟹  lo has higher priority
-            const auto& pLo = poses.at(lo);
-            const auto& pHi = poses.at(hi);
-            float dx   = pHi.x - pLo.x;
-            float dy   = pHi.y - pLo.y;
-            float dist = sqrtf(dx*dx + dy*dy);
-            if (dist >= SAFE_MM) continue;
-
-            result[lo].minDist = std::min(result[lo].minDist, dist);
-            result[hi].minDist = std::min(result[hi].minDist, dist);
-
-            float nx = dx / dist, ny = dy / dist;  // unit lo→hi
-            float loHx = cosf(pLo.yaw * (float)M_PI / 180.f);
-            float loHy = sinf(pLo.yaw * (float)M_PI / 180.f);
-            float hiHx = cosf(pHi.yaw * (float)M_PI / 180.f);
-            float hiHy = sinf(pHi.yaw * (float)M_PI / 180.f);
-
-            bool loMoving = isMoving(lo);
-            bool hiMoving = isMoving(hi);
-
-            if (loMoving && !hiMoving) {
-                // lo moving toward stationary hi — lo avoids (ignores priority).
-                // Also escape when already inside danger zone.
-                if (dist < DANGER_MM || loHx*nx + loHy*ny > 0.25f)
-                    giveArc(lo, ny, nx, loHx, loHy);
-
-            } else if (!loMoving && hiMoving) {
-                // hi moving toward stationary lo — hi avoids (ignores priority).
-                if (dist < DANGER_MM || hiHx*(-nx) + hiHy*(-ny) > 0.25f)
-                    giveArc(hi, ny, nx, hiHx, hiHy);
-
-            } else if (loMoving && hiMoving) {
-                // Both moving — face-to-face: higher ID (lower priority) arcs.
-                // Also trigger in danger zone even without face-to-face — emergency escape.
-                bool faceFace = (loHx*nx  + loHy*ny)  > 0.25f
-                             && (hiHx*(-nx) + hiHy*(-ny)) > 0.25f;
-                if (faceFace || dist < DANGER_MM)
-                    giveArc(hi, ny, nx, hiHx, hiHy);
-            }
-        }
-    }
-
-    for (auto& [id, cs] : result) {
-        if (cs.arc) {
-            float len = sqrtf(cs.arcDx*cs.arcDx + cs.arcDy*cs.arcDy);
-            if (len > 0.f) { cs.arcDx /= len; cs.arcDy /= len; }
-        }
-    }
-    return result;
+    return g_avoid.update(poses, isMoving, dt);
 }
 
 // ── Mouse callback ────────────────────────────────────────────────────────────
@@ -288,7 +231,7 @@ static bool runCalibration(ArucoTracker& tracker, const char* win) {
 // frame, docked top-right — same style and placement as every other demo.
 static void drawTelHud(cv::Mat& disp,
     const std::unordered_map<int, RobotPose>& poses,
-    const std::unordered_map<int, AvoidState>& avoidance,
+    const std::unordered_map<int, swarmctl::AvoidState>& avoidance,
     const int8_t motors[][2],
     SwarmClient& swarm, float fps)
 {
@@ -307,13 +250,17 @@ static void drawTelHud(cv::Mat& disp,
     for (int id : allIds) {
         const auto& ss  = swarm.robotState((uint8_t)id);
         bool vis = poses.count(id) > 0;
-        bool arc = vis && avoidance.count(id) && avoidance.at(id).arc;
+        bool dodge = vis && avoidance.count(id) && avoidance.at(id).dodging;
+        bool prio  = vis && avoidance.count(id) && avoidance.at(id).priority && !dodge;
 
         cv::Scalar col = !vis ? (ss.known ? DemoHud::COL_WARN : DemoHud::COL_TEXT)
-                               : arc ? DemoHud::COL_WARN : DemoHud::COL_OK;
+                               : dodge ? DemoHud::COL_WARN : DemoHud::COL_OK;
 
+        // DODGE / HOLD are the two halves of one conflict — seeing which robot
+        // got which is the fastest way to tell whether the nomination was sane.
         const char* status = !vis ? (ss.known ? "RADIO" : "UNSEEN")
-                                  : arc ? "ARC"
+                                  : dodge ? "DODGE"
+                                  : prio  ? "HOLD"
                                   : g_goals.count(id) ? "GOAL" : "IDLE";
 
         hud.row({
@@ -381,8 +328,16 @@ int main(int argc, char* argv[]) {
     cv::setMouseCallback(WIN, onMouse, nullptr);
     if (doCalib) runCalibration(tracker, WIN);
 
-    std::unordered_map<int, float> smoothedYaw;
-    std::unordered_map<int, float> prevAngleErr;
+    swarmctl::YawSmoother smoothedYaw(YAW_TAU_S);
+    std::unordered_map<int, swarmctl::GotoState> gotoState;
+
+    const swarmctl::GotoParams GOTO_PARAMS = [] {
+        swarmctl::GotoParams p;
+        p.kDist = K_DIST; p.kAngle = K_ANGLE; p.kYawD = K_YAW_D;
+        p.maxTurn = MAX_TURN; p.arrivalMm = ARRIVAL_MM;
+        p.brake = true;   // single terminal goal — ease into it
+        return p;
+    }();
     int8_t motors[MAX_ROBOTS][2]     = {};
     int8_t lastMotors[MAX_ROBOTS][2] = {};
 
@@ -419,25 +374,19 @@ int main(int argc, char* argv[]) {
         float fpsDt = std::chrono::duration<float>(now - lastFpsT).count();
         if (fpsDt >= 1.f) { fps = frameCount/fpsDt; frameCount = 0; lastFpsT = now; }
 
-        // Build pose map with smoothed yaw. alpha derived per-frame from
-        // controlDt so the time-constant (YAW_TAU_S) holds regardless of loop rate.
-        float yawAlpha = controlDt / (YAW_TAU_S + controlDt);
+        // Build pose map with smoothed yaw.
         g_poses.clear();
         for (auto& r : tracker.robots()) {
             RobotPose pose = r;
-            auto [it, fresh] = smoothedYaw.emplace(r.id, r.yaw);
-            if (!fresh) {
-                float delta = normAngle(r.yaw - it->second);
-                it->second += yawAlpha * delta;
-            }
-            pose.yaw = it->second;
+            pose.yaw = smoothedYaw.update(r.id, r.yaw, controlDt);
             g_poses[r.id] = pose;
         }
 
         // Avoidance
-        std::unordered_map<int, AvoidState> avoidance;
-        if (g_poses.size() > 1)
-            avoidance = buildAvoidance(g_poses);
+        // Called unconditionally, even with 0/1 robots visible: the engine holds
+        // latch state, and skipping the call would strand stale dodges when
+        // robots drop out of tracking.
+        auto avoidance = buildAvoidance(g_poses, controlDt);
 
         // Motor control
         memcpy(motors, lastMotors, sizeof(motors));
@@ -445,29 +394,10 @@ int main(int argc, char* argv[]) {
         for (auto& [id, pose] : g_poses) {
             auto& av = avoidance[id];
 
-            float maxSpd  = MAX_SPEED * robotSpeed(id);
-            bool  hardStop = false;
-            float arcX = 0.f, arcY = 0.f, arcBlend = 0.f;
+            auto act = swarmctl::applyAvoidance(av, MAX_SPEED * robotSpeed(id),
+                                                AVOID_PARAMS);
 
-            float halfD = DANGER_MM * 0.5f;
-            if (av.minDist < halfD) {
-                if (av.arc) {
-                    maxSpd *= 0.15f;  // dodging: crawl through maneuver, don't hard stop
-                } else {
-                    hardStop = true;
-                }
-            } else if (av.minDist < SAFE_MM) {
-                float s = clampf((av.minDist - halfD) / (SAFE_MM - halfD), 0.f, 1.f);
-                maxSpd *= s;
-            }
-            if (av.arc) {
-                float str = clampf(1.f - (av.minDist - DANGER_MM) / (SAFE_MM - DANGER_MM), 0.f, 1.f);
-                arcBlend = AVOID_BLEND * str;
-                arcX = av.arcDx;
-                arcY = av.arcDy;
-            }
-
-            if (hardStop) { motors[id][0] = motors[id][1] = 0; continue; }
+            if (act.hardStop) { motors[id][0] = motors[id][1] = 0; continue; }
 
             auto git = g_goals.find(id);
             if (git == g_goals.end()) { motors[id][0] = motors[id][1] = 0; continue; }
@@ -479,28 +409,13 @@ int main(int argc, char* argv[]) {
             if (dist < ARRIVAL_MM) { motors[id][0] = motors[id][1] = 0; continue; }
 
             // Bend toward arc detour direction
-            dx += arcX * dist * arcBlend;
-            dy += arcY * dist * arcBlend;
+            dx += act.arcX * dist * act.arcBlend;
+            dy += act.arcY * dist * act.arcBlend;
 
-            float tgtAngle  = atan2f(dy, dx) * 180.f / (float)M_PI;
-            float angleErr  = normAngle(tgtAngle - pose.yaw);
-            float headingN  = clampf(fabsf(angleErr) / 90.f, 0.f, 1.f);
-            float headingSc = 1.f - headingN * headingN;
-            float brakeSc   = clampf((dist - ARRIVAL_MM) / ARRIVAL_MM, 0.f, 1.f);
-
-            float dAngleErr = 0.f;
-            {
-                auto it = prevAngleErr.find(id);
-                if (it != prevAngleErr.end())
-                    dAngleErr = clampf(normAngle(angleErr - it->second) / controlDt,
-                                       -300.f, 300.f);
-                prevAngleErr[id] = angleErr;
-            }
-
-            float forward = clampf(K_DIST * dist, 0.f, maxSpd) * headingSc * brakeSc;
-            float turn    = clampf(K_ANGLE * angleErr + K_YAW_D * dAngleErr, -MAX_TURN, MAX_TURN);
-            motors[id][0] = (int8_t)clampf(forward + turn, -100, 100);
-            motors[id][1] = (int8_t)clampf(forward - turn, -100, 100);
+            auto cmd = swarmctl::computeGoto(dx, dy, pose.yaw, act.maxSpd,
+                                             GOTO_PARAMS, gotoState[id], controlDt);
+            motors[id][0] = cmd.left;
+            motors[id][1] = cmd.right;
         }
 
         // Silence robots not seen
@@ -540,7 +455,7 @@ int main(int argc, char* argv[]) {
         for (auto& [id, pose] : g_poses) {
             bool sel      = (id == selectedRobot) || allSelected;
             bool isDragged = g_mouse.active && g_mouse.draggingId == id;
-            bool isArc    = avoidance.count(id) && avoidance.at(id).arc;
+            bool isArc    = avoidance.count(id) && avoidance.at(id).dodging;
 
             // Drag hitbox ring
             cv::Scalar hitCol = isDragged ? cv::Scalar(0,255,200)

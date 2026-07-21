@@ -14,6 +14,7 @@
 #include "aruco_tracker.h"
 #include "SwarmClient.h"
 #include "DemoHud.h"
+#include "goto_controller.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -74,14 +75,8 @@ static void onSignal(int) { g_running = false; }
 
 // ── Math helpers ──────────────────────────────────────────────────────────────
 
-static float normAngle(float a) {
-    while (a >  180.f) a -= 360.f;
-    while (a < -180.f) a += 360.f;
-    return a;
-}
-static float clampf(float v, float lo, float hi) {
-    return v < lo ? lo : v > hi ? hi : v;
-}
+using swarmctl::normAngle;
+using swarmctl::clampf;
 
 // ── World coordinate helpers ──────────────────────────────────────────────────
 
@@ -472,9 +467,19 @@ int main(int argc, char* argv[]) {
     int                            registeredCount = 0;
     std::unordered_map<int, std::chrono::steady_clock::time_point> robotLastSeen;
     std::unordered_map<int, std::chrono::steady_clock::time_point> robotLostSince;
-    std::unordered_map<int, float> smoothedYaw;
-    std::unordered_map<int, float> prevAngleErr;
+    swarmctl::YawSmoother          smoothedYaw(YAW_TAU_S);
+    std::unordered_map<int, swarmctl::GotoState> gotoState;
     std::unordered_map<int, int>   robotWaypoint;   // id → waypoint index
+
+    // No brake term: the path loops, so there is no terminal stop to ease into —
+    // the carrot is always at least LOOKAHEAD_MM away.
+    const swarmctl::GotoParams GOTO_PARAMS = [] {
+        swarmctl::GotoParams p;
+        p.kDist = K_DIST; p.kAngle = K_ANGLE; p.kYawD = K_YAW_D;
+        p.maxTurn = MAX_TURN; p.arrivalMm = ARRIVAL_MM;
+        p.brake = false;
+        return p;
+    }();
 
     int8_t motors[MAX_ROBOTS][2]     = {};
     int8_t lastMotors[MAX_ROBOTS][2] = {};
@@ -542,17 +547,8 @@ int main(int argc, char* argv[]) {
             robotLastSeen[r.id] = now;
         }
 
-        // EMA yaw — alpha derived per-frame from controlDt so the time-constant
-        // (YAW_TAU_S) holds regardless of loop rate.
-        float yawAlpha = controlDt / (YAW_TAU_S + controlDt);
-        for (auto& [id, pose] : poseById) {
-            auto [it, fresh] = smoothedYaw.emplace(id, pose.yaw);
-            if (!fresh) {
-                float delta = normAngle(pose.yaw - it->second);
-                it->second  = normAngle(it->second + yawAlpha * delta);
-            }
-            pose.yaw = it->second;
-        }
+        for (auto& [id, pose] : poseById)
+            pose.yaw = smoothedYaw.update(id, pose.yaw, controlDt);
 
         // ── Registry / eviction ───────────────────────────────────────────────
         {
@@ -582,7 +578,7 @@ int main(int argc, char* argv[]) {
             for (int id : evict) {
                 int evicted = robotSlotIndex[id];
                 robotSlotIndex.erase(id); robotLostSince.erase(id);
-                smoothedYaw.erase(id); prevAngleErr.erase(id);
+                smoothedYaw.forget(id); gotoState.erase(id);
                 robotWaypoint.erase(id);
                 for (auto& [rid, si] : robotSlotIndex) if (si > evicted) si--;
                 registeredCount--;
@@ -623,28 +619,12 @@ int main(int argc, char* argv[]) {
                 }
                 if (dist < LOOKAHEAD_MM) { motors[id][0] = motors[id][1] = 0; continue; }
 
-                float tgtAngle  = atan2f(dy, dx) * 180.f / (float)M_PI;
-                float angleErr  = normAngle(tgtAngle - pose.yaw);
-                float headingN  = clampf(fabsf(angleErr) / 90.f, 0.f, 1.f);
-                float headingSc = 1.f - headingN * headingN;
-                float maxSpd    = MAX_SPEED * robotSpeed(id);
-
-                float dAngleErr = 0.f;
-                {
-                    auto it = prevAngleErr.find(id);
-                    if (it != prevAngleErr.end())
-                        dAngleErr = clampf(normAngle(angleErr - it->second) / controlDt,
-                                           -300.f, 300.f);
-                    prevAngleErr[id] = angleErr;
-                }
-
-                // No brake term: the path loops, so there is no terminal stop
-                // to ease into — the carrot is always >= LOOKAHEAD_MM away.
-                float forward = clampf(K_DIST * dist, 0.f, maxSpd) * headingSc;
-                float turn    = clampf(K_ANGLE * angleErr + K_YAW_D * dAngleErr,
-                                       -MAX_TURN, MAX_TURN);
-                motors[id][0] = (int8_t)clampf(forward + turn, -100, 100);
-                motors[id][1] = (int8_t)clampf(forward - turn, -100, 100);
+                auto cmd = swarmctl::computeGoto(dx, dy, pose.yaw,
+                                                 MAX_SPEED * robotSpeed(id),
+                                                 GOTO_PARAMS, gotoState[id],
+                                                 controlDt);
+                motors[id][0] = cmd.left;
+                motors[id][1] = cmd.right;
             }
         } else {
             memset(motors, 0, sizeof(motors));

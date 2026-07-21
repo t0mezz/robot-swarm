@@ -1,5 +1,56 @@
 # TODO
 
+## Avoidance reworked to dodge-based (2026-07-21) — NEEDS FLOOR VALIDATION
+The braking strategy is gone. `lib/SwarmControl/avoidance.h` is now an
+`AvoidanceEngine` (stateful — it latches dodges) instead of a pure function:
+one robot of a conflicting pair is nominated as dodger and makes a committed
+detour, the other is `priority` and is never slowed. No proximity speed ramp.
+
+**All numbers below come from a closed-loop sim, not hardware.** The sim assumed
+3.0 mm/s per motor unit and 3 deg/s per unit of turn — both GUESSES. The
+structural findings are parameter-independent and trustworthy; the specific
+constants are not.
+
+- The trigger distance is bounded below by kinematics:
+  `dangerMm > (2 x MAX_SPEED x mmPerUnit) x (90 / turnRateDegPerSec)`. At
+  MAX_SPEED 60 that is ~340mm, which is why DANGER_MM went 200 -> 500 and
+  SAFE_MM 400 -> 1000. Below that floor the dodge cannot complete at any blend.
+  **Measure mm-per-motor-unit and deg/s-per-unit on the floor and redo this
+  arithmetic** — if the real values differ, so does the required distance.
+- **DANGER_MM=500 may be too large for the arena.** In an 800x600 arena nearly
+  every pair is permanently in conflict. If that shows up, lower MAX_SPEED
+  rather than DANGER_MM — they are two ends of the same inequality.
+- Sim results at danger 500 / safe 1000 / blend 0.95 / emergency 160: head-on
+  swap, perpendicular cross, overtake and mover-vs-parked all clear (minSep
+  108-128mm, > the 98mm contact distance) and all reach their goals. Confirm
+  each of those four on hardware.
+- **Speed raised 1.5x (2026-07-21): MAX_SPEED 60 -> 90, MAX_TURN 16 -> 24.**
+  These must move TOGETHER. computeGoto emits forward +/- turn into a +/-100
+  motor clamp, so raising speed alone saturates the outer wheel and the robot
+  turns lazily — and a lazy turn needs a longer dodge runway. Scaling both keeps
+  turn rate proportional to speed and leaves the avoidance geometry unchanged,
+  so DANGER_MM stays 500. emergencyMm scaled 160 -> 240 to match. All four
+  encounter types still clear in sim (minSep 110-189mm). Watch for wheel-slip
+  and ArUco motion blur on the floor — neither is modelled in the sim.
+- The `swarm_dashboard`/HUD now shows DODGE vs HOLD per robot — quickest way to
+  see whether the nomination is sane while watching the floor.
+
+## Avoidance thresholds vs. body size (lib/SwarmControl/avoidance.h)
+`ROBOT_DIAMETER_MM` (98.0) exists in `avoidance.h` and is the unit every distance
+there is implicitly measured in — two robots touch at ~1.0 D centre-to-centre.
+It is taken from the published 3pi+ chassis size, NOT measured.
+
+Superseded in part by the dodge rework above: the old `stopMm`/crawl band is
+gone, so the "hard stop radius sits inside the footprint" finding no longer
+applies. What remains open is the calibration underneath it:
+- Measure the chassis with calipers, confirm `ROBOT_DIAMETER_MM`.
+- Confirm the ArUco scale: `minDist` is a marker-*centre* distance, so it only
+  equals a hull distance if the marker is centred and the mm scale is right.
+- Measure mm-per-motor-unit and deg/s-per-turn-unit. The dodge runway
+  inequality, DANGER_MM, and emergencyMm all derive from these, and all three
+  are currently sized off sim guesses (3.0 and 3.0).
+- Then express dangerMm / safeMm / emergencyMm as multiples of D.
+
 Fix inconsistancies in SWARM_DASHBOARD and ROBOT communication: ROOT CAUSE FOUND
 (2026-07-21) — fix in src/receiver/main.cpp, pending on-hardware verification.
 - Symptom: specific robots appear LOST on the dashboard for ~30s at a time (others
@@ -87,6 +138,73 @@ Fix inconsistancies in SWARM_DASHBOARD and ROBOT communication: ROOT CAUSE FOUND
       einfacher umzusetzen
 
 # ================== FIXED ===================
+## Avoidance rework: holes found by simulation (2026-07-21)
+Design bugs caught by running the algorithm closed-loop rather than reasoning
+about it. Each was invisible in unit tests — they need robots actually moving.
+
+- **Nomination by ID before testing who is closing.** In an overtake this picks
+  the robot in front, which is driving away and correctly declines to dodge — so
+  nobody dodges and the robot behind, which is never slowed, rear-ends it.
+  Sim: minSep 0.0mm, i.e. straight through. Fixed by requiring a dodger to be
+  moving AND closing; ID priority is now only the tiebreak when both qualify.
+- **Latching the arc as a world-frame vector.** The bearing between two robots
+  rotates as they converge, so a frozen detour goes stale. Pinned perpendicular
+  crossings at ~55mm separation *regardless of trigger distance or blend* — the
+  parameter-invariance is what identified it as structural. Fixed by latching
+  the side (a sign) and recomputing the perpendicular from the live bearing.
+  Head-on hid this bug because that bearing barely moves.
+- **Emergency-stopping both robots deadlocks permanently.** Neither can move, so
+  the distance never changes and the stop never lifts: a crossing locked solid
+  at 110mm and stayed there — strictly worse than the braking it replaced.
+  Stopping only the dodger is the opposite failure (the priority robot drives
+  through it, 6mm). Fixed: stop the CHARGING robot, let the dodger maneuver —
+  it is the only party with a plan, so it is the only possible escape.
+- **Stale nomination when the dodger parks.** A latched dodge kept pointing at
+  its dodger after that robot reached its goal and stopped, so the priority
+  robot — never slowed — drove into a robot that would never move. Recovery came
+  only via the 4s timeout, by which point the pair had closed to 56mm (contact),
+  versus 108mm for the same geometry with neither robot parking. Fixed by
+  dropping the latch as soon as `!isMoving(dodger)`, which re-nominates on the
+  next frame (~5mm of travel at 50Hz). The MIRROR case was already correct: when
+  the *priority* robot parks the latch stays valid, since the dodger is still
+  the one moving and still the one that has to get around — 143mm, no change.
+- **Emergency-stopping a fleeing robot.** In an overtake the priority robot is
+  in front and moving away; halting it deletes the separation it was creating
+  (128mm -> 55mm). Fixed by stopping a robot only if it is actually closing.
+
+## Avoidance defects (lib/SwarmControl/avoidance.h) Erledigt (2026-07-21)
+Three of the four defects found by probing the extracted code are fixed, with
+regression tests in `tests/test_goto_controller.cpp`. Still synthetic-only —
+none were observed on hardware, and none are retunes, so behavior on the floor
+should be unchanged except where it was previously broken. The fourth
+(thresholds vs. body size) is still open above, since it *is* a retune.
+
+- ~~Crossing paths get no avoidance at all.~~ The moving/moving branch required
+  BOTH robots to be closing (`faceFace`), so a robot driving straight at a
+  neighbour got nothing as soon as that neighbour moved across the line of
+  centers. Sharper than first recorded: the *identical* geometry with a parked
+  neighbour did arc, so a moving obstacle was treated as **less** dangerous than
+  a stationary one. Fixed by judging each robot on its own approach —
+  `loClosing`/`hiClosing` evaluated separately; mutual closing still yields by ID
+  (higher ID arcs), so the face-to-face rule is unchanged.
+
+- ~~Stall band just above the danger line.~~ The proximity ramp now runs to zero
+  at the stop radius and is floored at `dodgeSpeedFrac` for a robot that is
+  arcing, making the curve monotonic and continuous across `stopR` instead of
+  collapsing to ~0 just outside it and jumping back to 9.0 below. A dodging
+  robot always keeps at least the crawl, so the two-robots-in-the-band deadlock
+  can't form. Covered by a monotonicity sweep over 20-240mm.
+
+- ~~`applyAvoidance()` leaves `maxSpd` at the base value when `hardStop`.~~ Now
+  zeroed, so a caller that reads the cap without checking `hardStop` first still
+  gets a safe number.
+
+- Drive-by: `AVOID_PARAMS` in `drag_drop_demo.cpp` used positional aggregate
+  init, which silently mis-assigns every field when a member is added to
+  `AvoidParams` (adding `stopMm` would have put 0.25 in it and 0.15 in
+  `faceDot`). Converted to designated initializers.
+
+
 ## Genera aruco tracker issue: Erledigt (2026-07-08)
 ~~When a set of markers are registered for some time, the tracker is not
 picking up now markers. resolved by restarting the demo (maybe due to lazy

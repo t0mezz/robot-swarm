@@ -35,6 +35,10 @@ else
     CONTROLLER_LDFLAGS =
 endif
 
+# Shared go-to-point controller + avoidance (header-only). Listed as an explicit
+# prerequisite so touching either header rebuilds the demos that use it.
+SWARMCTL_HDRS = $(LIBDIR)/SwarmControl/goto_controller.h $(LIBDIR)/SwarmControl/avoidance.h
+
 OPENCV_CFLAGS := $(shell pkg-config --cflags opencv4 2>/dev/null || pkg-config --cflags opencv 2>/dev/null)
 OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config --libs   opencv 2>/dev/null)
 
@@ -78,14 +82,14 @@ $(BUILD_DIR)/circle_demo: vision/circle_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tr
 $(BUILD_DIR)/wingman: vision/wingman.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(SWARMDIR)/evdev_keys.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(SWARMDIR) -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-$(BUILD_DIR)/shape_demo: vision/shape_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+$(BUILD_DIR)/shape_demo: vision/shape_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h $(SWARMCTL_HDRS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
-	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud \
+	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud -I$(LIBDIR)/SwarmControl \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-$(BUILD_DIR)/drag_drop_demo: vision/drag_drop_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+$(BUILD_DIR)/drag_drop_demo: vision/drag_drop_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h $(SWARMCTL_HDRS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
-	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud \
+	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud -I$(LIBDIR)/SwarmControl \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
 $(BUILD_DIR)/marker_eval: vision/marker_eval.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
