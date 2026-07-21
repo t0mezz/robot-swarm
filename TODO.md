@@ -1,11 +1,25 @@
 # TODO
 
-Fix inconsistancies in SWARM_DASHBOARD and ROBOT communication:
-- in some cases, runnnig circle_demo works as expected and the robots move properly, but SWARM_DASHBOARD has issues
-  communicating properly with the robots.
-- i suspect the culprit beeing the receivers not getting registered well to the dongle, resulting in them not sending telemetry
-  reliably
-- this is fixable by restarting each robot (suggesting my suspection of the receivers possible sort of exiting the registration/announcing mode)
+Fix inconsistancies in SWARM_DASHBOARD and ROBOT communication: ROOT CAUSE FOUND
+(2026-07-21) — fix in src/receiver/main.cpp, pending on-hardware verification.
+- Symptom: specific robots appear LOST on the dashboard for ~30s at a time (others
+  fine); circle_demo still drives them (motor path = broadcast SWARM, unaffected);
+  restarting the robot clears it.
+- Root cause: the receiver learned the dongle's MAC from the *first ESP-NOW frame
+  it heard, of any type* (`onReceive` captured the raw source MAC). MSG_ANNOUNCE is
+  broadcast, so a booting robot could latch a *neighbour robot's* MAC as "the
+  dongle". Telemetry + pong are unicast to that MAC (`Transport::sendToDongle`), so
+  they went to the wrong robot and never reached the PC — while broadcast announces
+  still got ACK'd, keeping the robot ACTIVE. `lastDongleSeen` stayed fresh off
+  broadcast SWARM/pings, so the 10s ANNOUNCE_TIMEOUT never fired and the wrong MAC
+  was never corrected without a restart. The only frame reaching the PC was the 30s
+  re-announce → dashboard blinked the robot back every REANNOUNCE_INTERVAL_MS.
+- Fix: learn/verify the dongle MAC only from *validated dongle-authored* frames
+  (SWARM/ACK/PING/PONG) in `processIncoming()`, and re-register when the source MAC
+  differs, so a robot self-heals a wrong dongleMAC within one dongle frame instead
+  of needing a power cycle. `onReceive` no longer captures the MAC at all.
+- TODO: flash robots + a neighbour, confirm all stay green on swarm_dashboard under
+  circle_demo, and that a deliberately mis-latched robot recovers without restart.
 
 (NEXT UP) ## Clean up Swarmhub code and terminal output, make it run as deamon on default.
 
