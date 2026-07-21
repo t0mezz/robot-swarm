@@ -1,5 +1,51 @@
 # TODO
 
+## IMPROVE FORMATE
+- every robot should move to position after each other — still open. Today all
+  robots depart at once and the avoidance engine untangles whatever conflicts
+  remain. Sequencing departures (or grouping them by slot distance) would cut
+  the number of conflicts instead of resolving them.
+- ~~hard code home formation for indefinit robots~~ addressed by
+  `tools/vision/formation.cpp` (2026-07-21), though *not* by hard-coding:
+  formations are named slot lists placed in the camera view and stored in
+  `~/.config/robot-swarm/formations.yml`, and the robot count is free — the
+  assignment is solved at run time, so surplus robots park and surplus slots
+  stay empty. `./formation --add home` creates the home formation.
+
+## Formation tool (2026-07-21) — NEEDS FLOOR VALIDATION
+`tools/vision/formation.cpp`. Reuses drag_drop_demo's control loop, gains and
+the stateful `AvoidanceEngine` verbatim; only the goal source differs (assigned
+slots instead of the mouse). Modes: `--list`, `--add NAME`, `--run NAME`,
+`--delete NAME`, `--frontend`, `--hold`; bare invocation is a CLI picker that
+then runs headless.
+
+- Robot→slot assignment is a Hungarian/JV solve (O(n³), rectangular) on **plain
+  Euclidean distance, not squared**. This is load-bearing: a sum-of-distances
+  optimum is provably non-crossing (triangle inequality), a squared one is not —
+  the swap that removes a crossing changes squared cost by `2(w-y)(z-x)`, which
+  is positive for half of all geometries. Measured over 20k random equal-count
+  layouts: squared left a crossing in **15.9%** of formations vs **0.000%** for
+  linear, buying only ~8% shorter worst-case travel (1089mm vs 1174mm mean). A
+  crossing costs far more than 8% because it latches the avoidance engine, drops
+  the dodger to `dodgeSpeedFrac` and can escalate to an emergency stop. Do not
+  "optimise" this back to squared distance.
+- The solver is checked against exhaustive permutation search (3000 random
+  layouts: optimal cost, exactly min(n,m) assignments, no duplicate slots, zero
+  crossings). That harness is currently ad-hoc and lives outside the repo — it
+  is the obvious first candidate for the "Formation-Mathematik" unit tests noted
+  under "Tooling / Tests", since `assignSlots` is already a pure function.
+- **Untested on hardware.** Only the camera-less paths (library round-trip,
+  --list/--delete, error handling, CLI menu) have been exercised. First floor
+  run should be `--frontend --speed 20`; the frontend draws the assignment
+  arrows specifically so a crossing is visible before anything moves.
+- Slots are world mm, so a formation is only meaningful against the homography
+  it was placed under. Both `--add` and the run modes refuse to proceed without
+  one rather than silently mixing pixel and world coordinates. Re-calibrating
+  the arena invalidates every stored formation — no versioning guards this yet.
+- Reassignment is debounced (`REASSIGN_DEBOUNCE_S`) on a change in the visible
+  robot set, not run per frame, so a blinking marker cannot reshuffle the swarm
+  mid-drive. If markers drop out often on the floor, this is the knob.
+
 ## Avoidance reworked to dodge-based (2026-07-21) — NEEDS FLOOR VALIDATION
 The braking strategy is gone. `lib/SwarmControl/avoidance.h` is now an
 `AvoidanceEngine` (stateful — it latches dodges) instead of a pure function:
