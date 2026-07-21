@@ -59,12 +59,6 @@ namespace Transport {
     static uint8_t dongleMAC[6] = {0};
     static bool    dongleKnown  = false;
     static uint8_t broadcastMAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    // Pending registration — set by onReceive(), consumed by loop().
-    // esp_now_add_peer() must NOT be called from within the ESP-NOW receive
-    // callback: it acquires internal driver locks that are already held during
-    // the callback, leaving the receive path degraded (verified on C3).
-    static volatile bool pendingRegister = false;
-    static uint8_t       pendingMAC[6]   = {};
 
     void init() {
         WiFi.mode(WIFI_STA);
@@ -83,8 +77,16 @@ namespace Transport {
         esp_now_add_peer(&peer);
     }
 
+    // Learn (or re-learn) the dongle's MAC. Idempotent when the MAC is unchanged;
+    // when it differs it replaces the peer, which lets a robot self-heal from a
+    // previously-wrong dongleMAC without a physical restart. MUST be called from
+    // loop() context, never from the ESP-NOW receive callback: esp_now_add_peer()
+    // acquires internal driver locks already held during the callback, which
+    // leaves the receive path degraded (verified on C3). See processIncoming().
     void registerDongle(const uint8_t* mac) {
-        if (dongleKnown) return;
+        if (dongleKnown && memcmp(dongleMAC, mac, 6) == 0) return;  // already correct
+        if (dongleKnown) esp_now_del_peer(dongleMAC);              // MAC changed — replace
+
         memcpy(dongleMAC, mac, 6);
         dongleKnown = true;
 
@@ -123,7 +125,7 @@ static State state = State::ANNOUNCING;
 // When the queue is full the oldest slot is silently dropped so that the
 // consumer always works through the most-recent commands without stale lag.
 static const uint8_t RX_QUEUE_SIZE = 4;
-struct RxSlot { uint8_t data[250]; uint8_t len; };
+struct RxSlot { uint8_t data[250]; uint8_t len; uint8_t mac[6]; };
 static RxSlot       rxQueue[RX_QUEUE_SIZE];
 static uint8_t      rxHead   = 0;   // next write index  (producer, Core 0)
 static uint8_t      rxTail   = 0;   // next read  index  (consumer, Core 1)
@@ -172,15 +174,13 @@ void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
     }
     memcpy(rxQueue[rxHead].data, data, len);
     rxQueue[rxHead].len = (uint8_t)len;
+    memcpy(rxQueue[rxHead].mac, mac, 6);
     rxHead = (rxHead + 1) % RX_QUEUE_SIZE;
     portEXIT_CRITICAL(&rxMux);
 
-    // Do NOT call esp_now_add_peer() here — unsafe inside the receive callback.
-    // Store the MAC and let loop() register the peer.
-    if (!Transport::dongleKnown && !Transport::pendingRegister) {
-        memcpy(Transport::pendingMAC, mac, 6);
-        Transport::pendingRegister = true;
-    }
+    // The dongle MAC is learned in processIncoming() (loop context), keyed off a
+    // validated, dongle-authored frame — NOT here from a raw source MAC, which
+    // would let another robot's broadcast MSG_ANNOUNCE be mistaken for the dongle.
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -207,19 +207,26 @@ static void uart_send_robot_id();                         // forward declaration
 // Paket-Handler
 // ═══════════════════════════════════════════════════════════════
 
-static void processIncoming(const uint8_t* data, uint8_t len) {
+static void processIncoming(const uint8_t* data, uint8_t len, const uint8_t* srcMac) {
     if (!validateFrame(data, len)) return;
 
     uint8_t type       = data[2];
     uint8_t payloadLen = data[3];
     const uint8_t* payload = &data[4];
 
-    // Link liveness: these types are only ever sent by the dongle (robot-to-robot
-    // broadcasts are ANNOUNCE/TELEMETRY), so any of them — even addressed to
-    // another robot — means the dongle is reachable.
+    // Link liveness AND dongle-MAC learning: these types are only ever sent by the
+    // dongle (robot-to-robot broadcasts are ANNOUNCE/TELEMETRY), so any of them —
+    // even addressed to another robot — proves the dongle is reachable and its
+    // source MAC is authoritative. Learning the dongle from these frames only
+    // (never a bare received MAC) stops a neighbour's broadcast MSG_ANNOUNCE from
+    // poisoning dongleMAC; re-registering when the MAC differs self-heals a robot
+    // that previously latched the wrong one — the failure that made specific
+    // robots appear LOST on the dashboard (no telemetry/pong) until a restart.
+    // Safe to register here: processIncoming() runs in loop(), not the recv cb.
     if (type == MSG_SWARM || type == MSG_ANNOUNCE_ACK ||
         type == MSG_PING  || type == MSG_PONG) {
         lastDongleSeen = millis();
+        Transport::registerDongle(srcMac);
     }
 
     switch (type) {
@@ -437,28 +444,25 @@ void setup() {
 void loop() {
     unsigned long now = millis();
 
-    // Deferred peer registration — must happen outside the ESP-NOW receive callback
-    if (Transport::pendingRegister) {
-        Transport::pendingRegister = false;
-        Transport::registerDongle(Transport::pendingMAC);
-    }
-
     // Drain the receive queue — process every pending packet before moving on.
     // Copying one slot at a time under the spinlock keeps the critical section
-    // short (no processIncoming() work held under lock).
+    // short (no processIncoming() work held under lock). The source MAC is copied
+    // out too so processIncoming() can learn the dongle from dongle-authored frames.
     while (true) {
         uint8_t localBuf[250];
         uint8_t localLen;
+        uint8_t localMac[6];
         portENTER_CRITICAL(&rxMux);
         bool got = (rxHead != rxTail);
         if (got) {
             localLen = rxQueue[rxTail].len;
             memcpy(localBuf, rxQueue[rxTail].data, localLen);
+            memcpy(localMac, rxQueue[rxTail].mac, 6);
             rxTail = (rxTail + 1) % RX_QUEUE_SIZE;
         }
         portEXIT_CRITICAL(&rxMux);
         if (!got) break;
-        processIncoming(localBuf, localLen);
+        processIncoming(localBuf, localLen, localMac);
         // Refresh 'now' after each packet: processIncoming() updates lastSwarmReceived
         // via millis(). A stale 'now' could make (now - lastSwarmReceived) wrap and
         // falsely trigger the announce timeout.
