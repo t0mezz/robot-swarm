@@ -24,10 +24,16 @@ jobs:
       - name: Install graphify
         run: pip install graphifyy
 
-      - name: Rebuild graph (no LLM — code-only re-extraction + clustering)
+      - name: Rebuild graph (code-only re-extraction + clustering)
         run: |
           graphify update . --no-cluster
-          graphify cluster-only . --no-label
+          if [ -n "${GEMINI_API_KEY}" ]; then
+            graphify cluster-only . --backend gemini
+          else
+            graphify cluster-only . --no-label
+          fi
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Publish graph.html to gh-pages
         run: |
