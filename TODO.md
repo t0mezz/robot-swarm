@@ -1,5 +1,9 @@
 # TODO
 
+# We need to add a feature for pose log (saving) and analysis.
+- maybe a format to efficiently save the poses with util to capture (can be put in eval or add a headless capture)
+- add an analysis util that calculates speeds, distances with academic grade statistics. (how do we do that)
+
 Fix inconsistancies in SWARM_DASHBOARD and ROBOT communication: ROOT CAUSE FOUND
 (2026-07-21) — fix in src/receiver/main.cpp, pending on-hardware verification.
 - Symptom: specific robots appear LOST on the dashboard for ~30s at a time (others
