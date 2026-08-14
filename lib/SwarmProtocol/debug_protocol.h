@@ -24,7 +24,6 @@
 #define DBG_STRING        0x04   // n Bytes UTF-8
 
 // ─── Feld-IDs für den Robot-Debug-Screen ─────────────────────
-// TODO: add DEBUG_FIELD_RSSI once ESP-IDF 5.x is used (esp_now_recv_info_t)
 #define DEBUG_FIELD_LATENCY   0
 #define DEBUG_FIELD_STATUS    1
 #define DEBUG_FIELD_MOTOR_L   2

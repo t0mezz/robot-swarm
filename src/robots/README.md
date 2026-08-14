@@ -67,24 +67,6 @@ The `ScreenManager` manages multiple `Screen` pages, cycled with button B on the
 - **MOTORS** — shows current left/right motor speeds and robot ID (2x scaled)
 - **GRAPH** — split line graphs for left and right motor speeds
 
-## Sound
-
-Sound comes entirely from `pololu_3pi_2040_robot.buzzer.Buzzer` — a piezo buzzer wired to GP7, driven directly by one of the RP2040's hardware PWM channels (`machine.PWM`). The drive motors also run on PWM (20833 Hz, see `motors.py`), but that's at/above the edge of human hearing and isn't used as a sound source; the buzzer is the only intentional speaker on the board.
-
-**Two ways to make a tone:**
-- **Direct PWM** — `buzzer.pwm.freq(hz)` / `buzzer.pwm.duty_u16(level)` set the square-wave frequency and loudness immediately. `Buzzer.beep()`, `.on()`/`.off()`, and effects like a sweeping siren (recomputing frequency every loop iteration) use this path.
-- **Music macro language** — `Buzzer.play(str)` / `.play_in_background(str)` parse an RTTTL-like text mini-language (notes `a`-`g`, rest `r`, octave `O`/`>`/`<`, tempo `T`, volume `V`, duration `L`, staccato `MS`, accidentals `+`/`#`/`-`) into parallel `frequencies`/`durations`/`volumes`/`notes`/`beats` arrays.
-
-Each note is encoded as `octave*12 + offset` (C=0 ... B=11) and converted to Hz with the standard equal-temperament formula referenced to A4 = 440 Hz:
-
-```
-freq = round(440 * 2 ** ((note - 57) / 12))
-```
-
-`play_in_background()` doesn't block: it precomputes the whole note sequence, then arms a `machine.Timer` one-shot. The timer callback sets the PWM frequency/duty for the current note and re-arms itself for that note's duration, stepping through the sequence on hardware-timer interrupts — so a tune keeps playing while the main loop does other work (e.g. `music.py` drives an RGB hue/brightness animation per note via `Buzzer.set_callback()`). `play()` is the same thing plus a busy-wait until playback finishes, so it behaves like a blocking call. Volume is just duty cycle (`V0`-`V15` → `volume_levels[v] * 256`, max ≈ half-scale) — there's no separate amplitude control.
-
-**In this firmware:** `uart_controller.py`, `robot_uart.py`, and `screen_manager.py` never touch the buzzer — the swarm protocol is silent by design. The only sound played in this project comes from the stock Pololu `main.py`: a startup chime + button-press beeps from the splash screen, and a single low tone (`buzzer.play("O2c4")`) if the deployed program raises an uncaught exception. To add audible feedback for swarm events (low battery, lost packets, robot ID confirmation), instantiate `robot.Buzzer()` once and trigger short `play_in_background("...")` calls from the packet/event handlers — it won't block `proto.loop()`.
-
 ## Usage
 
 Deploy `robot_uart.py`, `screen_manager.py`, and `uart_controller.py` to the Pololu 3pi+ 2040 via MicroPython. `uart_controller.py` is the entry point (`main.py`).

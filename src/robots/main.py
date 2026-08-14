@@ -18,8 +18,8 @@
 # (Holding A on startup starts self_test.py.)
 #
 # If your default program exits normally, this script
-# will try to shut off the RGB LEDs, motors, and
-# buzzer.  If it raises an exception, it will be
+# will try to shut off the RGB LEDs and motors.
+# If it raises an exception, it will be
 # shown on the screen.  You can get more details about
 # the exception from the REPL by running:
 #   sys.print_exception(exc)
@@ -31,8 +31,8 @@ try:
     from pololu_3pi_2040_robot.extras.splash_loader import splash_loader
     splash_loader(
         default_program = "uart_controller.py",
-        splash_delay_s = 6, # delay while waiting for a button
-        run_file_delay_ms = 700 # extra delay to show the action
+        splash_delay_s = 3, # delay while waiting for a button
+        run_file_delay_ms = 200 # extra delay to show the action
         )
 
 except Exception as e:
@@ -41,24 +41,19 @@ except Exception as e:
     exc = e    # enable access to original exception in REPL
     from pololu_3pi_2040_robot.rgb_leds import RGBLEDs
     RGBLEDs()  # turn off RGB LEDs
-    from pololu_3pi_2040_robot.buzzer import Buzzer
-    buzzer = Buzzer()
 
     from pololu_3pi_2040_robot.display import Display
     Display.show_exception(e)
-    buzzer.play("O2c4")
     raise
 
 finally:
     from pololu_3pi_2040_robot.motors import Motors
     Motors()   # turn off Motors ASAP
-    from pololu_3pi_2040_robot.buzzer import Buzzer
-    Buzzer()   # turn off Buzzer
     from pololu_3pi_2040_robot.rgb_leds import RGBLEDs
     RGBLEDs()  # turn off RGB LEDs
 
     # don't leave extra classes lying around
-    del Motors, Buzzer, RGBLEDs, splash_loader
+    del Motors, RGBLEDs, splash_loader
 
     # make the REPL friendlier, if you enter it the right way
     from pololu_3pi_2040_robot import robot

@@ -5,9 +5,6 @@
 # The two signed bytes in MSG_SPEED now represent target rotational wheel
 # speeds scaled to [-127..+127] → [-MAX_WHEEL_CPS..+MAX_WHEEL_CPS].
 
-# ─── Feature toggles ───────────────────────────────────────────
-ENGINE_SOUND_ENABLED = False   # False: skip importing/loading engine_sound entirely
-
 from machine import UART, Pin
 from pololu_3pi_2040_robot import robot
 from pololu_3pi_2040_robot.battery import Battery
@@ -23,10 +20,6 @@ import time
 # run_pid()'s measurement code stay intact either way.
 ODOMETRY_ENABLED = False
 
-if ENGINE_SOUND_ENABLED:
-    from pololu_3pi_2040_robot.buzzer import Buzzer
-    from engine_sound import EngineSound
-
 # ─── Hardware ─────────────────────────────────────────────────
 uart     = UART(0, baudrate=921600, bits=8, parity=None, stop=1,
                 tx=Pin(28), rx=Pin(29), rxbuf=256)
@@ -35,7 +28,9 @@ encoders = robot.Encoders()
 display  = robot.Display()
 buttonB  = robot.ButtonB()
 battery  = Battery()
-buzzer   = Buzzer() if ENGINE_SOUND_ENABLED else None
+
+rgb_leds = robot.RGBLEDs()
+rgb_leds.set_brightness(5)
 
 # Encoder counts per second at full commanded speed.
 # Tune MAX_WHEEL_CPS to match the physical top speed of the robot.
@@ -104,8 +99,6 @@ class PI:
 
 pid_left  = PI(PID_KP, PID_KI, PID_I_MAX, MOTOR_MAX)
 pid_right = PI(PID_KP, PID_KI, PID_I_MAX, MOTOR_MAX)
-
-engine = EngineSound(buzzer, MAX_WHEEL_CPS) if ENGINE_SOUND_ENABLED else None
 
 # ─── Shared state ─────────────────────────────────────────────
 _target_left_cps  = [0.0]   # target wheel speed, counts/s
@@ -178,9 +171,11 @@ _last_graph_update = 0
 _last_pid_time = time.ticks_ms()
 _last_bat_time = time.ticks_ms()
 
+flash_time = 0 
+
 def run_pid():
     """Measure wheel speeds and run PID; called at PID_INTERVAL_MS cadence."""
-    global _last_pid_time, _last_graph_update, _last_bat_time
+    global _last_pid_time, _last_graph_update, _last_bat_time, flash_time
 
     now = time.ticks_ms()
     dt_ms = time.ticks_diff(now, _last_pid_time)
@@ -202,9 +197,6 @@ def run_pid():
     actual_r = delta_r / dt
     _actual_left_cps[0]  = actual_l
     _actual_right_cps[0] = actual_r
-
-    if engine is not None:
-        engine.update(actual_l, actual_r, dt)
 
     # ── PID update ────────────────────────────────────────────
     target_l = _target_left_cps[0]
@@ -234,6 +226,16 @@ def run_pid():
         _bat_mv[0] = battery.get_level_millivolts()
         _last_bat_time = now
         proto.send_metrics(_battery_byte(_bat_mv[0]))
+
+        rgb_leds.set(1, [0, 255, 100])
+        rgb_leds.show()
+        flash_time = time.ticks_ms()
+
+    if flash_time is not None:
+        if time.ticks_diff(now, flash_time) >= 100:
+            flash_time = None
+            rgb_leds.set(1, [0, 0, 0])
+            rgb_leds.show()
 
     mgr.mark_dirty()
 

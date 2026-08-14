@@ -17,40 +17,6 @@
 // ─── RGB LED (WS2812, GRB, GPIO 8) ──────────────────────────
 static Adafruit_NeoPixel rgbLed(1, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-// HSV to RGB helper (hue 0-255, sat 0-255, val 0-255)
-static uint32_t hsvToColor(uint8_t h, uint8_t s, uint8_t v) {
-    uint8_t r, g, b;
-    if (s == 0) { r = g = b = v; }
-    else {
-        uint8_t region = h / 43;
-        uint8_t rem    = (h - region * 43) * 6;
-        uint8_t p = (v * (255 - s)) >> 8;
-        uint8_t q = (v * (255 - ((s * rem) >> 8))) >> 8;
-        uint8_t t2 = (v * (255 - ((s * (255 - rem)) >> 8))) >> 8;
-        switch (region) {
-            case 0: r=v; g=t2; b=p; break;
-            case 1: r=q; g=v;  b=p; break;
-            case 2: r=p; g=v;  b=t2; break;
-            case 3: r=p; g=q;  b=v; break;
-            case 4: r=t2; g=p; b=v; break;
-            default: r=v; g=p;  b=q; break;
-        }
-    }
-    return rgbLed.Color(r, g, b);
-}
-
-static void updateRgbLed(unsigned long now, bool announcing) {
-    static unsigned long lastUpdate = 0;
-    static uint8_t hue = 0;
-    if (now - lastUpdate < 40) return;
-    lastUpdate = now;
-
-    // TEMP: maximum white for ArUco readability testing
-    (void)announcing; (void)hue;
-    rgbLed.setPixelColor(0, rgbLed.Color(0, 0, 0));
-    rgbLed.show();
-}
-
 // ═══════════════════════════════════════════════════════════════
 // Transport Layer — für späteren Wechsel auf WiFi STA
 // ═══════════════════════════════════════════════════════════════
@@ -519,9 +485,6 @@ void loop() {
                                 currentMotorL, currentMotorR);
         lastDebugUpdate = now;
     }
-
-    // RGB LED
-    updateRgbLed(now, state == State::ANNOUNCING);
 
     // Periodic diagnostics (every 2s) — only when a USB terminal is connected
     // so the Serial write overhead is zero when running standalone.

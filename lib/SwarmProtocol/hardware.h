@@ -28,4 +28,3 @@
 #define TDMA_SLOT_MS           100     // Slot width per robot; cycle = MAX_ROBOTS * TDMA_SLOT_MS = 6.4s for 64 robots
 #define WATCHDOG_TIMEOUT_MS    1000    // Motor-Stop nach 1000ms ohne Paket
 #define DEBUG_UPDATE_MS        250     // Debug-Daten Aktualisierung
-#define LED_ON_DURATION_MS     5       // LED an für ms bei Empfang
