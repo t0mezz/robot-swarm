@@ -10,7 +10,7 @@
 #include <Adafruit_NeoPixel.h>
 #include "protocol.h"
 #include "hardware.h"
-
+#undef LED_PIN
 // ─── Hardware ────────────────────────────────────────────────
 // ESP32-S3-DevKitC-1 N16R8: WS2812 on GPIO 48
 #define LED_PIN           48
@@ -54,6 +54,7 @@ static uint8_t       txHead     = 0;
 static uint8_t       txTail     = 0;
 static volatile bool txBusy     = false;
 static portMUX_TYPE  txMux      = portMUX_INITIALIZER_UNLOCKED;
+static unsigned long ledOffAt     = 0;
 
 // Register a robot MAC as an ESP-NOW peer so robot-targeted frames (ACK, ping,
 // pong echo) go unicast — MAC-layer ACK+retries instead of fire-and-forget
@@ -144,6 +145,8 @@ static uint32_t      diagRxDropCount = 0;  // RX queue overflow drops
 
 void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
     if (len <= 0 || len > (int)sizeof(rxQueue[0].data)) return;
+    ledOn();
+    ledOffAt = millis() + 20;
     portENTER_CRITICAL(&rxMux);
     uint8_t used = (rxHead - rxTail + RX_QUEUE_SIZE) % RX_QUEUE_SIZE;
     if (used == RX_QUEUE_SIZE - 1) {
@@ -210,8 +213,6 @@ static void routeIncoming(const uint8_t* data, uint8_t len, const uint8_t* mac) 
             uint8_t regFrame[12];
             buildFrame(regFrame, MSG_ANNOUNCE, regPayload, 7);
             serialWrite(regFrame, 12);
-
-            ledOn();
             break;
         }
 
@@ -288,7 +289,7 @@ static void processSerialPacket(const uint8_t* data, uint8_t len) {
 
 // ─── Timing ──────────────────────────────────────────────────
 
-static unsigned long ledOffAt     = 0;
+
 static unsigned long lastSerial   = 0;
 static unsigned long lastDiagReport = 0;
 
@@ -327,10 +328,6 @@ void setup() {
 
     esp_now_register_recv_cb(onReceive);
     esp_now_register_send_cb([](const uint8_t*, esp_now_send_status_t status) {
-        if (status == ESP_NOW_SEND_SUCCESS) {
-            ledOn();
-            ledOffAt = millis() + 20;
-        }
         txDispatchNext();
     });
 
