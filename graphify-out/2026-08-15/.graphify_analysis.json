@@ -346,42 +346,6 @@
       "lib_arucotracker_aruco_tracker_h_arucodetector"
     ],
     "8": [
-      "lib_swarmclient_swarmclient_swarmclient_isconnected",
-      "tools_vision_circle_demo",
-      "tools_vision_circle_demo_assignnearestslots",
-      "tools_vision_circle_demo_circlestate",
-      "tools_vision_circle_demo_circlestate_centre",
-      "tools_vision_circle_demo_circlestate_centreset",
-      "tools_vision_circle_demo_circlestate_mingapmm",
-      "tools_vision_circle_demo_circlestate_orbitspeed",
-      "tools_vision_circle_demo_circlestate_radius",
-      "tools_vision_circle_demo_circlestate_tracking",
-      "tools_vision_circle_demo_clampf",
-      "tools_vision_circle_demo_controlscore",
-      "tools_vision_circle_demo_controlscore_biasema",
-      "tools_vision_circle_demo_controlscore_init",
-      "tools_vision_circle_demo_controlscore_jerkvar",
-      "tools_vision_circle_demo_controlscore_oscvar",
-      "tools_vision_circle_demo_controlscore_posbiasema",
-      "tools_vision_circle_demo_controlscore_posvar",
-      "tools_vision_circle_demo_controlscore_prevturn",
-      "tools_vision_circle_demo_cpp_point2f",
-      "tools_vision_circle_demo_cpp_unordered_map",
-      "tools_vision_circle_demo_enforcemingap",
-      "tools_vision_circle_demo_loadcircle",
-      "tools_vision_circle_demo_main",
-      "tools_vision_circle_demo_normangle",
-      "tools_vision_circle_demo_oncalibmouse",
-      "tools_vision_circle_demo_onmouse",
-      "tools_vision_circle_demo_onsignal",
-      "tools_vision_circle_demo_pixeltoworld",
-      "tools_vision_circle_demo_runcalibration",
-      "tools_vision_circle_demo_savecircle",
-      "tools_vision_circle_demo_totalscore",
-      "tools_vision_circle_demo_updatescore",
-      "tools_vision_circle_demo_worldtopixel"
-    ],
-    "9": [
       "tools_swarm_swarm_controller",
       "tools_swarm_swarm_controller_advancetest",
       "tools_swarm_swarm_controller_applyteststep",
@@ -416,7 +380,7 @@
       "tools_swarm_swarm_controller_testsuite_name",
       "tools_swarm_swarm_controller_testsuite_steps"
     ],
-    "10": [
+    "9": [
       "src_robots_screen_manager_rationale_208",
       "src_robots_screen_manager_rationale_245",
       "src_robots_screen_manager_rationale_251",
@@ -449,6 +413,39 @@
       "src_robots_screen_manager_screen_render_lines",
       "src_robots_screen_manager_screen_set_diagram",
       "src_robots_screen_manager_screen_set_metric"
+    ],
+    "10": [
+      "lib_swarmprotocol_hardware",
+      "src_dongle_main",
+      "src_dongle_main_anyrobotactive",
+      "src_dongle_main_enqueuesend",
+      "src_dongle_main_ensurepeer",
+      "src_dongle_main_ledoff",
+      "src_dongle_main_ledon",
+      "src_dongle_main_loop",
+      "src_dongle_main_onreceive",
+      "src_dongle_main_pingtracker",
+      "src_dongle_main_pingtracker_pending",
+      "src_dongle_main_pingtracker_robotid",
+      "src_dongle_main_pingtracker_sentat",
+      "src_dongle_main_processserialpacket",
+      "src_dongle_main_robot",
+      "src_dongle_main_robot_active",
+      "src_dongle_main_robot_lastseen",
+      "src_dongle_main_robot_mac",
+      "src_dongle_main_routeincoming",
+      "src_dongle_main_rxslot",
+      "src_dongle_main_rxslot_data",
+      "src_dongle_main_rxslot_len",
+      "src_dongle_main_rxslot_mac",
+      "src_dongle_main_serialwrite",
+      "src_dongle_main_setup",
+      "src_dongle_main_txdispatchnext",
+      "src_dongle_main_txpacket",
+      "src_dongle_main_txpacket_data",
+      "src_dongle_main_txpacket_dest",
+      "src_dongle_main_txpacket_isping",
+      "src_dongle_main_txpacket_len"
     ],
     "11": [
       "docs_architecture",
@@ -488,39 +485,6 @@
       "docs_architecture_übersicht"
     ],
     "12": [
-      "lib_swarmprotocol_hardware",
-      "src_dongle_main",
-      "src_dongle_main_anyrobotactive",
-      "src_dongle_main_enqueuesend",
-      "src_dongle_main_ensurepeer",
-      "src_dongle_main_ledoff",
-      "src_dongle_main_ledon",
-      "src_dongle_main_loop",
-      "src_dongle_main_onreceive",
-      "src_dongle_main_pingtracker",
-      "src_dongle_main_pingtracker_pending",
-      "src_dongle_main_pingtracker_robotid",
-      "src_dongle_main_pingtracker_sentat",
-      "src_dongle_main_processserialpacket",
-      "src_dongle_main_robot",
-      "src_dongle_main_robot_active",
-      "src_dongle_main_robot_lastseen",
-      "src_dongle_main_robot_mac",
-      "src_dongle_main_routeincoming",
-      "src_dongle_main_rxslot",
-      "src_dongle_main_rxslot_data",
-      "src_dongle_main_rxslot_len",
-      "src_dongle_main_rxslot_mac",
-      "src_dongle_main_serialwrite",
-      "src_dongle_main_setup",
-      "src_dongle_main_txdispatchnext",
-      "src_dongle_main_txpacket",
-      "src_dongle_main_txpacket_data",
-      "src_dongle_main_txpacket_dest",
-      "src_dongle_main_txpacket_isping",
-      "src_dongle_main_txpacket_len"
-    ],
-    "13": [
       "tools_swarm_swarm_hub_simulation",
       "tools_swarm_swarm_hub_simulation_broadcast",
       "tools_swarm_swarm_hub_simulation_buildframe",
@@ -550,6 +514,36 @@
       "tools_swarm_swarm_hub_simulation_simrobot_mac",
       "tools_swarm_swarm_hub_simulation_simrobot_motorphase",
       "tools_swarm_swarm_hub_simulation_simrobot_uptime"
+    ],
+    "13": [
+      "lib_swarmclient_swarmclient_swarmclient_isconnected",
+      "tools_vision_circle_demo",
+      "tools_vision_circle_demo_assignnearestslots",
+      "tools_vision_circle_demo_calibstate",
+      "tools_vision_circle_demo_calibstate_done",
+      "tools_vision_circle_demo_calibstate_pixpts",
+      "tools_vision_circle_demo_circlestate",
+      "tools_vision_circle_demo_circlestate_centre",
+      "tools_vision_circle_demo_circlestate_centreset",
+      "tools_vision_circle_demo_circlestate_mingapmm",
+      "tools_vision_circle_demo_circlestate_orbitspeed",
+      "tools_vision_circle_demo_circlestate_radius",
+      "tools_vision_circle_demo_circlestate_tracking",
+      "tools_vision_circle_demo_clampf",
+      "tools_vision_circle_demo_cpp_point2f",
+      "tools_vision_circle_demo_cpp_unordered_map",
+      "tools_vision_circle_demo_cpp_vector",
+      "tools_vision_circle_demo_enforcemingap",
+      "tools_vision_circle_demo_loadcircle",
+      "tools_vision_circle_demo_main",
+      "tools_vision_circle_demo_normangle",
+      "tools_vision_circle_demo_oncalibmouse",
+      "tools_vision_circle_demo_onmouse",
+      "tools_vision_circle_demo_onsignal",
+      "tools_vision_circle_demo_pixeltoworld",
+      "tools_vision_circle_demo_runcalibration",
+      "tools_vision_circle_demo_savecircle",
+      "tools_vision_circle_demo_worldtopixel"
     ],
     "14": [
       "atomic",
@@ -1117,15 +1111,16 @@
       "src_robots_readme_msg_metrics"
     ],
     "49": [
-      "lib_calibration_cmaes_cmaes_ask",
-      "lib_calibration_cmaes_cmaes_converged",
-      "lib_calibration_cmaes_cmaes_lambda",
-      "lib_calibration_cmaes_cmaes_setmean",
-      "lib_calibration_cmaes_cmaes_sigma",
-      "lib_calibration_cmaes_cmaes_tell",
-      "lib_calibration_cmaes_cmaes_updateeigen",
-      "lib_calibration_cmaes_h_vector",
-      "tools_vision_calibration_calib_main_runoptimisation"
+      "tools_vision_circle_demo_controlscore",
+      "tools_vision_circle_demo_controlscore_biasema",
+      "tools_vision_circle_demo_controlscore_init",
+      "tools_vision_circle_demo_controlscore_jerkvar",
+      "tools_vision_circle_demo_controlscore_oscvar",
+      "tools_vision_circle_demo_controlscore_posbiasema",
+      "tools_vision_circle_demo_controlscore_posvar",
+      "tools_vision_circle_demo_controlscore_prevturn",
+      "tools_vision_circle_demo_totalscore",
+      "tools_vision_circle_demo_updatescore"
     ],
     "50": [
       "src_robots_readme",
@@ -1141,15 +1136,15 @@
       "src_robots_readme_usage"
     ],
     "51": [
-      "tools_vision_generate_markers_pdf",
-      "tools_vision_generate_markers_pdf_generate_pdf",
-      "tools_vision_generate_markers_pdf_main",
-      "tools_vision_generate_markers_pdf_marker_image",
-      "tools_vision_generate_markers_pdf_ndarray_to_png_bytes",
-      "tools_vision_generate_markers_pdf_py_ndarray",
-      "tools_vision_generate_markers_pdf_rationale_1",
-      "tools_vision_generate_markers_pdf_rationale_65",
-      "tools_vision_generate_markers_pdf_resolve_dict"
+      "lib_calibration_cmaes_cmaes_ask",
+      "lib_calibration_cmaes_cmaes_converged",
+      "lib_calibration_cmaes_cmaes_lambda",
+      "lib_calibration_cmaes_cmaes_setmean",
+      "lib_calibration_cmaes_cmaes_sigma",
+      "lib_calibration_cmaes_cmaes_tell",
+      "lib_calibration_cmaes_cmaes_updateeigen",
+      "lib_calibration_cmaes_h_vector",
+      "tools_vision_calibration_calib_main_runoptimisation"
     ],
     "52": [
       "readme_calibrate",
@@ -1165,6 +1160,17 @@
       "todo_unified_pid_unit"
     ],
     "53": [
+      "tools_vision_generate_markers_pdf",
+      "tools_vision_generate_markers_pdf_generate_pdf",
+      "tools_vision_generate_markers_pdf_main",
+      "tools_vision_generate_markers_pdf_marker_image",
+      "tools_vision_generate_markers_pdf_ndarray_to_png_bytes",
+      "tools_vision_generate_markers_pdf_py_ndarray",
+      "tools_vision_generate_markers_pdf_rationale_1",
+      "tools_vision_generate_markers_pdf_rationale_65",
+      "tools_vision_generate_markers_pdf_resolve_dict"
+    ],
+    "54": [
       "src_robots_screen_manager_linegraph",
       "src_robots_screen_manager_linegraph_draw",
       "src_robots_screen_manager_linegraph_init",
@@ -1174,7 +1180,7 @@
       "src_robots_screen_manager_rationale_67",
       "src_robots_screen_manager_rationale_73"
     ],
-    "54": [
+    "55": [
       "lib_swarmclient_swarmclient_h_string",
       "lib_swarmclient_swarmclient_swarmclient_connect",
       "lib_swarmclient_swarmclient_swarmclient_findserialport",
@@ -1182,15 +1188,6 @@
       "lib_swarmclient_swarmclient_swarmclient_hubisrunning",
       "lib_swarmclient_swarmclient_swarmclient_opensocket",
       "lib_swarmclient_swarmclient_swarmclient_siblinghubpath"
-    ],
-    "55": [
-      "lib_swarmclient_swarmclient_swarmclient_buildframe",
-      "lib_swarmclient_swarmclient_swarmclient_crc8",
-      "lib_swarmclient_swarmclient_swarmclient_flush",
-      "lib_swarmclient_swarmclient_swarmclient_framesize",
-      "lib_swarmclient_swarmclient_swarmclient_parseframe",
-      "lib_swarmclient_swarmclient_swarmclient_poll",
-      "lib_swarmclient_swarmclient_swarmclient_sendping"
     ],
     "56": [
       "claudemd_feature_flag_isolated_module_pattern",
@@ -1213,6 +1210,15 @@
       "claudemd_odometry_enabled_toggle"
     ],
     "61": [
+      "lib_swarmclient_swarmclient_swarmclient_buildframe",
+      "lib_swarmclient_swarmclient_swarmclient_crc8",
+      "lib_swarmclient_swarmclient_swarmclient_flush",
+      "lib_swarmclient_swarmclient_swarmclient_framesize",
+      "lib_swarmclient_swarmclient_swarmclient_parseframe",
+      "lib_swarmclient_swarmclient_swarmclient_poll",
+      "lib_swarmclient_swarmclient_swarmclient_sendping"
+    ],
+    "62": [
       "lib_swarmclient_swarmclient_swarmclient_disconnect",
       "lib_swarmclient_swarmclient_swarmclient_swarmclient",
       "tools_swarm_swarm_terminal",
@@ -1220,15 +1226,6 @@
       "tools_swarm_swarm_terminal_main",
       "tools_swarm_swarm_terminal_signal_handler",
       "tools_swarm_swarm_terminal_statusparts"
-    ],
-    "62": [
-      "tools_vision_circle_demo_cpp_time_point",
-      "tools_vision_circle_demo_rateestimator",
-      "tools_vision_circle_demo_rateestimator_baseangle",
-      "tools_vision_circle_demo_rateestimator_basetime",
-      "tools_vision_circle_demo_rateestimator_init",
-      "tools_vision_circle_demo_rateestimator_rate",
-      "tools_vision_circle_demo_updaterate"
     ],
     "63": [
       "readme",
@@ -1243,6 +1240,15 @@
       "readme_wire_protocol"
     ],
     "64": [
+      "tools_vision_circle_demo_cpp_time_point",
+      "tools_vision_circle_demo_rateestimator",
+      "tools_vision_circle_demo_rateestimator_baseangle",
+      "tools_vision_circle_demo_rateestimator_basetime",
+      "tools_vision_circle_demo_rateestimator_init",
+      "tools_vision_circle_demo_rateestimator_rate",
+      "tools_vision_circle_demo_updaterate"
+    ],
+    "65": [
       "deque",
       "tools_swarm_latency_plot",
       "tools_swarm_latency_plot_drawplot",
@@ -1250,7 +1256,7 @@
       "tools_swarm_latency_plot_onpong",
       "tools_swarm_latency_plot_signal_handler"
     ],
-    "65": [
+    "66": [
       "src_robots_uart_controller_pi",
       "src_robots_uart_controller_pi_init",
       "src_robots_uart_controller_pi_reset",
@@ -1258,36 +1264,27 @@
       "src_robots_uart_controller_rationale_70",
       "src_robots_uart_controller_rationale_87"
     ],
-    "66": [
+    "67": [
       "tools_vision_drag_drop_demo_avoidstate",
       "tools_vision_drag_drop_demo_avoidstate_arc",
       "tools_vision_drag_drop_demo_avoidstate_arcdx",
       "tools_vision_drag_drop_demo_avoidstate_arcdy",
       "tools_vision_drag_drop_demo_avoidstate_mindist"
     ],
-    "67": [
-      "lib_calibration_objective_iobjective",
-      "lib_calibration_objective_iobjective_evaluate",
-      "lib_calibration_objective_iobjective_iobjective",
-      "lib_calibration_objective_iobjective_name"
-    ],
     "68": [
       "tools_vision_calibration_readme_fisheye_calibration"
     ],
     "69": [
-      "tools_vision_circle_demo_calibstate",
-      "tools_vision_circle_demo_calibstate_done",
-      "tools_vision_circle_demo_calibstate_pixpts",
-      "tools_vision_circle_demo_cpp_vector"
+      "lib_calibration_objective_iobjective",
+      "lib_calibration_objective_iobjective_evaluate",
+      "lib_calibration_objective_iobjective_iobjective",
+      "lib_calibration_objective_iobjective_name"
     ],
     "70": [
       "extra_script"
     ],
     "71": [
       "src_robots_main"
-    ],
-    "72": [
-      "test"
     ],
     "73": [
       "tools_vision_calibration_readme",
@@ -1324,12 +1321,12 @@
     "5": 0.05128205128205128,
     "6": 0.10099573257467995,
     "7": 0.062388591800356503,
-    "8": 0.0962566844919786,
-    "9": 0.09848484848484848,
-    "10": 0.07258064516129033,
+    "8": 0.09848484848484848,
+    "9": 0.07258064516129033,
+    "10": 0.09247311827956989,
     "11": 0.05714285714285714,
-    "12": 0.09247311827956989,
-    "13": 0.1354679802955665,
+    "12": 0.1354679802955665,
+    "13": 0.11904761904761904,
     "14": 0.11333333333333333,
     "15": 0.08,
     "16": 0.12,
@@ -1365,30 +1362,29 @@
     "46": 0.3333333333333333,
     "47": 0.4,
     "48": 0.4,
-    "49": 0.2777777777777778,
+    "49": 0.2,
     "50": 0.18181818181818182,
-    "51": 0.3611111111111111,
+    "51": 0.2777777777777778,
     "52": 0.2,
-    "53": 0.2857142857142857,
-    "54": 0.3333333333333333,
+    "53": 0.3611111111111111,
+    "54": 0.2857142857142857,
     "55": 0.3333333333333333,
     "56": 0.6666666666666666,
     "57": 1.0,
     "58": 1.0,
     "59": 1.0,
     "60": 1.0,
-    "61": 0.38095238095238093,
-    "62": 0.3333333333333333,
+    "61": 0.3333333333333333,
+    "62": 0.38095238095238093,
     "63": 0.2,
-    "64": 0.4666666666666667,
-    "65": 0.3333333333333333,
-    "66": 0.4,
-    "67": 0.5,
+    "64": 0.3333333333333333,
+    "65": 0.4666666666666667,
+    "66": 0.3333333333333333,
+    "67": 0.4,
     "68": 1.0,
     "69": 0.5,
     "70": 1.0,
     "71": 1.0,
-    "72": 1.0,
     "73": 0.2857142857142857,
     "75": 0.3333333333333333,
     "76": 0.3333333333333333
@@ -1510,13 +1506,13 @@
     },
     {
       "type": "bridge_node",
-      "question": "Why does `Vehicle` connect `Vehicle` to `latency_plot.cpp`?",
-      "why": "High betweenness centrality (0.051) - this node is a cross-community bridge."
+      "question": "Why does `ArucoConfig` connect `ArucoConfig` to `main`, `StaticObjective`, `ArucoTracker`, `objective.h`, `runOptimisation`, `BaslerPylonSource`, `param_space.h`, `string`?",
+      "why": "High betweenness centrality (0.057) - this node is a cross-community bridge."
     },
     {
       "type": "bridge_node",
-      "question": "Why does `ArucoConfig` connect `ArucoConfig` to `main`, `StaticObjective`, `ArucoTracker`, `objective.h`, `runOptimisation`, `BaslerPylonSource`, `param_space.h`, `string`?",
-      "why": "High betweenness centrality (0.051) - this node is a cross-community bridge."
+      "question": "Why does `Vehicle` connect `Vehicle` to `latency_plot.cpp`?",
+      "why": "High betweenness centrality (0.052) - this node is a cross-community bridge."
     },
     {
       "type": "verify_inferred",
