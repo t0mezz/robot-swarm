@@ -27,10 +27,9 @@ jobs:
       - name: Rebuild graph (code-only re-extraction + clustering)
         run: |
           graphify update . --no-cluster --force
+          graphify cluster-only . --no-label
           if [ -n "${GEMINI_API_KEY}" ]; then
-            graphify cluster-only . --backend gemini
-          else
-            graphify cluster-only . --no-label
+            graphify label . --missing-only --backend gemini
           fi
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
