@@ -1,133 +1,133 @@
 {
   "extra_script.py": {
-    "mtime": 1786808490.2249787,
-    "seen": 1786808501.3070204,
+    "mtime": 1786808691.6171732,
+    "seen": 1786808702.8062372,
     "ast_hash": "ec307301c71119221552dbcfef816853",
     "semantic_hash": "ec307301c71119221552dbcfef816853"
   },
   "lib/ArucoTracker/aruco_tracker.h": {
-    "mtime": 1786808490.2390063,
-    "seen": 1786808501.307025,
+    "mtime": 1786808691.6308773,
+    "seen": 1786808702.8062415,
     "ast_hash": "6cf6c80221bb5589c8a4ef168cc07b3a",
     "semantic_hash": ""
   },
   "lib/ArucoTracker/basler_pylon_source.h": {
-    "mtime": 1786808490.2392106,
-    "seen": 1786808501.3070269,
+    "mtime": 1786808691.6311035,
+    "seen": 1786808702.8062437,
     "ast_hash": "38ea6d88530d977274ca361a4750657f",
     "semantic_hash": ""
   },
   "lib/Calibration/cmaes.h": {
-    "mtime": 1786808490.2392106,
-    "seen": 1786808501.3070288,
+    "mtime": 1786808691.6311035,
+    "seen": 1786808702.806245,
     "ast_hash": "065a5c8cfd29ebf8bc991361b04de8d9",
     "semantic_hash": "065a5c8cfd29ebf8bc991361b04de8d9"
   },
   "lib/Calibration/objective.h": {
-    "mtime": 1786808490.2393987,
-    "seen": 1786808501.30703,
+    "mtime": 1786808691.631272,
+    "seen": 1786808702.806246,
     "ast_hash": "3d310249e0bc20e46fadebbe37101fcf",
     "semantic_hash": "3d310249e0bc20e46fadebbe37101fcf"
   },
   "lib/Calibration/objective_static.h": {
-    "mtime": 1786808490.2393987,
-    "seen": 1786808501.3070312,
+    "mtime": 1786808691.631272,
+    "seen": 1786808702.8062472,
     "ast_hash": "0536e342f35e964b7a08f0255641c82b",
     "semantic_hash": "0536e342f35e964b7a08f0255641c82b"
   },
   "lib/Calibration/param_space.h": {
-    "mtime": 1786808490.2393987,
-    "seen": 1786808501.307032,
+    "mtime": 1786808691.631272,
+    "seen": 1786808702.806248,
     "ast_hash": "2b5f94949e30a938fd90ca7df7d8592e",
     "semantic_hash": "2b5f94949e30a938fd90ca7df7d8592e"
   },
   "lib/DemoHud/DemoHud.h": {
-    "mtime": 1786808490.2393987,
-    "seen": 1786808501.307033,
+    "mtime": 1786808691.631272,
+    "seen": 1786808702.806249,
     "ast_hash": "2728791667aac15c94dda6a6b1de2216",
     "semantic_hash": ""
   },
   "lib/SwarmClient/SwarmClient.h": {
-    "mtime": 1786808490.2393987,
-    "seen": 1786808501.307034,
+    "mtime": 1786808691.631272,
+    "seen": 1786808702.80625,
     "ast_hash": "9f66e9712dc62770a150b4de7c0953ab",
     "semantic_hash": ""
   },
   "lib/SwarmProtocol/debug_protocol.h": {
-    "mtime": 1786808490.2393987,
-    "seen": 1786808501.3070352,
+    "mtime": 1786808691.631272,
+    "seen": 1786808702.806251,
     "ast_hash": "ed9e8b4c41cccb9871c1d395893b4972",
     "semantic_hash": ""
   },
   "lib/SwarmProtocol/hardware.h": {
-    "mtime": 1786808490.2398648,
-    "seen": 1786808501.3070362,
+    "mtime": 1786808691.6317413,
+    "seen": 1786808702.806252,
     "ast_hash": "6a2f0c1e6543e3e97fc3ed845b5eed13",
     "semantic_hash": ""
   },
   "lib/SwarmProtocol/protocol.h": {
-    "mtime": 1786808490.2398648,
-    "seen": 1786808501.307037,
+    "mtime": 1786808691.6317413,
+    "seen": 1786808702.806253,
     "ast_hash": "bae55e5080b0e6491636fbde3eb0d69e",
     "semantic_hash": "bae55e5080b0e6491636fbde3eb0d69e"
   },
   "src/dongle/main.cpp": {
-    "mtime": 1786808490.240019,
-    "seen": 1786808501.3070383,
+    "mtime": 1786808691.6319134,
+    "seen": 1786808702.8062541,
     "ast_hash": "b3caa2b87fc1c5f7896b97708f8f2c00",
     "semantic_hash": ""
   },
   "src/receiver/main.cpp": {
-    "mtime": 1786808490.240019,
-    "seen": 1786808501.3070393,
+    "mtime": 1786808691.6319134,
+    "seen": 1786808702.806255,
     "ast_hash": "52f7c7e0ebecc055ad617eea1a39b156",
     "semantic_hash": ""
   },
   "src/robots/main.py": {
-    "mtime": 1786808490.240418,
-    "seen": 1786808501.3070402,
+    "mtime": 1786808691.6322603,
+    "seen": 1786808702.8062558,
     "ast_hash": "6ab28b626985f70d0f03c96639f8f3c8",
     "semantic_hash": ""
   },
   "src/robots/robot_uart.py": {
-    "mtime": 1786808490.240418,
-    "seen": 1786808501.3070416,
+    "mtime": 1786808691.6322603,
+    "seen": 1786808702.8062572,
     "ast_hash": "7bf803c0cb72871b56c46eace6da6c64",
     "semantic_hash": "7bf803c0cb72871b56c46eace6da6c64"
   },
   "src/robots/screen_manager.py": {
-    "mtime": 1786808490.240418,
-    "seen": 1786808501.3070426,
+    "mtime": 1786808691.6322603,
+    "seen": 1786808702.806258,
     "ast_hash": "6ea3dfb136de90038e2734ce41d151f5",
     "semantic_hash": "6ea3dfb136de90038e2734ce41d151f5"
   },
   "src/robots/uart_controller.py": {
-    "mtime": 1786808490.240418,
-    "seen": 1786808501.3070436,
+    "mtime": 1786808691.6322603,
+    "seen": 1786808702.806259,
     "ast_hash": "809f018ebbdbe85147f5da897a5149bd",
     "semantic_hash": ""
   },
   "tests/test_protocol.cpp": {
-    "mtime": 1786808490.240807,
-    "seen": 1786808501.3070457,
+    "mtime": 1786808691.6326013,
+    "seen": 1786808702.8062599,
     "ast_hash": "62b071be4372be04fd80a97cae3e9243",
     "semantic_hash": "62b071be4372be04fd80a97cae3e9243"
   },
   "tools/game.cpp": {
-    "mtime": 1786808490.240933,
-    "seen": 1786808501.307048,
+    "mtime": 1786808691.632731,
+    "seen": 1786808702.8062623,
     "ast_hash": "f4d72a665e3fc61a92e1beaadedbbaef",
     "semantic_hash": "f4d72a665e3fc61a92e1beaadedbbaef"
   },
   "tools/generate_marker_stl.py": {
-    "mtime": 1786808490.240933,
-    "seen": 1786808501.307049,
+    "mtime": 1786808691.632731,
+    "seen": 1786808702.8062634,
     "ast_hash": "fed5c23eeac16980a292048b33f740d7",
     "semantic_hash": ""
   },
   "tools/vision/aruco_demo.py": {
-    "mtime": 1786808490.2421944,
-    "seen": 1786808501.3070595,
+    "mtime": 1786808691.6340375,
+    "seen": 1786808702.8062737,
     "ast_hash": "54669dbdce812e7a2ceb25b969af3c75",
     "semantic_hash": "54669dbdce812e7a2ceb25b969af3c75"
   },
@@ -142,182 +142,176 @@
     "semantic_hash": ""
   },
   "tools/vision/calibration/calib_main.cpp": {
-    "mtime": 1786808490.2430778,
-    "seen": 1786808501.3070605,
+    "mtime": 1786808691.6348681,
+    "seen": 1786808702.806275,
     "ast_hash": "cf9719ada17bc06da658a752f938455e",
     "semantic_hash": ""
   },
   "tools/vision/circle_demo.cpp": {
-    "mtime": 1786808490.2430778,
-    "seen": 1786808501.3070614,
+    "mtime": 1786808691.6348681,
+    "seen": 1786808702.8062758,
     "ast_hash": "cc01611dd051804fb4b05cab7e1b87c8",
     "semantic_hash": ""
   },
   "tools/vision/demo_hud_preview.cpp": {
-    "mtime": 1786808490.2430778,
-    "seen": 1786808501.3070629,
+    "mtime": 1786808691.6348681,
+    "seen": 1786808702.8062768,
     "ast_hash": "8814ed7b9bc364c15307fd85c34a6822",
     "semantic_hash": "8814ed7b9bc364c15307fd85c34a6822"
   },
   "tools/vision/drag_drop_demo.cpp": {
-    "mtime": 1786808490.2430778,
-    "seen": 1786808501.3070638,
+    "mtime": 1786808691.6348681,
+    "seen": 1786808702.806278,
     "ast_hash": "450ccba07141bdf43f74f4795e65eac7",
     "semantic_hash": "450ccba07141bdf43f74f4795e65eac7"
   },
   "tools/vision/frame_inspector.cpp": {
-    "mtime": 1786808490.2430778,
-    "seen": 1786808501.3070648,
+    "mtime": 1786808691.6348681,
+    "seen": 1786808702.806279,
     "ast_hash": "280341f282a708581be4f45be4319140",
     "semantic_hash": ""
   },
   "tools/vision/generate_markers_pdf.py": {
-    "mtime": 1786808490.2430778,
-    "seen": 1786808501.3070662,
+    "mtime": 1786808691.6348681,
+    "seen": 1786808702.80628,
     "ast_hash": "18c048de939fad0273ff715e79d11a4d",
     "semantic_hash": "18c048de939fad0273ff715e79d11a4d"
   },
   "tools/vision/marker_eval.cpp": {
-    "mtime": 1786808490.2430778,
-    "seen": 1786808501.3070672,
+    "mtime": 1786808691.6348681,
+    "seen": 1786808702.8062806,
     "ast_hash": "24fe484c4fa154762cd45e732350d227",
     "semantic_hash": ""
   },
   "tools/vision/shape_demo.cpp": {
-    "mtime": 1786808490.2437265,
-    "seen": 1786808501.307068,
+    "mtime": 1786808691.635173,
+    "seen": 1786808702.8062818,
     "ast_hash": "22d6da1ba4c81270d677a2313364a999",
     "semantic_hash": ""
   },
   "tools/vision/vision_controller.cpp": {
-    "mtime": 1786808490.2437265,
-    "seen": 1786808501.3070693,
+    "mtime": 1786808691.635173,
+    "seen": 1786808702.806283,
     "ast_hash": "2ccf45ca244d344e56f426f99709bd00",
     "semantic_hash": "2ccf45ca244d344e56f426f99709bd00"
   },
   "tools/vision/wingman.cpp": {
-    "mtime": 1786808490.2437265,
-    "seen": 1786808501.3070703,
+    "mtime": 1786808691.635173,
+    "seen": 1786808702.806284,
     "ast_hash": "13bcf707c7a8030ac16c6bf0d17f623b",
     "semantic_hash": "13bcf707c7a8030ac16c6bf0d17f623b"
   },
   "CLAUDE.md": {
-    "mtime": 1786808490.2249787,
-    "seen": 1786808501.307073,
+    "mtime": 1786808691.6171732,
+    "seen": 1786808702.8062863,
     "ast_hash": "0d1c4c57b930d00d9360236c8a82f2f2",
     "semantic_hash": ""
   },
   "PERFORMANCE.md": {
-    "mtime": 1786808490.2249787,
-    "seen": 1786808501.307074,
+    "mtime": 1786808691.6171732,
+    "seen": 1786808702.8062878,
     "ast_hash": "295daf59f3fc20d763e2b214d63ab864",
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1786808490.2249787,
-    "seen": 1786808501.307075,
+    "mtime": 1786808691.6171732,
+    "seen": 1786808702.8062892,
     "ast_hash": "b594d01ab1892f7c0053863f8a452e42",
     "semantic_hash": ""
   },
   "TODO.md": {
-    "mtime": 1786808490.2249787,
-    "seen": 1786808501.3070765,
+    "mtime": 1786808691.6171732,
+    "seen": 1786808702.8062901,
     "ast_hash": "e2ccd3460f8029d9e8d09934022ab0fe",
     "semantic_hash": ""
   },
   "docs/architecture.md": {
-    "mtime": 1786808490.2249787,
-    "seen": 1786808501.3070774,
+    "mtime": 1786808691.6171732,
+    "seen": 1786808702.806291,
     "ast_hash": "893a6f86362248e182d8a7cd6c27eb6c",
     "semantic_hash": "893a6f86362248e182d8a7cd6c27eb6c"
   },
   "src/robots/README.md": {
-    "mtime": 1786808490.240019,
-    "seen": 1786808501.3070784,
+    "mtime": 1786808691.6319134,
+    "seen": 1786808702.8062923,
     "ast_hash": "e93fa8c4d77553eff1a10e66795fcf9a",
     "semantic_hash": ""
   },
   "tools/compile_flags.txt": {
-    "mtime": 1786808490.240933,
-    "seen": 1786808501.3070798,
+    "mtime": 1786808691.632731,
+    "seen": 1786808702.8062935,
     "ast_hash": "ecdc34c5b8b3b8fef39a9e886d012b54",
     "semantic_hash": "ecdc34c5b8b3b8fef39a9e886d012b54"
   },
   "tools/vision/calibration/README.md": {
-    "mtime": 1786808490.2430778,
-    "seen": 1786808501.3070807,
+    "mtime": 1786808691.6348681,
+    "seen": 1786808702.8062947,
     "ast_hash": "247807ab08b598410c99e45c1787b2e5",
     "semantic_hash": ""
   },
-  "test.py": {
-    "mtime": 1786808490.240418,
-    "seen": 1786808501.3070445,
-    "ast_hash": "4a995553f23ce45fb2a437b0a27bb622",
-    "semantic_hash": ""
-  },
   "tools/flash.py": {
-    "mtime": 1786808490.240933,
-    "seen": 1786808501.307047,
+    "mtime": 1786808691.632731,
+    "seen": 1786808702.8062613,
     "ast_hash": "afc4511ff0e79bd0e614839e4750f064",
     "semantic_hash": ""
   },
   "tools/msc-flash.py": {
-    "mtime": 1786808490.240933,
-    "seen": 1786808501.3070505,
+    "mtime": 1786808691.632731,
+    "seen": 1786808702.8062644,
     "ast_hash": "cfe18b6a715e5afb8c4bb129d9e6a6fe",
     "semantic_hash": ""
   },
   "tools/swarm/evdev_keys.h": {
-    "mtime": 1786808490.240933,
-    "seen": 1786808501.3070514,
+    "mtime": 1786808691.6331732,
+    "seen": 1786808702.8062654,
     "ast_hash": "0f486a594229d5c6fa15badab08cbb1b",
     "semantic_hash": ""
   },
   "tools/swarm/latency_plot.cpp": {
-    "mtime": 1786808490.2421944,
-    "seen": 1786808501.3070526,
+    "mtime": 1786808691.6340375,
+    "seen": 1786808702.8062663,
     "ast_hash": "e14ba0e439d5dc09d1a73522f1f33f9e",
     "semantic_hash": ""
   },
   "tools/swarm/swarm_controller.cpp": {
-    "mtime": 1786808490.2421944,
-    "seen": 1786808501.3070536,
+    "mtime": 1786808691.6340375,
+    "seen": 1786808702.8062677,
     "ast_hash": "461d88d8c0c041bf3413c57e5bb3233e",
     "semantic_hash": ""
   },
   "tools/swarm/swarm_dashboard.cpp": {
-    "mtime": 1786808490.2421944,
-    "seen": 1786808501.3070545,
+    "mtime": 1786808691.6340375,
+    "seen": 1786808702.8062687,
     "ast_hash": "1d8421fab16db9bc6a4529180713adee",
     "semantic_hash": ""
   },
   "tools/swarm/swarm_hub.cpp": {
-    "mtime": 1786808490.2421944,
-    "seen": 1786808501.3070557,
+    "mtime": 1786808691.6340375,
+    "seen": 1786808702.8062696,
     "ast_hash": "44fae34c2813bb93baf1bff6de410946",
     "semantic_hash": ""
   },
   "tools/swarm/swarm_hub_simulation.cpp": {
-    "mtime": 1786808490.2421944,
-    "seen": 1786808501.3070567,
+    "mtime": 1786808691.6340375,
+    "seen": 1786808702.8062708,
     "ast_hash": "32aa4e01ccf0115fabd3592a6daffe3d",
     "semantic_hash": ""
   },
   "tools/swarm/swarm_terminal.cpp": {
-    "mtime": 1786808490.2421944,
-    "seen": 1786808501.3070576,
+    "mtime": 1786808691.6340375,
+    "seen": 1786808702.8062718,
     "ast_hash": "9da2d1133bacbc927adbecc912a25eaa",
     "semantic_hash": ""
   },
   "tools/swarm/telemetry_history.h": {
-    "mtime": 1786808490.2421944,
-    "seen": 1786808501.3070586,
+    "mtime": 1786808691.6340375,
+    "seen": 1786808702.8062727,
     "ast_hash": "51fa08bfb2a8dbd27c04ff5d9f689565",
     "semantic_hash": ""
   },
   ".github/workflows/deploy-graph.yml": {
-    "mtime": 1786808490.2249787,
-    "seen": 1786808501.3070714,
+    "mtime": 1786808691.6171732,
+    "seen": 1786808702.8062851,
     "ast_hash": "079f96391e9f2849c32bfdfa23a7fe68",
     "semantic_hash": ""
   }

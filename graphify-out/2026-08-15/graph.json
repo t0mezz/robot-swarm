@@ -4350,14 +4350,6 @@
       "_origin": "ast"
     },
     {
-      "id": "test",
-      "label": "test.py",
-      "file_type": "code",
-      "source_file": "test.py",
-      "source_location": "L1",
-      "_origin": "ast"
-    },
-    {
       "id": "tests_test_protocol",
       "label": "test_protocol.cpp",
       "file_type": "code",
@@ -8489,10 +8481,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_architecture",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "architecture.md"
+      "norm_label": "architecture.md",
+      "id": "docs_architecture"
     },
     {
       "label": "1. Roboter-Registrierung",
@@ -8500,10 +8492,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L19",
       "_origin": "ast",
-      "id": "docs_architecture_1_roboter_registrierung",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "1. roboter-registrierung"
+      "norm_label": "1. roboter-registrierung",
+      "id": "docs_architecture_1_roboter_registrierung"
     },
     {
       "label": "2. Steuerkanal (PC → Roboter)",
@@ -8511,10 +8503,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L55",
       "_origin": "ast",
-      "id": "docs_architecture_2_steuerkanal_pc_roboter",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "2. steuerkanal (pc → roboter)"
+      "norm_label": "2. steuerkanal (pc → roboter)",
+      "id": "docs_architecture_2_steuerkanal_pc_roboter"
     },
     {
       "label": "3. Telemetrie-Rückkanal (Roboter → PC)",
@@ -8522,10 +8514,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L112",
       "_origin": "ast",
-      "id": "docs_architecture_3_telemetrie_rückkanal_roboter_pc",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "3. telemetrie-ruckkanal (roboter → pc)"
+      "norm_label": "3. telemetrie-ruckkanal (roboter → pc)",
+      "id": "docs_architecture_3_telemetrie_rückkanal_roboter_pc"
     },
     {
       "label": "4. Protokoll-Übersicht",
@@ -8533,10 +8525,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L185",
       "_origin": "ast",
-      "id": "docs_architecture_4_protokoll_übersicht",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "4. protokoll-ubersicht"
+      "norm_label": "4. protokoll-ubersicht",
+      "id": "docs_architecture_4_protokoll_übersicht"
     },
     {
       "label": "5. Fehlerbehandlung",
@@ -8544,10 +8536,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L199",
       "_origin": "ast",
-      "id": "docs_architecture_5_fehlerbehandlung",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "5. fehlerbehandlung"
+      "norm_label": "5. fehlerbehandlung",
+      "id": "docs_architecture_5_fehlerbehandlung"
     },
     {
       "label": "6. Controller-PC Software",
@@ -8555,10 +8547,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L229",
       "_origin": "ast",
-      "id": "docs_architecture_6_controller_pc_software",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "6. controller-pc software"
+      "norm_label": "6. controller-pc software",
+      "id": "docs_architecture_6_controller_pc_software"
     },
     {
       "label": "7. Hardware-Checkliste pro Roboter",
@@ -8566,10 +8558,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L273",
       "_origin": "ast",
-      "id": "docs_architecture_7_hardware_checkliste_pro_roboter",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "7. hardware-checkliste pro roboter"
+      "norm_label": "7. hardware-checkliste pro roboter",
+      "id": "docs_architecture_7_hardware_checkliste_pro_roboter"
     },
     {
       "label": "8. Implementierungsreihenfolge",
@@ -8577,10 +8569,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L294",
       "_origin": "ast",
-      "id": "docs_architecture_8_implementierungsreihenfolge",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "8. implementierungsreihenfolge"
+      "norm_label": "8. implementierungsreihenfolge",
+      "id": "docs_architecture_8_implementierungsreihenfolge"
     },
     {
       "label": "Architektur",
@@ -8588,10 +8580,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L231",
       "_origin": "ast",
-      "id": "docs_architecture_architektur",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "architektur"
+      "norm_label": "architektur",
+      "id": "docs_architecture_architektur"
     },
     {
       "label": "CRC-Fehler",
@@ -8599,10 +8591,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L223",
       "_origin": "ast",
-      "id": "docs_architecture_crc_fehler",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "crc-fehler"
+      "norm_label": "crc-fehler",
+      "id": "docs_architecture_crc_fehler"
     },
     {
       "label": "Datenfluss",
@@ -8610,10 +8602,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L78",
       "_origin": "ast",
-      "id": "docs_architecture_datenfluss",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "datenfluss"
+      "norm_label": "datenfluss",
+      "id": "docs_architecture_datenfluss"
     },
     {
       "label": "Datenfluss Rückkanal",
@@ -8621,10 +8613,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L168",
       "_origin": "ast",
-      "id": "docs_architecture_datenfluss_rückkanal",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "datenfluss ruckkanal"
+      "norm_label": "datenfluss ruckkanal",
+      "id": "docs_architecture_datenfluss_rückkanal"
     },
     {
       "label": "Dongle-Watchdog",
@@ -8632,10 +8624,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L212",
       "_origin": "ast",
-      "id": "docs_architecture_dongle_watchdog",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "dongle-watchdog"
+      "norm_label": "dongle-watchdog",
+      "id": "docs_architecture_dongle_watchdog"
     },
     {
       "label": "Latenz-Budget",
@@ -8643,10 +8635,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L98",
       "_origin": "ast",
-      "id": "docs_architecture_latenz_budget",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "latenz-budget"
+      "norm_label": "latenz-budget",
+      "id": "docs_architecture_latenz_budget"
     },
     {
       "label": "Lösung: Automatische Registrierung per Announce",
@@ -8654,10 +8646,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L24",
       "_origin": "ast",
-      "id": "docs_architecture_lösung_automatische_registrierung_per_announce",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "losung: automatische registrierung per announce"
+      "norm_label": "losung: automatische registrierung per announce",
+      "id": "docs_architecture_lösung_automatische_registrierung_per_announce"
     },
     {
       "label": "Lösung: TDMA (Time Division Multiple Access)",
@@ -8665,10 +8657,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L117",
       "_origin": "ast",
-      "id": "docs_architecture_lösung_tdma_time_division_multiple_access",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "losung: tdma (time division multiple access)"
+      "norm_label": "losung: tdma (time division multiple access)",
+      "id": "docs_architecture_lösung_tdma_time_division_multiple_access"
     },
     {
       "label": "Motor-Watchdog (auf RP2040)",
@@ -8676,10 +8668,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L201",
       "_origin": "ast",
-      "id": "docs_architecture_motor_watchdog_auf_rp2040",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "motor-watchdog (auf rp2040)"
+      "norm_label": "motor-watchdog (auf rp2040)",
+      "id": "docs_architecture_motor_watchdog_auf_rp2040"
     },
     {
       "label": "Multi-Robot Steuerung (Zukunft)",
@@ -8687,10 +8679,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L262",
       "_origin": "ast",
-      "id": "docs_architecture_multi_robot_steuerung_zukunft",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "multi-robot steuerung (zukunft)"
+      "norm_label": "multi-robot steuerung (zukunft)",
+      "id": "docs_architecture_multi_robot_steuerung_zukunft"
     },
     {
       "label": "Paketformat: MSG_SWARM (0x10)",
@@ -8698,10 +8690,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L57",
       "_origin": "ast",
-      "id": "docs_architecture_paketformat_msg_swarm_0x10",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "paketformat: msg_swarm (0x10)"
+      "norm_label": "paketformat: msg_swarm (0x10)",
+      "id": "docs_architecture_paketformat_msg_swarm_0x10"
     },
     {
       "label": "Phase 1: Basis (bereits fertig)",
@@ -8709,10 +8701,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L296",
       "_origin": "ast",
-      "id": "docs_architecture_phase_1_basis_bereits_fertig",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "phase 1: basis (bereits fertig)"
+      "norm_label": "phase 1: basis (bereits fertig)",
+      "id": "docs_architecture_phase_1_basis_bereits_fertig"
     },
     {
       "label": "Phase 2: Registrierung & Telemetrie",
@@ -8720,10 +8712,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L302",
       "_origin": "ast",
-      "id": "docs_architecture_phase_2_registrierung_telemetrie",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "phase 2: registrierung & telemetrie"
+      "norm_label": "phase 2: registrierung & telemetrie",
+      "id": "docs_architecture_phase_2_registrierung_telemetrie"
     },
     {
       "label": "Phase 3: Robustheit",
@@ -8731,10 +8723,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L309",
       "_origin": "ast",
-      "id": "docs_architecture_phase_3_robustheit",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "phase 3: robustheit"
+      "norm_label": "phase 3: robustheit",
+      "id": "docs_architecture_phase_3_robustheit"
     },
     {
       "label": "Phase 4: Schwarm-Algorithmen",
@@ -8742,10 +8734,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L315",
       "_origin": "ast",
-      "id": "docs_architecture_phase_4_schwarm_algorithmen",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "phase 4: schwarm-algorithmen"
+      "norm_label": "phase 4: schwarm-algorithmen",
+      "id": "docs_architecture_phase_4_schwarm_algorithmen"
     },
     {
       "label": "Problem",
@@ -8753,10 +8745,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L21",
       "_origin": "ast",
-      "id": "docs_architecture_problem",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "problem"
+      "norm_label": "problem",
+      "id": "docs_architecture_problem"
     },
     {
       "label": "Problem",
@@ -8764,10 +8756,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L114",
       "_origin": "ast",
-      "id": "docs_architecture_problem_114",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "problem"
+      "norm_label": "problem",
+      "id": "docs_architecture_problem_114"
     },
     {
       "label": "Robot-Reconnect",
@@ -8775,10 +8767,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L216",
       "_origin": "ast",
-      "id": "docs_architecture_robot_reconnect",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "robot-reconnect"
+      "norm_label": "robot-reconnect",
+      "id": "docs_architecture_robot_reconnect"
     },
     {
       "label": "Robot Swarm Pipeline — Architekturplan",
@@ -8786,10 +8778,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "docs_architecture_robot_swarm_pipeline_architekturplan",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "robot swarm pipeline — architekturplan"
+      "norm_label": "robot swarm pipeline — architekturplan",
+      "id": "docs_architecture_robot_swarm_pipeline_architekturplan"
     },
     {
       "label": "Roboter-ID Vergabe",
@@ -8797,10 +8789,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L49",
       "_origin": "ast",
-      "id": "docs_architecture_roboter_id_vergabe",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "roboter-id vergabe"
+      "norm_label": "roboter-id vergabe",
+      "id": "docs_architecture_roboter_id_vergabe"
     },
     {
       "label": "Swarm Manager",
@@ -8808,10 +8800,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L255",
       "_origin": "ast",
-      "id": "docs_architecture_swarm_manager",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "swarm manager"
+      "norm_label": "swarm manager",
+      "id": "docs_architecture_swarm_manager"
     },
     {
       "label": "Synchronisation",
@@ -8819,10 +8811,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L131",
       "_origin": "ast",
-      "id": "docs_architecture_synchronisation",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "synchronisation"
+      "norm_label": "synchronisation",
+      "id": "docs_architecture_synchronisation"
     },
     {
       "label": "Telemetrie-Paketformat: MSG_TELEMETRY (0x30)",
@@ -8830,10 +8822,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L146",
       "_origin": "ast",
-      "id": "docs_architecture_telemetrie_paketformat_msg_telemetry_0x30",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "telemetrie-paketformat: msg_telemetry (0x30)"
+      "norm_label": "telemetrie-paketformat: msg_telemetry (0x30)",
+      "id": "docs_architecture_telemetrie_paketformat_msg_telemetry_0x30"
     },
     {
       "label": "Timing",
@@ -8841,10 +8833,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L72",
       "_origin": "ast",
-      "id": "docs_architecture_timing",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "timing"
+      "norm_label": "timing",
+      "id": "docs_architecture_timing"
     },
     {
       "label": "Zentrale Infrastruktur",
@@ -8852,10 +8844,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L284",
       "_origin": "ast",
-      "id": "docs_architecture_zentrale_infrastruktur",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "zentrale infrastruktur"
+      "norm_label": "zentrale infrastruktur",
+      "id": "docs_architecture_zentrale_infrastruktur"
     },
     {
       "label": "Übersicht",
@@ -8863,10 +8855,10 @@
       "source_file": "docs/architecture.md",
       "source_location": "L3",
       "_origin": "ast",
-      "id": "docs_architecture_übersicht",
       "community": 11,
       "community_name": "Robot Swarm Pipeline — Architekturplan",
-      "norm_label": "ubersicht"
+      "norm_label": "ubersicht",
+      "id": "docs_architecture_übersicht"
     },
     {
       "label": "TODO.md",
@@ -8874,10 +8866,10 @@
       "source_file": "TODO.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "todo",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "todo.md"
+      "norm_label": "todo.md",
+      "id": "todo"
     },
     {
       "label": "Bug: Latency Erledigt (2026-06-18)",
@@ -8885,10 +8877,10 @@
       "source_file": "TODO.md",
       "source_location": "L183",
       "_origin": "ast",
-      "id": "todo_bug_latency_erledigt_2026_06_18",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "bug: latency erledigt (2026-06-18)"
+      "norm_label": "bug: latency erledigt (2026-06-18)",
+      "id": "todo_bug_latency_erledigt_2026_06_18"
     },
     {
       "label": "Erledigt (2026-06-10)",
@@ -8896,10 +8888,10 @@
       "source_file": "TODO.md",
       "source_location": "L171",
       "_origin": "ast",
-      "id": "todo_erledigt_2026_06_10",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "erledigt (2026-06-10)"
+      "norm_label": "erledigt (2026-06-10)",
+      "id": "todo_erledigt_2026_06_10"
     },
     {
       "label": "Erledigt (2026-06-12)",
@@ -8907,10 +8899,10 @@
       "source_file": "TODO.md",
       "source_location": "L161",
       "_origin": "ast",
-      "id": "todo_erledigt_2026_06_12",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "erledigt (2026-06-12)"
+      "norm_label": "erledigt (2026-06-12)",
+      "id": "todo_erledigt_2026_06_12"
     },
     {
       "label": "Fix swarm dashboard flickering on ubuntu. Erledigt (2026-07-06)",
@@ -8918,10 +8910,10 @@
       "source_file": "TODO.md",
       "source_location": "L110",
       "_origin": "ast",
-      "id": "todo_fix_swarm_dashboard_flickering_on_ubuntu_erledigt_2026_07_06",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "fix swarm dashboard flickering on ubuntu. erledigt (2026-07-06)"
+      "norm_label": "fix swarm dashboard flickering on ubuntu. erledigt (2026-07-06)",
+      "id": "todo_fix_swarm_dashboard_flickering_on_ubuntu_erledigt_2026_07_06"
     },
     {
       "label": "================== FIXED ===================",
@@ -8929,10 +8921,10 @@
       "source_file": "TODO.md",
       "source_location": "L93",
       "_origin": "ast",
-      "id": "todo_fixed",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "================== fixed ==================="
+      "norm_label": "================== fixed ===================",
+      "id": "todo_fixed"
     },
     {
       "label": "Genera aruco tracker issue: Erledigt (2026-07-08)",
@@ -8940,10 +8932,10 @@
       "source_file": "TODO.md",
       "source_location": "L94",
       "_origin": "ast",
-      "id": "todo_genera_aruco_tracker_issue_erledigt_2026_07_08",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "genera aruco tracker issue: erledigt (2026-07-08)"
+      "norm_label": "genera aruco tracker issue: erledigt (2026-07-08)",
+      "id": "todo_genera_aruco_tracker_issue_erledigt_2026_07_08"
     },
     {
       "label": "Performance: loop_fps vs cam_fps (circle_demo) Erledigt (2026-06-12)",
@@ -8951,10 +8943,10 @@
       "source_file": "TODO.md",
       "source_location": "L156",
       "_origin": "ast",
-      "id": "todo_performance_loop_fps_vs_cam_fps_circle_demo_erledigt_2026_06_12",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "performance: loop_fps vs cam_fps (circle_demo) erledigt (2026-06-12)"
+      "norm_label": "performance: loop_fps vs cam_fps (circle_demo) erledigt (2026-06-12)",
+      "id": "todo_performance_loop_fps_vs_cam_fps_circle_demo_erledigt_2026_06_12"
     },
     {
       "label": "questions to answer:",
@@ -8962,10 +8954,10 @@
       "source_file": "TODO.md",
       "source_location": "L37",
       "_origin": "ast",
-      "id": "todo_questions_to_answer",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "questions to answer:"
+      "norm_label": "questions to answer:",
+      "id": "todo_questions_to_answer"
     },
     {
       "label": "Später",
@@ -8973,10 +8965,10 @@
       "source_file": "TODO.md",
       "source_location": "L86",
       "_origin": "ast",
-      "id": "todo_später",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "spater"
+      "norm_label": "spater",
+      "id": "todo_später"
     },
     {
       "label": "Tests: CRC-8 Framing Unit Tests Erledigt (2026-06-19)",
@@ -8984,10 +8976,10 @@
       "source_file": "TODO.md",
       "source_location": "L144",
       "_origin": "ast",
-      "id": "todo_tests_crc_8_framing_unit_tests_erledigt_2026_06_19",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "tests: crc-8 framing unit tests erledigt (2026-06-19)"
+      "norm_label": "tests: crc-8 framing unit tests erledigt (2026-06-19)",
+      "id": "todo_tests_crc_8_framing_unit_tests_erledigt_2026_06_19"
     },
     {
       "label": "Think about if its a good idea to: (is this already done?????)",
@@ -8995,10 +8987,10 @@
       "source_file": "TODO.md",
       "source_location": "L32",
       "_origin": "ast",
-      "id": "todo_think_about_if_its_a_good_idea_to_is_this_already_done",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "think about if its a good idea to: (is this already done?????)"
+      "norm_label": "think about if its a good idea to: (is this already done?????)",
+      "id": "todo_think_about_if_its_a_good_idea_to_is_this_already_done"
     },
     {
       "label": "TODO",
@@ -9006,10 +8998,10 @@
       "source_file": "TODO.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "todo_todo",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "todo"
+      "norm_label": "todo",
+      "id": "todo_todo"
     },
     {
       "label": "Tooling / Tests",
@@ -9017,10 +9009,10 @@
       "source_file": "TODO.md",
       "source_location": "L52",
       "_origin": "ast",
-      "id": "todo_tooling_tests",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "tooling / tests"
+      "norm_label": "tooling / tests",
+      "id": "todo_tooling_tests"
     },
     {
       "label": "Update Swarm dashboard: Erledigt (2026-06-24)",
@@ -9028,10 +9020,10 @@
       "source_file": "TODO.md",
       "source_location": "L126",
       "_origin": "ast",
-      "id": "todo_update_swarm_dashboard_erledigt_2026_06_24",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "update swarm dashboard: erledigt (2026-06-24)"
+      "norm_label": "update swarm dashboard: erledigt (2026-06-24)",
+      "id": "todo_update_swarm_dashboard_erledigt_2026_06_24"
     },
     {
       "label": "We need to add a feature for pose log (saving) and analysis.",
@@ -9039,10 +9031,10 @@
       "source_file": "TODO.md",
       "source_location": "L3",
       "_origin": "ast",
-      "id": "todo_we_need_to_add_a_feature_for_pose_log_saving_and_analysis",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "we need to add a feature for pose log (saving) and analysis."
+      "norm_label": "we need to add a feature for pose log (saving) and analysis.",
+      "id": "todo_we_need_to_add_a_feature_for_pose_log_saving_and_analysis"
     },
     {
       "label": "Webserver / Headless",
@@ -9050,10 +9042,10 @@
       "source_file": "TODO.md",
       "source_location": "L40",
       "_origin": "ast",
-      "id": "todo_webserver_headless",
       "community": 28,
       "community_name": "================== FIXED ===================",
-      "norm_label": "webserver / headless"
+      "norm_label": "webserver / headless",
+      "id": "todo_webserver_headless"
     },
     {
       "label": "CLAUDE.md",
@@ -9061,10 +9053,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "claude",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "claude.md"
+      "norm_label": "claude.md",
+      "id": "claude"
     },
     {
       "label": "Architecture",
@@ -9072,10 +9064,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L49",
       "_origin": "ast",
-      "id": "claude_architecture",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "architecture"
+      "norm_label": "architecture",
+      "id": "claude_architecture"
     },
     {
       "label": "CLAUDE.md",
@@ -9083,10 +9075,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "claude_claude_md",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "claude.md"
+      "norm_label": "claude.md",
+      "id": "claude_claude_md"
     },
     {
       "label": "Commands",
@@ -9094,10 +9086,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L11",
       "_origin": "ast",
-      "id": "claude_commands",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "commands"
+      "norm_label": "commands",
+      "id": "claude_commands"
     },
     {
       "label": "Firmware (PlatformIO — `src/dongle`, `src/receiver`)",
@@ -9105,10 +9097,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L13",
       "_origin": "ast",
-      "id": "claude_firmware_platformio_src_dongle_src_receiver",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "firmware (platformio — `src/dongle`, `src/receiver`)"
+      "norm_label": "firmware (platformio — `src/dongle`, `src/receiver`)",
+      "id": "claude_firmware_platformio_src_dongle_src_receiver"
     },
     {
       "label": "MicroPython robot firmware: feature-flag + isolated-module pattern",
@@ -9116,10 +9108,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L79",
       "_origin": "ast",
-      "id": "claude_micropython_robot_firmware_feature_flag_isolated_module_pattern",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "micropython robot firmware: feature-flag + isolated-module pattern"
+      "norm_label": "micropython robot firmware: feature-flag + isolated-module pattern",
+      "id": "claude_micropython_robot_firmware_feature_flag_isolated_module_pattern"
     },
     {
       "label": "PC tools (`tools/`, plain Makefile)",
@@ -9127,10 +9119,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L24",
       "_origin": "ast",
-      "id": "claude_pc_tools_tools_plain_makefile",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "pc tools (`tools/`, plain makefile)"
+      "norm_label": "pc tools (`tools/`, plain makefile)",
+      "id": "claude_pc_tools_tools_plain_makefile"
     },
     {
       "label": "Project Overview",
@@ -9138,10 +9130,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L5",
       "_origin": "ast",
-      "id": "claude_project_overview",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "project overview"
+      "norm_label": "project overview",
+      "id": "claude_project_overview"
     },
     {
       "label": "Repo layout",
@@ -9149,10 +9141,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L85",
       "_origin": "ast",
-      "id": "claude_repo_layout",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "repo layout"
+      "norm_label": "repo layout",
+      "id": "claude_repo_layout"
     },
     {
       "label": "Robot firmware (`src/robots/`, MicroPython)",
@@ -9160,10 +9152,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L35",
       "_origin": "ast",
-      "id": "claude_robot_firmware_src_robots_micropython",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "robot firmware (`src/robots/`, micropython)"
+      "norm_label": "robot firmware (`src/robots/`, micropython)",
+      "id": "claude_robot_firmware_src_robots_micropython"
     },
     {
       "label": "Robot registration and addressing",
@@ -9171,10 +9163,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L67",
       "_origin": "ast",
-      "id": "claude_robot_registration_and_addressing",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "robot registration and addressing"
+      "norm_label": "robot registration and addressing",
+      "id": "claude_robot_registration_and_addressing"
     },
     {
       "label": "Safety watchdogs live on the robot, not the PC",
@@ -9182,10 +9174,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L71",
       "_origin": "ast",
-      "id": "claude_safety_watchdogs_live_on_the_robot_not_the_pc",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "safety watchdogs live on the robot, not the pc"
+      "norm_label": "safety watchdogs live on the robot, not the pc",
+      "id": "claude_safety_watchdogs_live_on_the_robot_not_the_pc"
     },
     {
       "label": "`swarm_hub` is the only process that owns the serial port",
@@ -9193,10 +9185,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L61",
       "_origin": "ast",
-      "id": "claude_swarm_hub_is_the_only_process_that_owns_the_serial_port",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "`swarm_hub` is the only process that owns the serial port"
+      "norm_label": "`swarm_hub` is the only process that owns the serial port",
+      "id": "claude_swarm_hub_is_the_only_process_that_owns_the_serial_port"
     },
     {
       "label": "Tests (`tests/`, plain Makefile)",
@@ -9204,10 +9196,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L39",
       "_origin": "ast",
-      "id": "claude_tests_tests_plain_makefile",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "tests (`tests/`, plain makefile)"
+      "norm_label": "tests (`tests/`, plain makefile)",
+      "id": "claude_tests_tests_plain_makefile"
     },
     {
       "label": "Vision pipeline is a separate concern layered on top of the swarm link",
@@ -9215,10 +9207,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L75",
       "_origin": "ast",
-      "id": "claude_vision_pipeline_is_a_separate_concern_layered_on_top_of_the_swarm_link",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "vision pipeline is a separate concern layered on top of the swarm link"
+      "norm_label": "vision pipeline is a separate concern layered on top of the swarm link",
+      "id": "claude_vision_pipeline_is_a_separate_concern_layered_on_top_of_the_swarm_link"
     },
     {
       "label": "Wire protocol has three independent implementations",
@@ -9226,10 +9218,10 @@
       "source_file": "CLAUDE.md",
       "source_location": "L51",
       "_origin": "ast",
-      "id": "claude_wire_protocol_has_three_independent_implementations",
       "community": 29,
       "community_name": "Architecture",
-      "norm_label": "wire protocol has three independent implementations"
+      "norm_label": "wire protocol has three independent implementations",
+      "id": "claude_wire_protocol_has_three_independent_implementations"
     },
     {
       "label": "PERFORMANCE.md",
@@ -9237,10 +9229,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "performance",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "performance.md"
+      "norm_label": "performance.md",
+      "id": "performance"
     },
     {
       "label": "2026-06-12 — back to `powersave` (after the `performance` test)",
@@ -9248,10 +9240,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L141",
       "_origin": "ast",
-      "id": "performance_2026_06_12_back_to_powersave_after_the_performance_test",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "2026-06-12 — back to `powersave` (after the `performance` test)"
+      "norm_label": "2026-06-12 — back to `powersave` (after the `performance` test)",
+      "id": "performance_2026_06_12_back_to_powersave_after_the_performance_test"
     },
     {
       "label": "2026-06-12 — Baseline (revised: split by tracking state)",
@@ -9259,10 +9251,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L42",
       "_origin": "ast",
-      "id": "performance_2026_06_12_baseline_revised_split_by_tracking_state",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "2026-06-12 — baseline (revised: split by tracking state)"
+      "norm_label": "2026-06-12 — baseline (revised: split by tracking state)",
+      "id": "performance_2026_06_12_baseline_revised_split_by_tracking_state"
     },
     {
       "label": "2026-06-12 — fix: `half_res_sweep: true` (was `false` in config)",
@@ -9270,10 +9262,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L76",
       "_origin": "ast",
-      "id": "performance_2026_06_12_fix_half_res_sweep_true_was_false_in_config",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "2026-06-12 — fix: `half_res_sweep: true` (was `false` in config)"
+      "norm_label": "2026-06-12 — fix: `half_res_sweep: true` (was `false` in config)",
+      "id": "performance_2026_06_12_fix_half_res_sweep_true_was_false_in_config"
     },
     {
       "label": "2026-06-12 — governor `powersave` → `performance`",
@@ -9281,10 +9273,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L115",
       "_origin": "ast",
-      "id": "performance_2026_06_12_governor_powersave_performance",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "2026-06-12 — governor `powersave` → `performance`"
+      "norm_label": "2026-06-12 — governor `powersave` → `performance`",
+      "id": "performance_2026_06_12_governor_powersave_performance"
     },
     {
       "label": "2026-06-12 — `performance` governor + EPP after BIOS fan-curve change",
@@ -9292,10 +9284,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L228",
       "_origin": "ast",
-      "id": "performance_2026_06_12_performance_governor_epp_after_bios_fan_curve_change",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "2026-06-12 — `performance` governor + epp after bios fan-curve change"
+      "norm_label": "2026-06-12 — `performance` governor + epp after bios fan-curve change",
+      "id": "performance_2026_06_12_performance_governor_epp_after_bios_fan_curve_change"
     },
     {
       "label": "2026-06-12 — re-baseline (`powersave` / EPP `balance_power`, confirmed default)",
@@ -9303,10 +9295,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L184",
       "_origin": "ast",
-      "id": "performance_2026_06_12_re_baseline_powersave_epp_balance_power_confirmed_default",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "2026-06-12 — re-baseline (`powersave` / epp `balance_power`, confirmed default)"
+      "norm_label": "2026-06-12 — re-baseline (`powersave` / epp `balance_power`, confirmed default)",
+      "id": "performance_2026_06_12_re_baseline_powersave_epp_balance_power_confirmed_default"
     },
     {
       "label": "2026-06-12 — ROOT CAUSE FOUND & FIXED: `sleep_for(30ms)` poll in main loop",
@@ -9314,10 +9306,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L287",
       "_origin": "ast",
-      "id": "performance_2026_06_12_root_cause_found_fixed_sleep_for_30ms_poll_in_main_loop",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "2026-06-12 — root cause found & fixed: `sleep_for(30ms)` poll in main loop"
+      "norm_label": "2026-06-12 — root cause found & fixed: `sleep_for(30ms)` poll in main loop",
+      "id": "performance_2026_06_12_root_cause_found_fixed_sleep_for_30ms_poll_in_main_loop"
     },
     {
       "label": "circle_demo",
@@ -9325,10 +9317,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L40",
       "_origin": "ast",
-      "id": "performance_circle_demo",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "circle_demo"
+      "norm_label": "circle_demo",
+      "id": "performance_circle_demo"
     },
     {
       "label": "Governor / EPP / fan experiments (see below)",
@@ -9336,10 +9328,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L102",
       "_origin": "ast",
-      "id": "performance_governor_epp_fan_experiments_see_below",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "governor / epp / fan experiments (see below)"
+      "norm_label": "governor / epp / fan experiments (see below)",
+      "id": "performance_governor_epp_fan_experiments_see_below"
     },
     {
       "label": "How to log a new entry",
@@ -9347,10 +9339,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L23",
       "_origin": "ast",
-      "id": "performance_how_to_log_a_new_entry",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "how to log a new entry"
+      "norm_label": "how to log a new entry",
+      "id": "performance_how_to_log_a_new_entry"
     },
     {
       "label": "Next experiment — BIOS fan-curve fix",
@@ -9358,10 +9350,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L210",
       "_origin": "ast",
-      "id": "performance_next_experiment_bios_fan_curve_fix",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "next experiment — bios fan-curve fix"
+      "norm_label": "next experiment — bios fan-curve fix",
+      "id": "performance_next_experiment_bios_fan_curve_fix"
     },
     {
       "label": "Performance Tracking",
@@ -9369,10 +9361,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "performance_performance_tracking",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "performance tracking"
+      "norm_label": "performance tracking",
+      "id": "performance_performance_tracking"
     },
     {
       "label": "vision_controller / wingman / shape_demo / drag_drop_demo",
@@ -9380,10 +9372,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L357",
       "_origin": "ast",
-      "id": "performance_vision_controller_wingman_shape_demo_drag_drop_demo",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "vision_controller / wingman / shape_demo / drag_drop_demo"
+      "norm_label": "vision_controller / wingman / shape_demo / drag_drop_demo",
+      "id": "performance_vision_controller_wingman_shape_demo_drag_drop_demo"
     },
     {
       "label": "Why this isn't a clean revert: governor vs. EPP, and real throttling",
@@ -9391,10 +9383,10 @@
       "source_file": "PERFORMANCE.md",
       "source_location": "L160",
       "_origin": "ast",
-      "id": "performance_why_this_isn_t_a_clean_revert_governor_vs_epp_and_real_throttling",
       "community": 34,
       "community_name": "circle_demo",
-      "norm_label": "why this isn't a clean revert: governor vs. epp, and real throttling"
+      "norm_label": "why this isn't a clean revert: governor vs. epp, and real throttling",
+      "id": "performance_why_this_isn_t_a_clean_revert_governor_vs_epp_and_real_throttling"
     },
     {
       "label": "`marker_eval`",
@@ -9402,10 +9394,10 @@
       "source_file": "README.md",
       "source_location": "L320",
       "_origin": "ast",
-      "id": "readme_marker_eval",
       "community": 43,
       "community_name": "CMA-ES ArUco Detector Calibration",
-      "norm_label": "`marker_eval`"
+      "norm_label": "`marker_eval`",
+      "id": "readme_marker_eval"
     },
     {
       "label": "Scoring",
@@ -9413,10 +9405,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L72",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_scoring",
       "community": 43,
       "community_name": "CMA-ES ArUco Detector Calibration",
-      "norm_label": "scoring"
+      "norm_label": "scoring",
+      "id": "tools_vision_calibration_readme_scoring"
     },
     {
       "label": "Static objective",
@@ -9424,10 +9416,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L74",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_static_objective",
       "community": 43,
       "community_name": "CMA-ES ArUco Detector Calibration",
-      "norm_label": "static objective"
+      "norm_label": "static objective",
+      "id": "tools_vision_calibration_readme_static_objective"
     },
     {
       "label": "`circle_demo`",
@@ -9435,10 +9427,10 @@
       "source_file": "README.md",
       "source_location": "L281",
       "_origin": "ast",
-      "id": "readme_circle_demo",
       "community": 46,
       "community_name": "circle_demo sleep_for(30ms) Poll Root Cause",
-      "norm_label": "`circle_demo`"
+      "norm_label": "`circle_demo`",
+      "id": "readme_circle_demo"
     },
     {
       "label": "`swarm_hub`",
@@ -9446,10 +9438,10 @@
       "source_file": "README.md",
       "source_location": "L202",
       "_origin": "ast",
-      "id": "readme_swarm_hub",
       "community": 47,
       "community_name": "`swarm_hub`",
-      "norm_label": "`swarm_hub`"
+      "norm_label": "`swarm_hub`",
+      "id": "readme_swarm_hub"
     },
     {
       "label": "robots/README.md",
@@ -9457,10 +9449,10 @@
       "source_file": "src/robots/README.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "src_robots_readme",
       "community": 50,
       "community_name": "Pololu 3pi+ 2040 Swarm Control",
-      "norm_label": "robots/readme.md"
+      "norm_label": "robots/readme.md",
+      "id": "src_robots_readme"
     },
     {
       "label": "Batch flashing",
@@ -9468,10 +9460,10 @@
       "source_file": "src/robots/README.md",
       "source_location": "L74",
       "_origin": "ast",
-      "id": "src_robots_readme_batch_flashing",
       "community": 50,
       "community_name": "Pololu 3pi+ 2040 Swarm Control",
-      "norm_label": "batch flashing"
+      "norm_label": "batch flashing",
+      "id": "src_robots_readme_batch_flashing"
     },
     {
       "label": "Data Pipeline",
@@ -9479,10 +9471,10 @@
       "source_file": "src/robots/README.md",
       "source_location": "L5",
       "_origin": "ast",
-      "id": "src_robots_readme_data_pipeline",
       "community": 50,
       "community_name": "Pololu 3pi+ 2040 Swarm Control",
-      "norm_label": "data pipeline"
+      "norm_label": "data pipeline",
+      "id": "src_robots_readme_data_pipeline"
     },
     {
       "label": "Debug Display Types",
@@ -9490,10 +9482,10 @@
       "source_file": "src/robots/README.md",
       "source_location": "L54",
       "_origin": "ast",
-      "id": "src_robots_readme_debug_display_types",
       "community": 50,
       "community_name": "Pololu 3pi+ 2040 Swarm Control",
-      "norm_label": "debug display types"
+      "norm_label": "debug display types",
+      "id": "src_robots_readme_debug_display_types"
     },
     {
       "label": "Dependencies",
@@ -9501,10 +9493,10 @@
       "source_file": "src/robots/README.md",
       "source_location": "L95",
       "_origin": "ast",
-      "id": "src_robots_readme_dependencies",
       "community": 50,
       "community_name": "Pololu 3pi+ 2040 Swarm Control",
-      "norm_label": "dependencies"
+      "norm_label": "dependencies",
+      "id": "src_robots_readme_dependencies"
     },
     {
       "label": "Display",
@@ -9512,10 +9504,10 @@
       "source_file": "src/robots/README.md",
       "source_location": "L62",
       "_origin": "ast",
-      "id": "src_robots_readme_display",
       "community": 50,
       "community_name": "Pololu 3pi+ 2040 Swarm Control",
-      "norm_label": "display"
+      "norm_label": "display",
+      "id": "src_robots_readme_display"
     },
     {
       "label": "Files",
@@ -9523,10 +9515,10 @@
       "source_file": "src/robots/README.md",
       "source_location": "L26",
       "_origin": "ast",
-      "id": "src_robots_readme_files",
       "community": 50,
       "community_name": "Pololu 3pi+ 2040 Swarm Control",
-      "norm_label": "files"
+      "norm_label": "files",
+      "id": "src_robots_readme_files"
     },
     {
       "label": "Message Types",
@@ -9534,10 +9526,10 @@
       "source_file": "src/robots/README.md",
       "source_location": "L42",
       "_origin": "ast",
-      "id": "src_robots_readme_message_types",
       "community": 50,
       "community_name": "Pololu 3pi+ 2040 Swarm Control",
-      "norm_label": "message types"
+      "norm_label": "message types",
+      "id": "src_robots_readme_message_types"
     },
     {
       "label": "Packet Format",
@@ -9545,10 +9537,10 @@
       "source_file": "src/robots/README.md",
       "source_location": "L34",
       "_origin": "ast",
-      "id": "src_robots_readme_packet_format",
       "community": 50,
       "community_name": "Pololu 3pi+ 2040 Swarm Control",
-      "norm_label": "packet format"
+      "norm_label": "packet format",
+      "id": "src_robots_readme_packet_format"
     },
     {
       "label": "Pololu 3pi+ 2040 Swarm Control",
@@ -9556,10 +9548,10 @@
       "source_file": "src/robots/README.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "src_robots_readme_pololu_3pi_2040_swarm_control",
       "community": 50,
       "community_name": "Pololu 3pi+ 2040 Swarm Control",
-      "norm_label": "pololu 3pi+ 2040 swarm control"
+      "norm_label": "pololu 3pi+ 2040 swarm control",
+      "id": "src_robots_readme_pololu_3pi_2040_swarm_control"
     },
     {
       "label": "Usage",
@@ -9567,10 +9559,10 @@
       "source_file": "src/robots/README.md",
       "source_location": "L70",
       "_origin": "ast",
-      "id": "src_robots_readme_usage",
       "community": 50,
       "community_name": "Pololu 3pi+ 2040 Swarm Control",
-      "norm_label": "usage"
+      "norm_label": "usage",
+      "id": "src_robots_readme_usage"
     },
     {
       "label": "`calibrate`",
@@ -9578,10 +9570,10 @@
       "source_file": "README.md",
       "source_location": "L351",
       "_origin": "ast",
-      "id": "readme_calibrate",
       "community": 52,
       "community_name": "PC Tools",
-      "norm_label": "`calibrate`"
+      "norm_label": "`calibrate`",
+      "id": "readme_calibrate"
     },
     {
       "label": "`frame_inspector`",
@@ -9589,10 +9581,10 @@
       "source_file": "README.md",
       "source_location": "L335",
       "_origin": "ast",
-      "id": "readme_frame_inspector",
       "community": 52,
       "community_name": "PC Tools",
-      "norm_label": "`frame_inspector`"
+      "norm_label": "`frame_inspector`",
+      "id": "readme_frame_inspector"
     },
     {
       "label": "`latency_plot`",
@@ -9600,10 +9592,10 @@
       "source_file": "README.md",
       "source_location": "L231",
       "_origin": "ast",
-      "id": "readme_latency_plot",
       "community": 52,
       "community_name": "PC Tools",
-      "norm_label": "`latency_plot`"
+      "norm_label": "`latency_plot`",
+      "id": "readme_latency_plot"
     },
     {
       "label": "PC Tools",
@@ -9611,10 +9603,10 @@
       "source_file": "README.md",
       "source_location": "L200",
       "_origin": "ast",
-      "id": "readme_pc_tools",
       "community": 52,
       "community_name": "PC Tools",
-      "norm_label": "pc tools"
+      "norm_label": "pc tools",
+      "id": "readme_pc_tools"
     },
     {
       "label": "`shape_demo`",
@@ -9622,10 +9614,10 @@
       "source_file": "README.md",
       "source_location": "L301",
       "_origin": "ast",
-      "id": "readme_shape_demo",
       "community": 52,
       "community_name": "PC Tools",
-      "norm_label": "`shape_demo`"
+      "norm_label": "`shape_demo`",
+      "id": "readme_shape_demo"
     },
     {
       "label": "`swarm_controller`",
@@ -9633,10 +9625,10 @@
       "source_file": "README.md",
       "source_location": "L222",
       "_origin": "ast",
-      "id": "readme_swarm_controller",
       "community": 52,
       "community_name": "PC Tools",
-      "norm_label": "`swarm_controller`"
+      "norm_label": "`swarm_controller`",
+      "id": "readme_swarm_controller"
     },
     {
       "label": "`swarm_terminal`",
@@ -9644,10 +9636,10 @@
       "source_file": "README.md",
       "source_location": "L213",
       "_origin": "ast",
-      "id": "readme_swarm_terminal",
       "community": 52,
       "community_name": "PC Tools",
-      "norm_label": "`swarm_terminal`"
+      "norm_label": "`swarm_terminal`",
+      "id": "readme_swarm_terminal"
     },
     {
       "label": "`vision_controller`",
@@ -9655,10 +9647,10 @@
       "source_file": "README.md",
       "source_location": "L240",
       "_origin": "ast",
-      "id": "readme_vision_controller",
       "community": 52,
       "community_name": "PC Tools",
-      "norm_label": "`vision_controller`"
+      "norm_label": "`vision_controller`",
+      "id": "readme_vision_controller"
     },
     {
       "label": "`wingman`",
@@ -9666,10 +9658,10 @@
       "source_file": "README.md",
       "source_location": "L260",
       "_origin": "ast",
-      "id": "readme_wingman",
       "community": 52,
       "community_name": "PC Tools",
-      "norm_label": "`wingman`"
+      "norm_label": "`wingman`",
+      "id": "readme_wingman"
     },
     {
       "label": "README.md",
@@ -9677,10 +9669,10 @@
       "source_file": "README.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "readme",
       "community": 63,
       "community_name": "Robot Swarm",
-      "norm_label": "readme.md"
+      "norm_label": "readme.md",
+      "id": "readme"
     },
     {
       "label": "Architecture",
@@ -9688,10 +9680,10 @@
       "source_file": "README.md",
       "source_location": "L9",
       "_origin": "ast",
-      "id": "readme_architecture",
       "community": 63,
       "community_name": "Robot Swarm",
-      "norm_label": "architecture"
+      "norm_label": "architecture",
+      "id": "readme_architecture"
     },
     {
       "label": "Camera Setup (Basler ace2 GigE)",
@@ -9699,10 +9691,10 @@
       "source_file": "README.md",
       "source_location": "L381",
       "_origin": "ast",
-      "id": "readme_camera_setup_basler_ace2_gige",
       "community": 63,
       "community_name": "Robot Swarm",
-      "norm_label": "camera setup (basler ace2 gige)"
+      "norm_label": "camera setup (basler ace2 gige)",
+      "id": "readme_camera_setup_basler_ace2_gige"
     },
     {
       "label": "Firmware (all platforms)",
@@ -9710,10 +9702,10 @@
       "source_file": "README.md",
       "source_location": "L54",
       "_origin": "ast",
-      "id": "readme_firmware_all_platforms",
       "community": 63,
       "community_name": "Robot Swarm",
-      "norm_label": "firmware (all platforms)"
+      "norm_label": "firmware (all platforms)",
+      "id": "readme_firmware_all_platforms"
     },
     {
       "label": "PC Tools — macOS (Apple Silicon)",
@@ -9721,10 +9713,10 @@
       "source_file": "README.md",
       "source_location": "L60",
       "_origin": "ast",
-      "id": "readme_pc_tools_macos_apple_silicon",
       "community": 63,
       "community_name": "Robot Swarm",
-      "norm_label": "pc tools — macos (apple silicon)"
+      "norm_label": "pc tools — macos (apple silicon)",
+      "id": "readme_pc_tools_macos_apple_silicon"
     },
     {
       "label": "PC Tools — Ubuntu 22.04 / 24.04 (x86\\_64)",
@@ -9732,10 +9724,10 @@
       "source_file": "README.md",
       "source_location": "L85",
       "_origin": "ast",
-      "id": "readme_pc_tools_ubuntu_22_04_24_04_x86_64",
       "community": 63,
       "community_name": "Robot Swarm",
-      "norm_label": "pc tools — ubuntu 22.04 / 24.04 (x86\\_64)"
+      "norm_label": "pc tools — ubuntu 22.04 / 24.04 (x86\\_64)",
+      "id": "readme_pc_tools_ubuntu_22_04_24_04_x86_64"
     },
     {
       "label": "Prerequisites",
@@ -9743,10 +9735,10 @@
       "source_file": "README.md",
       "source_location": "L52",
       "_origin": "ast",
-      "id": "readme_prerequisites",
       "community": 63,
       "community_name": "Robot Swarm",
-      "norm_label": "prerequisites"
+      "norm_label": "prerequisites",
+      "id": "readme_prerequisites"
     },
     {
       "label": "Project Structure",
@@ -9754,10 +9746,10 @@
       "source_file": "README.md",
       "source_location": "L20",
       "_origin": "ast",
-      "id": "readme_project_structure",
       "community": 63,
       "community_name": "Robot Swarm",
-      "norm_label": "project structure"
+      "norm_label": "project structure",
+      "id": "readme_project_structure"
     },
     {
       "label": "Robot Swarm",
@@ -9765,10 +9757,10 @@
       "source_file": "README.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "readme_robot_swarm",
       "community": 63,
       "community_name": "Robot Swarm",
-      "norm_label": "robot swarm"
+      "norm_label": "robot swarm",
+      "id": "readme_robot_swarm"
     },
     {
       "label": "Wire Protocol",
@@ -9776,10 +9768,10 @@
       "source_file": "README.md",
       "source_location": "L365",
       "_origin": "ast",
-      "id": "readme_wire_protocol",
       "community": 63,
       "community_name": "Robot Swarm",
-      "norm_label": "wire protocol"
+      "norm_label": "wire protocol",
+      "id": "readme_wire_protocol"
     },
     {
       "label": "calibration/README.md",
@@ -9787,10 +9779,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme",
       "community": 73,
       "community_name": "ArUco Tracker Calibration",
-      "norm_label": "calibration/readme.md"
+      "norm_label": "calibration/readme.md",
+      "id": "tools_vision_calibration_readme"
     },
     {
       "label": "All flags",
@@ -9798,10 +9790,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L42",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_all_flags",
       "community": 73,
       "community_name": "ArUco Tracker Calibration",
-      "norm_label": "all flags"
+      "norm_label": "all flags",
+      "id": "tools_vision_calibration_readme_all_flags"
     },
     {
       "label": "ArUco Tracker Calibration",
@@ -9809,10 +9801,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_aruco_tracker_calibration",
       "community": 73,
       "community_name": "ArUco Tracker Calibration",
-      "norm_label": "aruco tracker calibration"
+      "norm_label": "aruco tracker calibration",
+      "id": "tools_vision_calibration_readme_aruco_tracker_calibration"
     },
     {
       "label": "File structure",
@@ -9820,10 +9812,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L57",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_file_structure",
       "community": 73,
       "community_name": "ArUco Tracker Calibration",
-      "norm_label": "file structure"
+      "norm_label": "file structure",
+      "id": "tools_vision_calibration_readme_file_structure"
     },
     {
       "label": "How it works",
@@ -9831,10 +9823,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L23",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_how_it_works",
       "community": 73,
       "community_name": "ArUco Tracker Calibration",
-      "norm_label": "how it works"
+      "norm_label": "how it works",
+      "id": "tools_vision_calibration_readme_how_it_works"
     },
     {
       "label": "Parameters being optimised",
@@ -9842,10 +9834,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L83",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_parameters_being_optimised",
       "community": 73,
       "community_name": "ArUco Tracker Calibration",
-      "norm_label": "parameters being optimised"
+      "norm_label": "parameters being optimised",
+      "id": "tools_vision_calibration_readme_parameters_being_optimised"
     },
     {
       "label": "Quick start",
@@ -9853,10 +9845,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L7",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_quick_start",
       "community": 73,
       "community_name": "ArUco Tracker Calibration",
-      "norm_label": "quick start"
+      "norm_label": "quick start",
+      "id": "tools_vision_calibration_readme_quick_start"
     },
     {
       "label": "1. Flash the dongle",
@@ -9864,10 +9856,10 @@
       "source_file": "README.md",
       "source_location": "L152",
       "_origin": "ast",
-      "id": "readme_1_flash_the_dongle",
       "community": 75,
       "community_name": "Quick Start",
-      "norm_label": "1. flash the dongle"
+      "norm_label": "1. flash the dongle",
+      "id": "readme_1_flash_the_dongle"
     },
     {
       "label": "2. Flash each robot",
@@ -9875,10 +9867,10 @@
       "source_file": "README.md",
       "source_location": "L158",
       "_origin": "ast",
-      "id": "readme_2_flash_each_robot",
       "community": 75,
       "community_name": "Quick Start",
-      "norm_label": "2. flash each robot"
+      "norm_label": "2. flash each robot",
+      "id": "readme_2_flash_each_robot"
     },
     {
       "label": "3. Build PC tools",
@@ -9886,10 +9878,10 @@
       "source_file": "README.md",
       "source_location": "L167",
       "_origin": "ast",
-      "id": "readme_3_build_pc_tools",
       "community": 75,
       "community_name": "Quick Start",
-      "norm_label": "3. build pc tools"
+      "norm_label": "3. build pc tools",
+      "id": "readme_3_build_pc_tools"
     },
     {
       "label": "4. Find the dongle serial port",
@@ -9897,10 +9889,10 @@
       "source_file": "README.md",
       "source_location": "L174",
       "_origin": "ast",
-      "id": "readme_4_find_the_dongle_serial_port",
       "community": 75,
       "community_name": "Quick Start",
-      "norm_label": "4. find the dongle serial port"
+      "norm_label": "4. find the dongle serial port",
+      "id": "readme_4_find_the_dongle_serial_port"
     },
     {
       "label": "5. Run the hub",
@@ -9908,10 +9900,10 @@
       "source_file": "README.md",
       "source_location": "L186",
       "_origin": "ast",
-      "id": "readme_5_run_the_hub",
       "community": 75,
       "community_name": "Quick Start",
-      "norm_label": "5. run the hub"
+      "norm_label": "5. run the hub",
+      "id": "readme_5_run_the_hub"
     },
     {
       "label": "Quick Start",
@@ -9919,10 +9911,10 @@
       "source_file": "README.md",
       "source_location": "L150",
       "_origin": "ast",
-      "id": "readme_quick_start",
       "community": 75,
       "community_name": "Quick Start",
-      "norm_label": "quick start"
+      "norm_label": "quick start",
+      "id": "readme_quick_start"
     },
     {
       "label": "Combined static + motion objective",
@@ -9930,10 +9922,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L157",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_combined_static_motion_objective",
       "community": 76,
       "community_name": "Planned extensions",
-      "norm_label": "combined static + motion objective"
+      "norm_label": "combined static + motion objective",
+      "id": "tools_vision_calibration_readme_combined_static_motion_objective"
     },
     {
       "label": "Fisheye calibration (`objective_fisheye.h`)",
@@ -9941,10 +9933,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L124",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_fisheye_calibration_objective_fisheye_h",
       "community": 76,
       "community_name": "Planned extensions",
-      "norm_label": "fisheye calibration (`objective_fisheye.h`)"
+      "norm_label": "fisheye calibration (`objective_fisheye.h`)",
+      "id": "tools_vision_calibration_readme_fisheye_calibration_objective_fisheye_h"
     },
     {
       "label": "GP with ARD kernel (`gp_ard.h`)",
@@ -9952,10 +9944,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L134",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_gp_with_ard_kernel_gp_ard_h",
       "community": 76,
       "community_name": "Planned extensions",
-      "norm_label": "gp with ard kernel (`gp_ard.h`)"
+      "norm_label": "gp with ard kernel (`gp_ard.h`)",
+      "id": "tools_vision_calibration_readme_gp_with_ard_kernel_gp_ard_h"
     },
     {
       "label": "Motion objective (`objective_motion.h`)",
@@ -9963,10 +9955,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L106",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_motion_objective_objective_motion_h",
       "community": 76,
       "community_name": "Planned extensions",
-      "norm_label": "motion objective (`objective_motion.h`)"
+      "norm_label": "motion objective (`objective_motion.h`)",
+      "id": "tools_vision_calibration_readme_motion_objective_objective_motion_h"
     },
     {
       "label": "Parameter range narrowing",
@@ -9974,10 +9966,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L165",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_parameter_range_narrowing",
       "community": 76,
       "community_name": "Planned extensions",
-      "norm_label": "parameter range narrowing"
+      "norm_label": "parameter range narrowing",
+      "id": "tools_vision_calibration_readme_parameter_range_narrowing"
     },
     {
       "label": "Planned extensions",
@@ -9985,10 +9977,10 @@
       "source_file": "tools/vision/calibration/README.md",
       "source_location": "L104",
       "_origin": "ast",
-      "id": "tools_vision_calibration_readme_planned_extensions",
       "community": 76,
       "community_name": "Planned extensions",
-      "norm_label": "planned extensions"
+      "norm_label": "planned extensions",
+      "id": "tools_vision_calibration_readme_planned_extensions"
     },
     {
       "label": "CMA-ES ArUco Detector Calibration",
@@ -10002,8 +9994,8 @@
       "community": 43,
       "norm_label": "cma-es aruco detector calibration",
       "_origin": "semantic",
-      "id": "tools_vision_calibration_readme_cmaes_calibration",
-      "community_name": "CMA-ES ArUco Detector Calibration"
+      "community_name": "CMA-ES ArUco Detector Calibration",
+      "id": "tools_vision_calibration_readme_cmaes_calibration"
     },
     {
       "label": "GP-ARD Bayesian Optimizer (planned)",
@@ -10017,8 +10009,8 @@
       "community": 43,
       "norm_label": "gp-ard bayesian optimizer (planned)",
       "_origin": "semantic",
-      "id": "tools_vision_calibration_readme_gp_ard",
-      "community_name": "CMA-ES ArUco Detector Calibration"
+      "community_name": "CMA-ES ArUco Detector Calibration",
+      "id": "tools_vision_calibration_readme_gp_ard"
     },
     {
       "label": "IOptimizer ask/tell Interface",
@@ -10032,8 +10024,8 @@
       "community": 43,
       "norm_label": "ioptimizer ask/tell interface",
       "_origin": "semantic",
-      "id": "tools_vision_calibration_readme_ioptimizer",
-      "community_name": "CMA-ES ArUco Detector Calibration"
+      "community_name": "CMA-ES ArUco Detector Calibration",
+      "id": "tools_vision_calibration_readme_ioptimizer"
     },
     {
       "label": "Motion Objective Scoring",
@@ -10047,8 +10039,8 @@
       "community": 43,
       "norm_label": "motion objective scoring",
       "_origin": "semantic",
-      "id": "tools_vision_calibration_readme_motion_objective",
-      "community_name": "CMA-ES ArUco Detector Calibration"
+      "community_name": "CMA-ES ArUco Detector Calibration",
+      "id": "tools_vision_calibration_readme_motion_objective"
     },
     {
       "label": "Vision Pipeline as Separate Concern",
@@ -10062,8 +10054,8 @@
       "community": 43,
       "norm_label": "vision pipeline as separate concern",
       "_origin": "semantic",
-      "id": "claudemd_vision_pipeline_separate_concern",
-      "community_name": "CMA-ES ArUco Detector Calibration"
+      "community_name": "CMA-ES ArUco Detector Calibration",
+      "id": "claudemd_vision_pipeline_separate_concern"
     },
     {
       "label": "Wire Protocol Frame Format",
@@ -10077,8 +10069,8 @@
       "community": 44,
       "norm_label": "wire protocol frame format",
       "_origin": "semantic",
-      "id": "readme_wire_protocol_frame_format",
-      "community_name": "Wire Protocol: Three Independent Implementations"
+      "community_name": "Wire Protocol: Three Independent Implementations",
+      "id": "readme_wire_protocol_frame_format"
     },
     {
       "label": "flash.py Batch Flashing",
@@ -10092,8 +10084,8 @@
       "community": 44,
       "norm_label": "flash.py batch flashing",
       "_origin": "semantic",
-      "id": "src_robots_readme_flash_py",
-      "community_name": "Wire Protocol: Three Independent Implementations"
+      "community_name": "Wire Protocol: Three Independent Implementations",
+      "id": "src_robots_readme_flash_py"
     },
     {
       "label": "ScreenManager Display Manager",
@@ -10107,8 +10099,8 @@
       "community": 44,
       "norm_label": "screenmanager display manager",
       "_origin": "semantic",
-      "id": "src_robots_readme_screen_manager",
-      "community_name": "Wire Protocol: Three Independent Implementations"
+      "community_name": "Wire Protocol: Three Independent Implementations",
+      "id": "src_robots_readme_screen_manager"
     },
     {
       "label": "uart_controller.py Main Loop",
@@ -10122,8 +10114,8 @@
       "community": 44,
       "norm_label": "uart_controller.py main loop",
       "_origin": "semantic",
-      "id": "src_robots_readme_uart_controller",
-      "community_name": "Wire Protocol: Three Independent Implementations"
+      "community_name": "Wire Protocol: Three Independent Implementations",
+      "id": "src_robots_readme_uart_controller"
     },
     {
       "label": "UARTProtocol Library (robot_uart.py)",
@@ -10137,8 +10129,8 @@
       "community": 44,
       "norm_label": "uartprotocol library (robot_uart.py)",
       "_origin": "semantic",
-      "id": "src_robots_readme_uartprotocol",
-      "community_name": "Wire Protocol: Three Independent Implementations"
+      "community_name": "Wire Protocol: Three Independent Implementations",
+      "id": "src_robots_readme_uartprotocol"
     },
     {
       "label": "Wire Protocol: Three Independent Implementations",
@@ -10152,8 +10144,8 @@
       "community": 44,
       "norm_label": "wire protocol: three independent implementations",
       "_origin": "semantic",
-      "id": "claudemd_wire_protocol_three_implementations",
-      "community_name": "Wire Protocol: Three Independent Implementations"
+      "community_name": "Wire Protocol: Three Independent Implementations",
+      "id": "claudemd_wire_protocol_three_implementations"
     },
     {
       "label": "Remote Robot Shutdown (scrapped)",
@@ -10167,8 +10159,8 @@
       "community": 44,
       "norm_label": "remote robot shutdown (scrapped)",
       "_origin": "semantic",
-      "id": "todo_remote_shutdown_scrapped",
-      "community_name": "Wire Protocol: Three Independent Implementations"
+      "community_name": "Wire Protocol: Three Independent Implementations",
+      "id": "todo_remote_shutdown_scrapped"
     },
     {
       "label": "loop_fps vs cam_fps Gap",
@@ -10182,8 +10174,8 @@
       "community": 46,
       "norm_label": "loop_fps vs cam_fps gap",
       "_origin": "semantic",
-      "id": "performance_loop_fps_vs_cam_fps",
-      "community_name": "circle_demo sleep_for(30ms) Poll Root Cause"
+      "community_name": "circle_demo sleep_for(30ms) Poll Root Cause",
+      "id": "performance_loop_fps_vs_cam_fps"
     },
     {
       "label": "Generalized DEBUG/HUD Util (planned)",
@@ -10197,8 +10189,8 @@
       "community": 46,
       "norm_label": "generalized debug/hud util (planned)",
       "_origin": "semantic",
-      "id": "todo_generalized_debug_util",
-      "community_name": "circle_demo sleep_for(30ms) Poll Root Cause"
+      "community_name": "circle_demo sleep_for(30ms) Poll Root Cause",
+      "id": "todo_generalized_debug_util"
     },
     {
       "label": "circle_demo sleep_for(30ms) Poll Root Cause",
@@ -10212,8 +10204,8 @@
       "community": 46,
       "norm_label": "circle_demo sleep_for(30ms) poll root cause",
       "_origin": "semantic",
-      "id": "performance_circle_demo_sleep_poll_rootcause",
-      "community_name": "circle_demo sleep_for(30ms) Poll Root Cause"
+      "community_name": "circle_demo sleep_for(30ms) Poll Root Cause",
+      "id": "performance_circle_demo_sleep_poll_rootcause"
     },
     {
       "label": "Governor/EPP/Throttling Red Herring",
@@ -10227,8 +10219,8 @@
       "community": 46,
       "norm_label": "governor/epp/throttling red herring",
       "_origin": "semantic",
-      "id": "performance_governor_epp_red_herring",
-      "community_name": "circle_demo sleep_for(30ms) Poll Root Cause"
+      "community_name": "circle_demo sleep_for(30ms) Poll Root Cause",
+      "id": "performance_governor_epp_red_herring"
     },
     {
       "label": "half_res_sweep Config Optimization",
@@ -10242,8 +10234,8 @@
       "community": 46,
       "norm_label": "half_res_sweep config optimization",
       "_origin": "semantic",
-      "id": "performance_half_res_sweep",
-      "community_name": "circle_demo sleep_for(30ms) Poll Root Cause"
+      "community_name": "circle_demo sleep_for(30ms) Poll Root Cause",
+      "id": "performance_half_res_sweep"
     },
     {
       "label": "Centralized Round-Robin Pinging in swarm_hub",
@@ -10257,8 +10249,8 @@
       "community": 47,
       "norm_label": "centralized round-robin pinging in swarm_hub",
       "_origin": "semantic",
-      "id": "claudemd_centralized_pinging",
-      "community_name": "`swarm_hub`"
+      "community_name": "`swarm_hub`",
+      "id": "claudemd_centralized_pinging"
     },
     {
       "label": "swarm_hub Owns the Serial Port",
@@ -10272,8 +10264,8 @@
       "community": 47,
       "norm_label": "swarm_hub owns the serial port",
       "_origin": "semantic",
-      "id": "claudemd_swarm_hub_owns_serial",
-      "community_name": "`swarm_hub`"
+      "community_name": "`swarm_hub`",
+      "id": "claudemd_swarm_hub_owns_serial"
     },
     {
       "label": "Pylon rpath Link Fix",
@@ -10287,8 +10279,8 @@
       "community": 47,
       "norm_label": "pylon rpath link fix",
       "_origin": "semantic",
-      "id": "readme_pylon_rpath",
-      "community_name": "`swarm_hub`"
+      "community_name": "`swarm_hub`",
+      "id": "readme_pylon_rpath"
     },
     {
       "label": "Per-Client Ping Clobbering Bug (fixed)",
@@ -10302,8 +10294,8 @@
       "community": 47,
       "norm_label": "per-client ping clobbering bug (fixed)",
       "_origin": "semantic",
-      "id": "todo_per_client_ping_bug",
-      "community_name": "`swarm_hub`"
+      "community_name": "`swarm_hub`",
+      "id": "todo_per_client_ping_bug"
     },
     {
       "label": "MSG_TELEMETRY Packet Format",
@@ -10317,8 +10309,8 @@
       "community": 48,
       "norm_label": "msg_telemetry packet format",
       "_origin": "semantic",
-      "id": "docs_architecture_msg_telemetry",
-      "community_name": "MSG_TELEMETRY Packet Format"
+      "community_name": "MSG_TELEMETRY Packet Format",
+      "id": "docs_architecture_msg_telemetry"
     },
     {
       "label": "Robot Registration via Announce",
@@ -10332,8 +10324,8 @@
       "community": 48,
       "norm_label": "robot registration via announce",
       "_origin": "semantic",
-      "id": "docs_architecture_robot_registration",
-      "community_name": "MSG_TELEMETRY Packet Format"
+      "community_name": "MSG_TELEMETRY Packet Format",
+      "id": "docs_architecture_robot_registration"
     },
     {
       "label": "MSG_METRICS Battery Channel (0x03)",
@@ -10347,8 +10339,8 @@
       "community": 48,
       "norm_label": "msg_metrics battery channel (0x03)",
       "_origin": "semantic",
-      "id": "src_robots_readme_msg_metrics",
-      "community_name": "MSG_TELEMETRY Packet Format"
+      "community_name": "MSG_TELEMETRY Packet Format",
+      "id": "src_robots_readme_msg_metrics"
     },
     {
       "label": "Robot Registration and Addressing",
@@ -10362,8 +10354,8 @@
       "community": 48,
       "norm_label": "robot registration and addressing",
       "_origin": "semantic",
-      "id": "claudemd_robot_registration_addressing",
-      "community_name": "MSG_TELEMETRY Packet Format"
+      "community_name": "MSG_TELEMETRY Packet Format",
+      "id": "claudemd_robot_registration_addressing"
     },
     {
       "label": "TDMA Telemetry Return Channel",
@@ -10377,8 +10369,8 @@
       "community": 48,
       "norm_label": "tdma telemetry return channel",
       "_origin": "semantic",
-      "id": "docs_architecture_tdma_telemetry",
-      "community_name": "MSG_TELEMETRY Packet Format"
+      "community_name": "MSG_TELEMETRY Packet Format",
+      "id": "docs_architecture_tdma_telemetry"
     },
     {
       "label": "Unified PID Unit (planned)",
@@ -10392,8 +10384,8 @@
       "community": 52,
       "norm_label": "unified pid unit (planned)",
       "_origin": "semantic",
-      "id": "todo_unified_pid_unit",
-      "community_name": "PC Tools"
+      "community_name": "PC Tools",
+      "id": "todo_unified_pid_unit"
     },
     {
       "label": "evdev WASD Keyboard Input",
@@ -10407,8 +10399,8 @@
       "community": 52,
       "norm_label": "evdev wasd keyboard input",
       "_origin": "semantic",
-      "id": "readme_evdev_wasd_input",
-      "community_name": "PC Tools"
+      "community_name": "PC Tools",
+      "id": "readme_evdev_wasd_input"
     },
     {
       "label": "MSG_DEBUG Robot-to-PC Channel (0x02)",
@@ -10422,8 +10414,8 @@
       "community": 56,
       "norm_label": "msg_debug robot-to-pc channel (0x02)",
       "_origin": "semantic",
-      "id": "src_robots_readme_msg_debug",
-      "community_name": "MicroPython Feature-Flag + Isolated-Module Pattern"
+      "community_name": "MicroPython Feature-Flag + Isolated-Module Pattern",
+      "id": "src_robots_readme_msg_debug"
     },
     {
       "label": "MicroPython Feature-Flag + Isolated-Module Pattern",
@@ -10437,8 +10429,8 @@
       "community": 56,
       "norm_label": "micropython feature-flag + isolated-module pattern",
       "_origin": "semantic",
-      "id": "claudemd_feature_flag_isolated_module_pattern",
-      "community_name": "MicroPython Feature-Flag + Isolated-Module Pattern"
+      "community_name": "MicroPython Feature-Flag + Isolated-Module Pattern",
+      "id": "claudemd_feature_flag_isolated_module_pattern"
     },
     {
       "label": "Buzzer Sound (silent-by-design protocol)",
@@ -10452,8 +10444,8 @@
       "community": 56,
       "norm_label": "buzzer sound (silent-by-design protocol)",
       "_origin": "semantic",
-      "id": "src_robots_readme_buzzer_sound",
-      "community_name": "MicroPython Feature-Flag + Isolated-Module Pattern"
+      "community_name": "MicroPython Feature-Flag + Isolated-Module Pattern",
+      "id": "src_robots_readme_buzzer_sound"
     },
     {
       "label": "Safety Watchdogs Live on the Robot",
@@ -10467,8 +10459,8 @@
       "community": 57,
       "norm_label": "safety watchdogs live on the robot",
       "_origin": "semantic",
-      "id": "claudemd_safety_watchdogs_on_robot",
-      "community_name": "Safety Watchdogs Live on the Robot"
+      "community_name": "Safety Watchdogs Live on the Robot",
+      "id": "claudemd_safety_watchdogs_on_robot"
     },
     {
       "label": "Motor Watchdog on RP2040",
@@ -10482,8 +10474,8 @@
       "community": 57,
       "norm_label": "motor watchdog on rp2040",
       "_origin": "semantic",
-      "id": "docs_architecture_motor_watchdog",
-      "community_name": "Safety Watchdogs Live on the Robot"
+      "community_name": "Safety Watchdogs Live on the Robot",
+      "id": "docs_architecture_motor_watchdog"
     },
     {
       "label": "CRC-8 Framing Unit Tests (done)",
@@ -10497,8 +10489,8 @@
       "community": 58,
       "norm_label": "crc-8 framing unit tests (done)",
       "_origin": "semantic",
-      "id": "todo_crc8_unit_tests",
-      "community_name": "CRC Error Handling (Silent Drop)"
+      "community_name": "CRC Error Handling (Silent Drop)",
+      "id": "todo_crc8_unit_tests"
     },
     {
       "label": "CRC Error Handling (Silent Drop)",
@@ -10512,8 +10504,8 @@
       "community": 58,
       "norm_label": "crc error handling (silent drop)",
       "_origin": "semantic",
-      "id": "docs_architecture_crc_error_handling",
-      "community_name": "CRC Error Handling (Silent Drop)"
+      "community_name": "CRC Error Handling (Silent Drop)",
+      "id": "docs_architecture_crc_error_handling"
     },
     {
       "label": "MSG_SWARM Control Channel (PC to Robots)",
@@ -10527,8 +10519,8 @@
       "community": 59,
       "norm_label": "msg_swarm control channel (pc to robots)",
       "_origin": "semantic",
-      "id": "docs_architecture_msg_swarm_control_channel",
-      "community_name": "Latency Budget (~4ms End-to-End)"
+      "community_name": "Latency Budget (~4ms End-to-End)",
+      "id": "docs_architecture_msg_swarm_control_channel"
     },
     {
       "label": "Latency Budget (~4ms End-to-End)",
@@ -10542,8 +10534,8 @@
       "community": 59,
       "norm_label": "latency budget (~4ms end-to-end)",
       "_origin": "semantic",
-      "id": "docs_architecture_latency_budget",
-      "community_name": "Latency Budget (~4ms End-to-End)"
+      "community_name": "Latency Budget (~4ms End-to-End)",
+      "id": "docs_architecture_latency_budget"
     },
     {
       "label": "ODOMETRY_ENABLED Control-Strategy Toggle",
@@ -10557,8 +10549,8 @@
       "community": 60,
       "norm_label": "odometry_enabled control-strategy toggle",
       "_origin": "semantic",
-      "id": "claudemd_odometry_enabled_toggle",
-      "community_name": "ODOMETRY_ENABLED Control-Strategy Toggle"
+      "community_name": "ODOMETRY_ENABLED Control-Strategy Toggle",
+      "id": "claudemd_odometry_enabled_toggle"
     },
     {
       "label": "Fisheye Calibration (planned)",
@@ -10572,8 +10564,8 @@
       "community": 68,
       "norm_label": "fisheye calibration (planned)",
       "_origin": "semantic",
-      "id": "tools_vision_calibration_readme_fisheye_calibration",
-      "community_name": "Fisheye Calibration (planned)"
+      "community_name": "Fisheye Calibration (planned)",
+      "id": "tools_vision_calibration_readme_fisheye_calibration"
     }
   ],
   "links": [
@@ -19009,17 +19001,6 @@
       "confidence": "EXTRACTED",
       "source_file": "src/robots/uart_controller.py",
       "source_location": "L263",
-      "weight": 1.0,
-      "_origin": "ast"
-    },
-    {
-      "source": "test",
-      "target": "extra_script_py",
-      "relation": "imports",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "test.py",
-      "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast"
     },
@@ -32242,9 +32223,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude",
-      "target": "claude_claude_md",
-      "confidence_score": 1.0
+      "target": "claude_claude_md"
     },
     {
       "relation": "contains",
@@ -32253,9 +32234,9 @@
       "source_location": "L51",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_architecture",
-      "target": "claude_wire_protocol_has_three_independent_implementations",
-      "confidence_score": 1.0
+      "target": "claude_wire_protocol_has_three_independent_implementations"
     },
     {
       "relation": "contains",
@@ -32264,9 +32245,9 @@
       "source_location": "L61",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_architecture",
-      "target": "claude_swarm_hub_is_the_only_process_that_owns_the_serial_port",
-      "confidence_score": 1.0
+      "target": "claude_swarm_hub_is_the_only_process_that_owns_the_serial_port"
     },
     {
       "relation": "contains",
@@ -32275,9 +32256,9 @@
       "source_location": "L67",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_architecture",
-      "target": "claude_robot_registration_and_addressing",
-      "confidence_score": 1.0
+      "target": "claude_robot_registration_and_addressing"
     },
     {
       "relation": "contains",
@@ -32286,9 +32267,9 @@
       "source_location": "L71",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_architecture",
-      "target": "claude_safety_watchdogs_live_on_the_robot_not_the_pc",
-      "confidence_score": 1.0
+      "target": "claude_safety_watchdogs_live_on_the_robot_not_the_pc"
     },
     {
       "relation": "contains",
@@ -32297,9 +32278,9 @@
       "source_location": "L75",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_architecture",
-      "target": "claude_vision_pipeline_is_a_separate_concern_layered_on_top_of_the_swarm_link",
-      "confidence_score": 1.0
+      "target": "claude_vision_pipeline_is_a_separate_concern_layered_on_top_of_the_swarm_link"
     },
     {
       "relation": "contains",
@@ -32308,9 +32289,9 @@
       "source_location": "L79",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_architecture",
-      "target": "claude_micropython_robot_firmware_feature_flag_isolated_module_pattern",
-      "confidence_score": 1.0
+      "target": "claude_micropython_robot_firmware_feature_flag_isolated_module_pattern"
     },
     {
       "relation": "contains",
@@ -32319,9 +32300,9 @@
       "source_location": "L85",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_architecture",
-      "target": "claude_repo_layout",
-      "confidence_score": 1.0
+      "target": "claude_repo_layout"
     },
     {
       "relation": "contains",
@@ -32330,9 +32311,9 @@
       "source_location": "L11",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_claude_md",
-      "target": "claude_commands",
-      "confidence_score": 1.0
+      "target": "claude_commands"
     },
     {
       "relation": "contains",
@@ -32341,9 +32322,9 @@
       "source_location": "L49",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_claude_md",
-      "target": "claude_architecture",
-      "confidence_score": 1.0
+      "target": "claude_architecture"
     },
     {
       "relation": "contains",
@@ -32352,9 +32333,9 @@
       "source_location": "L5",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_claude_md",
-      "target": "claude_project_overview",
-      "confidence_score": 1.0
+      "target": "claude_project_overview"
     },
     {
       "relation": "contains",
@@ -32363,9 +32344,9 @@
       "source_location": "L13",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_commands",
-      "target": "claude_firmware_platformio_src_dongle_src_receiver",
-      "confidence_score": 1.0
+      "target": "claude_firmware_platformio_src_dongle_src_receiver"
     },
     {
       "relation": "contains",
@@ -32374,9 +32355,9 @@
       "source_location": "L24",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_commands",
-      "target": "claude_pc_tools_tools_plain_makefile",
-      "confidence_score": 1.0
+      "target": "claude_pc_tools_tools_plain_makefile"
     },
     {
       "relation": "contains",
@@ -32385,9 +32366,9 @@
       "source_location": "L35",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_commands",
-      "target": "claude_robot_firmware_src_robots_micropython",
-      "confidence_score": 1.0
+      "target": "claude_robot_firmware_src_robots_micropython"
     },
     {
       "relation": "contains",
@@ -32396,9 +32377,9 @@
       "source_location": "L39",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "claude_commands",
-      "target": "claude_tests_tests_plain_makefile",
-      "confidence_score": 1.0
+      "target": "claude_tests_tests_plain_makefile"
     },
     {
       "relation": "contains",
@@ -32407,9 +32388,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture",
-      "target": "docs_architecture_robot_swarm_pipeline_architekturplan",
-      "confidence_score": 1.0
+      "target": "docs_architecture_robot_swarm_pipeline_architekturplan"
     },
     {
       "relation": "contains",
@@ -32418,9 +32399,9 @@
       "source_location": "L21",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_1_roboter_registrierung",
-      "target": "docs_architecture_problem",
-      "confidence_score": 1.0
+      "target": "docs_architecture_problem"
     },
     {
       "relation": "contains",
@@ -32429,9 +32410,9 @@
       "source_location": "L24",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_1_roboter_registrierung",
-      "target": "docs_architecture_lösung_automatische_registrierung_per_announce",
-      "confidence_score": 1.0
+      "target": "docs_architecture_lösung_automatische_registrierung_per_announce"
     },
     {
       "relation": "contains",
@@ -32440,9 +32421,9 @@
       "source_location": "L49",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_1_roboter_registrierung",
-      "target": "docs_architecture_roboter_id_vergabe",
-      "confidence_score": 1.0
+      "target": "docs_architecture_roboter_id_vergabe"
     },
     {
       "relation": "contains",
@@ -32451,9 +32432,9 @@
       "source_location": "L57",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_2_steuerkanal_pc_roboter",
-      "target": "docs_architecture_paketformat_msg_swarm_0x10",
-      "confidence_score": 1.0
+      "target": "docs_architecture_paketformat_msg_swarm_0x10"
     },
     {
       "relation": "contains",
@@ -32462,9 +32443,9 @@
       "source_location": "L72",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_2_steuerkanal_pc_roboter",
-      "target": "docs_architecture_timing",
-      "confidence_score": 1.0
+      "target": "docs_architecture_timing"
     },
     {
       "relation": "contains",
@@ -32473,9 +32454,9 @@
       "source_location": "L78",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_2_steuerkanal_pc_roboter",
-      "target": "docs_architecture_datenfluss",
-      "confidence_score": 1.0
+      "target": "docs_architecture_datenfluss"
     },
     {
       "relation": "contains",
@@ -32484,9 +32465,9 @@
       "source_location": "L98",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_2_steuerkanal_pc_roboter",
-      "target": "docs_architecture_latenz_budget",
-      "confidence_score": 1.0
+      "target": "docs_architecture_latenz_budget"
     },
     {
       "relation": "contains",
@@ -32495,9 +32476,9 @@
       "source_location": "L114",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_3_telemetrie_rückkanal_roboter_pc",
-      "target": "docs_architecture_problem_114",
-      "confidence_score": 1.0
+      "target": "docs_architecture_problem_114"
     },
     {
       "relation": "contains",
@@ -32506,9 +32487,9 @@
       "source_location": "L117",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_3_telemetrie_rückkanal_roboter_pc",
-      "target": "docs_architecture_lösung_tdma_time_division_multiple_access",
-      "confidence_score": 1.0
+      "target": "docs_architecture_lösung_tdma_time_division_multiple_access"
     },
     {
       "relation": "contains",
@@ -32517,9 +32498,9 @@
       "source_location": "L131",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_3_telemetrie_rückkanal_roboter_pc",
-      "target": "docs_architecture_synchronisation",
-      "confidence_score": 1.0
+      "target": "docs_architecture_synchronisation"
     },
     {
       "relation": "contains",
@@ -32528,9 +32509,9 @@
       "source_location": "L146",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_3_telemetrie_rückkanal_roboter_pc",
-      "target": "docs_architecture_telemetrie_paketformat_msg_telemetry_0x30",
-      "confidence_score": 1.0
+      "target": "docs_architecture_telemetrie_paketformat_msg_telemetry_0x30"
     },
     {
       "relation": "contains",
@@ -32539,9 +32520,9 @@
       "source_location": "L168",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_3_telemetrie_rückkanal_roboter_pc",
-      "target": "docs_architecture_datenfluss_rückkanal",
-      "confidence_score": 1.0
+      "target": "docs_architecture_datenfluss_rückkanal"
     },
     {
       "relation": "contains",
@@ -32550,9 +32531,9 @@
       "source_location": "L201",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_5_fehlerbehandlung",
-      "target": "docs_architecture_motor_watchdog_auf_rp2040",
-      "confidence_score": 1.0
+      "target": "docs_architecture_motor_watchdog_auf_rp2040"
     },
     {
       "relation": "contains",
@@ -32561,9 +32542,9 @@
       "source_location": "L212",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_5_fehlerbehandlung",
-      "target": "docs_architecture_dongle_watchdog",
-      "confidence_score": 1.0
+      "target": "docs_architecture_dongle_watchdog"
     },
     {
       "relation": "contains",
@@ -32572,9 +32553,9 @@
       "source_location": "L216",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_5_fehlerbehandlung",
-      "target": "docs_architecture_robot_reconnect",
-      "confidence_score": 1.0
+      "target": "docs_architecture_robot_reconnect"
     },
     {
       "relation": "contains",
@@ -32583,9 +32564,9 @@
       "source_location": "L223",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_5_fehlerbehandlung",
-      "target": "docs_architecture_crc_fehler",
-      "confidence_score": 1.0
+      "target": "docs_architecture_crc_fehler"
     },
     {
       "relation": "contains",
@@ -32594,9 +32575,9 @@
       "source_location": "L231",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_6_controller_pc_software",
-      "target": "docs_architecture_architektur",
-      "confidence_score": 1.0
+      "target": "docs_architecture_architektur"
     },
     {
       "relation": "contains",
@@ -32605,9 +32586,9 @@
       "source_location": "L255",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_6_controller_pc_software",
-      "target": "docs_architecture_swarm_manager",
-      "confidence_score": 1.0
+      "target": "docs_architecture_swarm_manager"
     },
     {
       "relation": "contains",
@@ -32616,9 +32597,9 @@
       "source_location": "L262",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_6_controller_pc_software",
-      "target": "docs_architecture_multi_robot_steuerung_zukunft",
-      "confidence_score": 1.0
+      "target": "docs_architecture_multi_robot_steuerung_zukunft"
     },
     {
       "relation": "contains",
@@ -32627,9 +32608,9 @@
       "source_location": "L284",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_7_hardware_checkliste_pro_roboter",
-      "target": "docs_architecture_zentrale_infrastruktur",
-      "confidence_score": 1.0
+      "target": "docs_architecture_zentrale_infrastruktur"
     },
     {
       "relation": "contains",
@@ -32638,9 +32619,9 @@
       "source_location": "L296",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_8_implementierungsreihenfolge",
-      "target": "docs_architecture_phase_1_basis_bereits_fertig",
-      "confidence_score": 1.0
+      "target": "docs_architecture_phase_1_basis_bereits_fertig"
     },
     {
       "relation": "contains",
@@ -32649,9 +32630,9 @@
       "source_location": "L302",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_8_implementierungsreihenfolge",
-      "target": "docs_architecture_phase_2_registrierung_telemetrie",
-      "confidence_score": 1.0
+      "target": "docs_architecture_phase_2_registrierung_telemetrie"
     },
     {
       "relation": "contains",
@@ -32660,9 +32641,9 @@
       "source_location": "L309",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_8_implementierungsreihenfolge",
-      "target": "docs_architecture_phase_3_robustheit",
-      "confidence_score": 1.0
+      "target": "docs_architecture_phase_3_robustheit"
     },
     {
       "relation": "contains",
@@ -32671,9 +32652,9 @@
       "source_location": "L315",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_8_implementierungsreihenfolge",
-      "target": "docs_architecture_phase_4_schwarm_algorithmen",
-      "confidence_score": 1.0
+      "target": "docs_architecture_phase_4_schwarm_algorithmen"
     },
     {
       "relation": "contains",
@@ -32682,9 +32663,9 @@
       "source_location": "L112",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_robot_swarm_pipeline_architekturplan",
-      "target": "docs_architecture_3_telemetrie_rückkanal_roboter_pc",
-      "confidence_score": 1.0
+      "target": "docs_architecture_3_telemetrie_rückkanal_roboter_pc"
     },
     {
       "relation": "contains",
@@ -32693,9 +32674,9 @@
       "source_location": "L185",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_robot_swarm_pipeline_architekturplan",
-      "target": "docs_architecture_4_protokoll_übersicht",
-      "confidence_score": 1.0
+      "target": "docs_architecture_4_protokoll_übersicht"
     },
     {
       "relation": "contains",
@@ -32704,9 +32685,9 @@
       "source_location": "L19",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_robot_swarm_pipeline_architekturplan",
-      "target": "docs_architecture_1_roboter_registrierung",
-      "confidence_score": 1.0
+      "target": "docs_architecture_1_roboter_registrierung"
     },
     {
       "relation": "contains",
@@ -32715,9 +32696,9 @@
       "source_location": "L199",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_robot_swarm_pipeline_architekturplan",
-      "target": "docs_architecture_5_fehlerbehandlung",
-      "confidence_score": 1.0
+      "target": "docs_architecture_5_fehlerbehandlung"
     },
     {
       "relation": "contains",
@@ -32726,9 +32707,9 @@
       "source_location": "L229",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_robot_swarm_pipeline_architekturplan",
-      "target": "docs_architecture_6_controller_pc_software",
-      "confidence_score": 1.0
+      "target": "docs_architecture_6_controller_pc_software"
     },
     {
       "relation": "contains",
@@ -32737,9 +32718,9 @@
       "source_location": "L273",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_robot_swarm_pipeline_architekturplan",
-      "target": "docs_architecture_7_hardware_checkliste_pro_roboter",
-      "confidence_score": 1.0
+      "target": "docs_architecture_7_hardware_checkliste_pro_roboter"
     },
     {
       "relation": "contains",
@@ -32748,9 +32729,9 @@
       "source_location": "L294",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_robot_swarm_pipeline_architekturplan",
-      "target": "docs_architecture_8_implementierungsreihenfolge",
-      "confidence_score": 1.0
+      "target": "docs_architecture_8_implementierungsreihenfolge"
     },
     {
       "relation": "contains",
@@ -32759,9 +32740,9 @@
       "source_location": "L3",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_robot_swarm_pipeline_architekturplan",
-      "target": "docs_architecture_übersicht",
-      "confidence_score": 1.0
+      "target": "docs_architecture_übersicht"
     },
     {
       "relation": "contains",
@@ -32770,9 +32751,9 @@
       "source_location": "L55",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "docs_architecture_robot_swarm_pipeline_architekturplan",
-      "target": "docs_architecture_2_steuerkanal_pc_roboter",
-      "confidence_score": 1.0
+      "target": "docs_architecture_2_steuerkanal_pc_roboter"
     },
     {
       "relation": "contains",
@@ -32781,9 +32762,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance",
-      "target": "performance_performance_tracking",
-      "confidence_score": 1.0
+      "target": "performance_performance_tracking"
     },
     {
       "relation": "contains",
@@ -32792,9 +32773,9 @@
       "source_location": "L160",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance_2026_06_12_back_to_powersave_after_the_performance_test",
-      "target": "performance_why_this_isn_t_a_clean_revert_governor_vs_epp_and_real_throttling",
-      "confidence_score": 1.0
+      "target": "performance_why_this_isn_t_a_clean_revert_governor_vs_epp_and_real_throttling"
     },
     {
       "relation": "contains",
@@ -32803,9 +32784,9 @@
       "source_location": "L102",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance_circle_demo",
-      "target": "performance_governor_epp_fan_experiments_see_below",
-      "confidence_score": 1.0
+      "target": "performance_governor_epp_fan_experiments_see_below"
     },
     {
       "relation": "contains",
@@ -32814,9 +32795,9 @@
       "source_location": "L115",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance_circle_demo",
-      "target": "performance_2026_06_12_governor_powersave_performance",
-      "confidence_score": 1.0
+      "target": "performance_2026_06_12_governor_powersave_performance"
     },
     {
       "relation": "contains",
@@ -32825,9 +32806,9 @@
       "source_location": "L141",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance_circle_demo",
-      "target": "performance_2026_06_12_back_to_powersave_after_the_performance_test",
-      "confidence_score": 1.0
+      "target": "performance_2026_06_12_back_to_powersave_after_the_performance_test"
     },
     {
       "relation": "contains",
@@ -32836,9 +32817,9 @@
       "source_location": "L184",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance_circle_demo",
-      "target": "performance_2026_06_12_re_baseline_powersave_epp_balance_power_confirmed_default",
-      "confidence_score": 1.0
+      "target": "performance_2026_06_12_re_baseline_powersave_epp_balance_power_confirmed_default"
     },
     {
       "relation": "contains",
@@ -32847,9 +32828,9 @@
       "source_location": "L210",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance_circle_demo",
-      "target": "performance_next_experiment_bios_fan_curve_fix",
-      "confidence_score": 1.0
+      "target": "performance_next_experiment_bios_fan_curve_fix"
     },
     {
       "relation": "contains",
@@ -32858,9 +32839,9 @@
       "source_location": "L228",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance_circle_demo",
-      "target": "performance_2026_06_12_performance_governor_epp_after_bios_fan_curve_change",
-      "confidence_score": 1.0
+      "target": "performance_2026_06_12_performance_governor_epp_after_bios_fan_curve_change"
     },
     {
       "relation": "contains",
@@ -32869,9 +32850,9 @@
       "source_location": "L287",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance_circle_demo",
-      "target": "performance_2026_06_12_root_cause_found_fixed_sleep_for_30ms_poll_in_main_loop",
-      "confidence_score": 1.0
+      "target": "performance_2026_06_12_root_cause_found_fixed_sleep_for_30ms_poll_in_main_loop"
     },
     {
       "relation": "contains",
@@ -32880,9 +32861,9 @@
       "source_location": "L42",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance_circle_demo",
-      "target": "performance_2026_06_12_baseline_revised_split_by_tracking_state",
-      "confidence_score": 1.0
+      "target": "performance_2026_06_12_baseline_revised_split_by_tracking_state"
     },
     {
       "relation": "contains",
@@ -32891,9 +32872,9 @@
       "source_location": "L76",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance_circle_demo",
-      "target": "performance_2026_06_12_fix_half_res_sweep_true_was_false_in_config",
-      "confidence_score": 1.0
+      "target": "performance_2026_06_12_fix_half_res_sweep_true_was_false_in_config"
     },
     {
       "relation": "contains",
@@ -32902,9 +32883,9 @@
       "source_location": "L23",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance_performance_tracking",
-      "target": "performance_how_to_log_a_new_entry",
-      "confidence_score": 1.0
+      "target": "performance_how_to_log_a_new_entry"
     },
     {
       "relation": "contains",
@@ -32913,9 +32894,9 @@
       "source_location": "L357",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance_performance_tracking",
-      "target": "performance_vision_controller_wingman_shape_demo_drag_drop_demo",
-      "confidence_score": 1.0
+      "target": "performance_vision_controller_wingman_shape_demo_drag_drop_demo"
     },
     {
       "relation": "contains",
@@ -32924,9 +32905,9 @@
       "source_location": "L40",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "performance_performance_tracking",
-      "target": "performance_circle_demo",
-      "confidence_score": 1.0
+      "target": "performance_circle_demo"
     },
     {
       "relation": "contains",
@@ -32935,9 +32916,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme",
-      "target": "readme_robot_swarm",
-      "confidence_score": 1.0
+      "target": "readme_robot_swarm"
     },
     {
       "relation": "contains",
@@ -32946,9 +32927,9 @@
       "source_location": "L202",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_pc_tools",
-      "target": "readme_swarm_hub",
-      "confidence_score": 1.0
+      "target": "readme_swarm_hub"
     },
     {
       "relation": "contains",
@@ -32957,9 +32938,9 @@
       "source_location": "L213",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_pc_tools",
-      "target": "readme_swarm_terminal",
-      "confidence_score": 1.0
+      "target": "readme_swarm_terminal"
     },
     {
       "relation": "contains",
@@ -32968,9 +32949,9 @@
       "source_location": "L222",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_pc_tools",
-      "target": "readme_swarm_controller",
-      "confidence_score": 1.0
+      "target": "readme_swarm_controller"
     },
     {
       "relation": "contains",
@@ -32979,9 +32960,9 @@
       "source_location": "L231",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_pc_tools",
-      "target": "readme_latency_plot",
-      "confidence_score": 1.0
+      "target": "readme_latency_plot"
     },
     {
       "relation": "contains",
@@ -32990,9 +32971,9 @@
       "source_location": "L240",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_pc_tools",
-      "target": "readme_vision_controller",
-      "confidence_score": 1.0
+      "target": "readme_vision_controller"
     },
     {
       "relation": "contains",
@@ -33001,9 +32982,9 @@
       "source_location": "L260",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_pc_tools",
-      "target": "readme_wingman",
-      "confidence_score": 1.0
+      "target": "readme_wingman"
     },
     {
       "relation": "contains",
@@ -33012,9 +32993,9 @@
       "source_location": "L281",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_pc_tools",
-      "target": "readme_circle_demo",
-      "confidence_score": 1.0
+      "target": "readme_circle_demo"
     },
     {
       "relation": "contains",
@@ -33023,9 +33004,9 @@
       "source_location": "L301",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_pc_tools",
-      "target": "readme_shape_demo",
-      "confidence_score": 1.0
+      "target": "readme_shape_demo"
     },
     {
       "relation": "contains",
@@ -33034,9 +33015,9 @@
       "source_location": "L320",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_pc_tools",
-      "target": "readme_marker_eval",
-      "confidence_score": 1.0
+      "target": "readme_marker_eval"
     },
     {
       "relation": "contains",
@@ -33045,9 +33026,9 @@
       "source_location": "L335",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_pc_tools",
-      "target": "readme_frame_inspector",
-      "confidence_score": 1.0
+      "target": "readme_frame_inspector"
     },
     {
       "relation": "contains",
@@ -33056,9 +33037,9 @@
       "source_location": "L351",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_pc_tools",
-      "target": "readme_calibrate",
-      "confidence_score": 1.0
+      "target": "readme_calibrate"
     },
     {
       "relation": "contains",
@@ -33067,9 +33048,9 @@
       "source_location": "L54",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_prerequisites",
-      "target": "readme_firmware_all_platforms",
-      "confidence_score": 1.0
+      "target": "readme_firmware_all_platforms"
     },
     {
       "relation": "contains",
@@ -33078,9 +33059,9 @@
       "source_location": "L60",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_prerequisites",
-      "target": "readme_pc_tools_macos_apple_silicon",
-      "confidence_score": 1.0
+      "target": "readme_pc_tools_macos_apple_silicon"
     },
     {
       "relation": "contains",
@@ -33089,9 +33070,9 @@
       "source_location": "L85",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_prerequisites",
-      "target": "readme_pc_tools_ubuntu_22_04_24_04_x86_64",
-      "confidence_score": 1.0
+      "target": "readme_pc_tools_ubuntu_22_04_24_04_x86_64"
     },
     {
       "relation": "contains",
@@ -33100,9 +33081,9 @@
       "source_location": "L152",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_quick_start",
-      "target": "readme_1_flash_the_dongle",
-      "confidence_score": 1.0
+      "target": "readme_1_flash_the_dongle"
     },
     {
       "relation": "contains",
@@ -33111,9 +33092,9 @@
       "source_location": "L158",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_quick_start",
-      "target": "readme_2_flash_each_robot",
-      "confidence_score": 1.0
+      "target": "readme_2_flash_each_robot"
     },
     {
       "relation": "contains",
@@ -33122,9 +33103,9 @@
       "source_location": "L167",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_quick_start",
-      "target": "readme_3_build_pc_tools",
-      "confidence_score": 1.0
+      "target": "readme_3_build_pc_tools"
     },
     {
       "relation": "contains",
@@ -33133,9 +33114,9 @@
       "source_location": "L174",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_quick_start",
-      "target": "readme_4_find_the_dongle_serial_port",
-      "confidence_score": 1.0
+      "target": "readme_4_find_the_dongle_serial_port"
     },
     {
       "relation": "contains",
@@ -33144,9 +33125,9 @@
       "source_location": "L186",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_quick_start",
-      "target": "readme_5_run_the_hub",
-      "confidence_score": 1.0
+      "target": "readme_5_run_the_hub"
     },
     {
       "relation": "contains",
@@ -33155,9 +33136,9 @@
       "source_location": "L150",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_robot_swarm",
-      "target": "readme_quick_start",
-      "confidence_score": 1.0
+      "target": "readme_quick_start"
     },
     {
       "relation": "contains",
@@ -33166,9 +33147,9 @@
       "source_location": "L20",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_robot_swarm",
-      "target": "readme_project_structure",
-      "confidence_score": 1.0
+      "target": "readme_project_structure"
     },
     {
       "relation": "contains",
@@ -33177,9 +33158,9 @@
       "source_location": "L200",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_robot_swarm",
-      "target": "readme_pc_tools",
-      "confidence_score": 1.0
+      "target": "readme_pc_tools"
     },
     {
       "relation": "contains",
@@ -33188,9 +33169,9 @@
       "source_location": "L365",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_robot_swarm",
-      "target": "readme_wire_protocol",
-      "confidence_score": 1.0
+      "target": "readme_wire_protocol"
     },
     {
       "relation": "contains",
@@ -33199,9 +33180,9 @@
       "source_location": "L381",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_robot_swarm",
-      "target": "readme_camera_setup_basler_ace2_gige",
-      "confidence_score": 1.0
+      "target": "readme_camera_setup_basler_ace2_gige"
     },
     {
       "relation": "contains",
@@ -33210,9 +33191,9 @@
       "source_location": "L52",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_robot_swarm",
-      "target": "readme_prerequisites",
-      "confidence_score": 1.0
+      "target": "readme_prerequisites"
     },
     {
       "relation": "contains",
@@ -33221,9 +33202,9 @@
       "source_location": "L9",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "readme_robot_swarm",
-      "target": "readme_architecture",
-      "confidence_score": 1.0
+      "target": "readme_architecture"
     },
     {
       "relation": "contains",
@@ -33232,9 +33213,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_robots_readme",
-      "target": "src_robots_readme_pololu_3pi_2040_swarm_control",
-      "confidence_score": 1.0
+      "target": "src_robots_readme_pololu_3pi_2040_swarm_control"
     },
     {
       "relation": "contains",
@@ -33243,9 +33224,9 @@
       "source_location": "L42",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_robots_readme_packet_format",
-      "target": "src_robots_readme_message_types",
-      "confidence_score": 1.0
+      "target": "src_robots_readme_message_types"
     },
     {
       "relation": "contains",
@@ -33254,9 +33235,9 @@
       "source_location": "L54",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_robots_readme_packet_format",
-      "target": "src_robots_readme_debug_display_types",
-      "confidence_score": 1.0
+      "target": "src_robots_readme_debug_display_types"
     },
     {
       "relation": "contains",
@@ -33265,9 +33246,9 @@
       "source_location": "L26",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_robots_readme_pololu_3pi_2040_swarm_control",
-      "target": "src_robots_readme_files",
-      "confidence_score": 1.0
+      "target": "src_robots_readme_files"
     },
     {
       "relation": "contains",
@@ -33276,9 +33257,9 @@
       "source_location": "L34",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_robots_readme_pololu_3pi_2040_swarm_control",
-      "target": "src_robots_readme_packet_format",
-      "confidence_score": 1.0
+      "target": "src_robots_readme_packet_format"
     },
     {
       "relation": "contains",
@@ -33287,9 +33268,9 @@
       "source_location": "L5",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_robots_readme_pololu_3pi_2040_swarm_control",
-      "target": "src_robots_readme_data_pipeline",
-      "confidence_score": 1.0
+      "target": "src_robots_readme_data_pipeline"
     },
     {
       "relation": "contains",
@@ -33298,9 +33279,9 @@
       "source_location": "L62",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_robots_readme_pololu_3pi_2040_swarm_control",
-      "target": "src_robots_readme_display",
-      "confidence_score": 1.0
+      "target": "src_robots_readme_display"
     },
     {
       "relation": "contains",
@@ -33309,9 +33290,9 @@
       "source_location": "L70",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_robots_readme_pololu_3pi_2040_swarm_control",
-      "target": "src_robots_readme_usage",
-      "confidence_score": 1.0
+      "target": "src_robots_readme_usage"
     },
     {
       "relation": "contains",
@@ -33320,9 +33301,9 @@
       "source_location": "L95",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_robots_readme_pololu_3pi_2040_swarm_control",
-      "target": "src_robots_readme_dependencies",
-      "confidence_score": 1.0
+      "target": "src_robots_readme_dependencies"
     },
     {
       "relation": "contains",
@@ -33331,9 +33312,9 @@
       "source_location": "L74",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_robots_readme_usage",
-      "target": "src_robots_readme_batch_flashing",
-      "confidence_score": 1.0
+      "target": "src_robots_readme_batch_flashing"
     },
     {
       "relation": "contains",
@@ -33342,9 +33323,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo",
-      "target": "todo_todo",
-      "confidence_score": 1.0
+      "target": "todo_todo"
     },
     {
       "relation": "contains",
@@ -33353,9 +33334,9 @@
       "source_location": "L3",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo",
-      "target": "todo_we_need_to_add_a_feature_for_pose_log_saving_and_analysis",
-      "confidence_score": 1.0
+      "target": "todo_we_need_to_add_a_feature_for_pose_log_saving_and_analysis"
     },
     {
       "relation": "contains",
@@ -33364,9 +33345,9 @@
       "source_location": "L93",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo",
-      "target": "todo_fixed",
-      "confidence_score": 1.0
+      "target": "todo_fixed"
     },
     {
       "relation": "contains",
@@ -33375,9 +33356,9 @@
       "source_location": "L110",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo_fixed",
-      "target": "todo_fix_swarm_dashboard_flickering_on_ubuntu_erledigt_2026_07_06",
-      "confidence_score": 1.0
+      "target": "todo_fix_swarm_dashboard_flickering_on_ubuntu_erledigt_2026_07_06"
     },
     {
       "relation": "contains",
@@ -33386,9 +33367,9 @@
       "source_location": "L126",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo_fixed",
-      "target": "todo_update_swarm_dashboard_erledigt_2026_06_24",
-      "confidence_score": 1.0
+      "target": "todo_update_swarm_dashboard_erledigt_2026_06_24"
     },
     {
       "relation": "contains",
@@ -33397,9 +33378,9 @@
       "source_location": "L144",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo_fixed",
-      "target": "todo_tests_crc_8_framing_unit_tests_erledigt_2026_06_19",
-      "confidence_score": 1.0
+      "target": "todo_tests_crc_8_framing_unit_tests_erledigt_2026_06_19"
     },
     {
       "relation": "contains",
@@ -33408,9 +33389,9 @@
       "source_location": "L156",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo_fixed",
-      "target": "todo_performance_loop_fps_vs_cam_fps_circle_demo_erledigt_2026_06_12",
-      "confidence_score": 1.0
+      "target": "todo_performance_loop_fps_vs_cam_fps_circle_demo_erledigt_2026_06_12"
     },
     {
       "relation": "contains",
@@ -33419,9 +33400,9 @@
       "source_location": "L161",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo_fixed",
-      "target": "todo_erledigt_2026_06_12",
-      "confidence_score": 1.0
+      "target": "todo_erledigt_2026_06_12"
     },
     {
       "relation": "contains",
@@ -33430,9 +33411,9 @@
       "source_location": "L171",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo_fixed",
-      "target": "todo_erledigt_2026_06_10",
-      "confidence_score": 1.0
+      "target": "todo_erledigt_2026_06_10"
     },
     {
       "relation": "contains",
@@ -33441,9 +33422,9 @@
       "source_location": "L183",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo_fixed",
-      "target": "todo_bug_latency_erledigt_2026_06_18",
-      "confidence_score": 1.0
+      "target": "todo_bug_latency_erledigt_2026_06_18"
     },
     {
       "relation": "contains",
@@ -33452,9 +33433,9 @@
       "source_location": "L94",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo_fixed",
-      "target": "todo_genera_aruco_tracker_issue_erledigt_2026_07_08",
-      "confidence_score": 1.0
+      "target": "todo_genera_aruco_tracker_issue_erledigt_2026_07_08"
     },
     {
       "relation": "contains",
@@ -33463,9 +33444,9 @@
       "source_location": "L32",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo_we_need_to_add_a_feature_for_pose_log_saving_and_analysis",
-      "target": "todo_think_about_if_its_a_good_idea_to_is_this_already_done",
-      "confidence_score": 1.0
+      "target": "todo_think_about_if_its_a_good_idea_to_is_this_already_done"
     },
     {
       "relation": "contains",
@@ -33474,9 +33455,9 @@
       "source_location": "L37",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo_we_need_to_add_a_feature_for_pose_log_saving_and_analysis",
-      "target": "todo_questions_to_answer",
-      "confidence_score": 1.0
+      "target": "todo_questions_to_answer"
     },
     {
       "relation": "contains",
@@ -33485,9 +33466,9 @@
       "source_location": "L40",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo_we_need_to_add_a_feature_for_pose_log_saving_and_analysis",
-      "target": "todo_webserver_headless",
-      "confidence_score": 1.0
+      "target": "todo_webserver_headless"
     },
     {
       "relation": "contains",
@@ -33496,9 +33477,9 @@
       "source_location": "L52",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo_we_need_to_add_a_feature_for_pose_log_saving_and_analysis",
-      "target": "todo_tooling_tests",
-      "confidence_score": 1.0
+      "target": "todo_tooling_tests"
     },
     {
       "relation": "contains",
@@ -33507,9 +33488,9 @@
       "source_location": "L86",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "todo_we_need_to_add_a_feature_for_pose_log_saving_and_analysis",
-      "target": "todo_später",
-      "confidence_score": 1.0
+      "target": "todo_später"
     },
     {
       "relation": "contains",
@@ -33518,9 +33499,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme",
-      "target": "tools_vision_calibration_readme_aruco_tracker_calibration",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_aruco_tracker_calibration"
     },
     {
       "relation": "contains",
@@ -33529,9 +33510,9 @@
       "source_location": "L104",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme_aruco_tracker_calibration",
-      "target": "tools_vision_calibration_readme_planned_extensions",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_planned_extensions"
     },
     {
       "relation": "contains",
@@ -33540,9 +33521,9 @@
       "source_location": "L23",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme_aruco_tracker_calibration",
-      "target": "tools_vision_calibration_readme_how_it_works",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_how_it_works"
     },
     {
       "relation": "contains",
@@ -33551,9 +33532,9 @@
       "source_location": "L42",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme_aruco_tracker_calibration",
-      "target": "tools_vision_calibration_readme_all_flags",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_all_flags"
     },
     {
       "relation": "contains",
@@ -33562,9 +33543,9 @@
       "source_location": "L57",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme_aruco_tracker_calibration",
-      "target": "tools_vision_calibration_readme_file_structure",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_file_structure"
     },
     {
       "relation": "contains",
@@ -33573,9 +33554,9 @@
       "source_location": "L7",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme_aruco_tracker_calibration",
-      "target": "tools_vision_calibration_readme_quick_start",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_quick_start"
     },
     {
       "relation": "contains",
@@ -33584,9 +33565,9 @@
       "source_location": "L72",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme_aruco_tracker_calibration",
-      "target": "tools_vision_calibration_readme_scoring",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_scoring"
     },
     {
       "relation": "contains",
@@ -33595,9 +33576,9 @@
       "source_location": "L83",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme_aruco_tracker_calibration",
-      "target": "tools_vision_calibration_readme_parameters_being_optimised",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_parameters_being_optimised"
     },
     {
       "relation": "contains",
@@ -33606,9 +33587,9 @@
       "source_location": "L106",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme_planned_extensions",
-      "target": "tools_vision_calibration_readme_motion_objective_objective_motion_h",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_motion_objective_objective_motion_h"
     },
     {
       "relation": "contains",
@@ -33617,9 +33598,9 @@
       "source_location": "L124",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme_planned_extensions",
-      "target": "tools_vision_calibration_readme_fisheye_calibration_objective_fisheye_h",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_fisheye_calibration_objective_fisheye_h"
     },
     {
       "relation": "contains",
@@ -33628,9 +33609,9 @@
       "source_location": "L134",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme_planned_extensions",
-      "target": "tools_vision_calibration_readme_gp_with_ard_kernel_gp_ard_h",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_gp_with_ard_kernel_gp_ard_h"
     },
     {
       "relation": "contains",
@@ -33639,9 +33620,9 @@
       "source_location": "L157",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme_planned_extensions",
-      "target": "tools_vision_calibration_readme_combined_static_motion_objective",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_combined_static_motion_objective"
     },
     {
       "relation": "contains",
@@ -33650,9 +33631,9 @@
       "source_location": "L165",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme_planned_extensions",
-      "target": "tools_vision_calibration_readme_parameter_range_narrowing",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_parameter_range_narrowing"
     },
     {
       "relation": "contains",
@@ -33661,9 +33642,9 @@
       "source_location": "L74",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "tools_vision_calibration_readme_scoring",
-      "target": "tools_vision_calibration_readme_static_objective",
-      "confidence_score": 1.0
+      "target": "tools_vision_calibration_readme_static_objective"
     },
     {
       "relation": "conceptually_related_to",

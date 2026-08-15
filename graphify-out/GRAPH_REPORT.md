@@ -4,12 +4,12 @@
 - cluster-only mode — file stats not available
 
 ## Summary
-- 1162 nodes · 1904 edges · 76 communities (69 shown, 7 thin omitted)
+- 1161 nodes · 1904 edges · 75 communities (68 shown, 7 thin omitted)
 - Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 138 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `74c96843`
+- Built from commit: `d066d105`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -22,12 +22,12 @@
 - ArucoConfig
 - swarm_hub.cpp
 - ArucoTracker
-- main
 - swarm_controller.cpp
 - Screen
-- Robot Swarm Pipeline — Architekturplan
 - dongle/main.cpp
+- Robot Swarm Pipeline — Architekturplan
 - swarm_hub_simulation.cpp
+- main
 - vision_controller.cpp
 - CMAES
 - DemoHud
@@ -63,10 +63,11 @@
 - circle_demo sleep_for(30ms) Poll Root Cause
 - `swarm_hub`
 - MSG_TELEMETRY Packet Format
-- runOptimisation
+- ControlScore
 - Pololu 3pi+ 2040 Swarm Control
-- generate_markers_pdf.py
+- runOptimisation
 - PC Tools
+- generate_markers_pdf.py
 - LineGraph
 - .connect
 - MicroPython Feature-Flag + Isolated-Module Pattern
@@ -75,14 +76,13 @@
 - Latency Budget (~4ms End-to-End)
 - ODOMETRY_ENABLED Control-Strategy Toggle
 - swarm_terminal.cpp
-- RateEstimator
 - Robot Swarm
+- RateEstimator
 - latency_plot.cpp
 - PI
 - AvoidState
-- IObjective
 - Fisheye Calibration (planned)
-- CalibState
+- IObjective
 - ArUco Tracker Calibration
 - Quick Start
 - Planned extensions
@@ -119,7 +119,7 @@
 - **Vision-Based Swarm Controllers** — readme_vision_controller, readme_wingman, readme_circle_demo, readme_shape_demo [EXTRACTED 0.90]
 - **Wire Protocol Three-Language Implementation** — claudemd_wire_protocol_three_implementations, readme_wire_protocol_frame_format, src_robots_readme_uartprotocol, docs_architecture_crc_error_handling [INFERRED 0.85]
 
-## Communities (76 total, 7 thin omitted)
+## Communities (75 total, 7 thin omitted)
 
 ### Community 0 - "swarm_dashboard.cpp"
 Cohesion: 0.07
@@ -153,29 +153,29 @@ Nodes (30): EvdevKeyboard, fds_, kBitsPerLong, kKeyLongs, vector, any_client_act
 Cohesion: 0.06
 Nodes (27): DetectionResult, ArucoTracker, captureRunning_, captureThread_, cfg_, clahe_, debug_, detectionRunning_ (+19 more)
 
-### Community 8 - "main"
-Cohesion: 0.10
-Nodes (29): assignNearestSlots(), CircleState, centre, centreSet, minGapMm, orbitSpeed, radius, tracking (+21 more)
-
-### Community 9 - "swarm_controller.cpp"
+### Community 8 - "swarm_controller.cpp"
 Cohesion: 0.10
 Nodes (31): advanceTest(), applyTestStep(), KeyHandle, time_point, vector, drawUI(), handleInput(), keyDown() (+23 more)
 
-### Community 10 - "Screen"
+### Community 9 - "Screen"
 Cohesion: 0.07
 Nodes (15): Repräsentiert einen einzelnen Debug-Screen. Verwendung: screen = Screen("MY…, Fügt eine neue Nachricht zum Log hinzu., Löscht alle Log-Einträge., Persistente Linie. Gibt Handle zurück., Persistenter Kreis. Gibt Handle zurück., Persistentes Rechteck. Gibt Handle zurück., Persistentes Pixel. Gibt Handle zurück., Entfernt eine einzelne Primitive per Handle. (+7 more)
+
+### Community 10 - "dongle/main.cpp"
+Cohesion: 0.09
+Nodes (29): anyRobotActive(), enqueueSend(), ensurePeer(), ledOff(), ledOn(), loop(), onReceive(), PingTracker (+21 more)
 
 ### Community 11 - "Robot Swarm Pipeline — Architekturplan"
 Cohesion: 0.06
 Nodes (34): 1. Roboter-Registrierung, 2. Steuerkanal (PC → Roboter), 3. Telemetrie-Rückkanal (Roboter → PC), 4. Protokoll-Übersicht, 5. Fehlerbehandlung, 6. Controller-PC Software, 7. Hardware-Checkliste pro Roboter, 8. Implementierungsreihenfolge (+26 more)
 
-### Community 12 - "dongle/main.cpp"
-Cohesion: 0.09
-Nodes (29): anyRobotActive(), enqueueSend(), ensurePeer(), ledOff(), ledOn(), loop(), onReceive(), PingTracker (+21 more)
-
-### Community 13 - "swarm_hub_simulation.cpp"
+### Community 12 - "swarm_hub_simulation.cpp"
 Cohesion: 0.14
 Nodes (27): broadcast(), buildFrame(), client_accept(), client_close(), ClientConn, active, fd, rxBuf (+19 more)
+
+### Community 13 - "main"
+Cohesion: 0.12
+Nodes (23): assignNearestSlots(), CalibState, done, pixPts, CircleState, centre, centreSet, minGapMm (+15 more)
 
 ### Community 14 - "vision_controller.cpp"
 Cohesion: 0.11
@@ -317,19 +317,23 @@ Nodes (5): Centralized Round-Robin Pinging in swarm_hub, swarm_hub Owns the Seri
 Cohesion: 0.40
 Nodes (5): Robot Registration and Addressing, MSG_TELEMETRY Packet Format, Robot Registration via Announce, TDMA Telemetry Return Channel, MSG_METRICS Battery Channel (0x03)
 
+### Community 49 - "ControlScore"
+Cohesion: 0.20
+Nodes (10): ControlScore, biasEma, init, jerkVar, oscVar, posBiasEma, posVar, prevTurn (+2 more)
+
 ### Community 50 - "Pololu 3pi+ 2040 Swarm Control"
 Cohesion: 0.18
 Nodes (10): Batch flashing, Data Pipeline, Debug Display Types, Dependencies, Display, Files, Message Types, Packet Format (+2 more)
-
-### Community 51 - "generate_markers_pdf.py"
-Cohesion: 0.36
-Nodes (8): generate_pdf(), main(), _marker_image(), _ndarray_to_png_bytes(), ndarray, generate_markers.py — print ArUco or AprilTag marker sheets as a PDF. Usage: #…, Return (cv2_dict_id, max_n, label_prefix) from CLI arguments., _resolve_dict()
 
 ### Community 52 - "PC Tools"
 Cohesion: 0.20
 Nodes (11): `calibrate`, evdev WASD Keyboard Input, `frame_inspector`, `latency_plot`, PC Tools, `shape_demo`, `swarm_controller`, `swarm_terminal` (+3 more)
 
-### Community 53 - "LineGraph"
+### Community 53 - "generate_markers_pdf.py"
+Cohesion: 0.36
+Nodes (8): generate_pdf(), main(), _marker_image(), _ndarray_to_png_bytes(), ndarray, generate_markers.py — print ArUco or AprilTag marker sheets as a PDF. Usage: #…, Return (cv2_dict_id, max_n, label_prefix) from CLI arguments., _resolve_dict()
+
+### Community 54 - "LineGraph"
 Cohesion: 0.29
 Nodes (4): LineGraph, Scrollender Liniengraph für kontinuierliche Werte. Verwendung: graph =…, Fügt einen neuen Messwert hinzu., Gibt (min, max) zurück – dynamisch bei auto_scale, sonst fest.
 
@@ -337,37 +341,33 @@ Nodes (4): LineGraph, Scrollender Liniengraph für kontinuierliche Werte. Verwen
 Cohesion: 0.67
 Nodes (3): MicroPython Feature-Flag + Isolated-Module Pattern, Buzzer Sound (silent-by-design protocol), MSG_DEBUG Robot-to-PC Channel (0x02)
 
-### Community 61 - "swarm_terminal.cpp"
+### Community 62 - "swarm_terminal.cpp"
 Cohesion: 0.38
 Nodes (3): drawUI(), main(), statusParts()
-
-### Community 62 - "RateEstimator"
-Cohesion: 0.33
-Nodes (7): time_point, RateEstimator, baseAngle, baseTime, init, rate, updateRate()
 
 ### Community 63 - "Robot Swarm"
 Cohesion: 0.20
 Nodes (9): Architecture, Camera Setup (Basler ace2 GigE), Firmware (all platforms), PC Tools — macOS (Apple Silicon), PC Tools — Ubuntu 22.04 / 24.04 (x86\_64), Prerequisites, Project Structure, Robot Swarm (+1 more)
 
-### Community 64 - "latency_plot.cpp"
+### Community 64 - "RateEstimator"
+Cohesion: 0.33
+Nodes (7): time_point, RateEstimator, baseAngle, baseTime, init, rate, updateRate()
+
+### Community 65 - "latency_plot.cpp"
 Cohesion: 0.47
 Nodes (4): deque, drawPlot(), main(), onPong()
 
-### Community 65 - "PI"
+### Community 66 - "PI"
 Cohesion: 0.33
 Nodes (3): PI, Discrete PI controller with anti-windup integral clamp. Target and measurement…, Returns clamped motor power for this timestep.
 
-### Community 66 - "AvoidState"
+### Community 67 - "AvoidState"
 Cohesion: 0.40
 Nodes (5): AvoidState, arc, arcDx, arcDy, minDist
 
-### Community 67 - "IObjective"
+### Community 69 - "IObjective"
 Cohesion: 0.50
 Nodes (3): IObjective, evaluate, name
-
-### Community 69 - "CalibState"
-Cohesion: 0.50
-Nodes (4): CalibState, done, pixPts, vector
 
 ### Community 73 - "ArUco Tracker Calibration"
 Cohesion: 0.29
@@ -391,10 +391,10 @@ _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `ArucoTracker` connect `ArucoTracker` to `swarm_dashboard.cpp`, `IPreprocessor`, `ArucoConfig`, `wingman.cpp`, `vector`, `thread`, `main`, `vision_controller.cpp`, `drag_drop_demo.cpp`, `.drawText`, `string`?**
   _High betweenness centrality (0.082) - this node is a cross-community bridge._
-- **Why does `Vehicle` connect `Vehicle` to `latency_plot.cpp`?**
-  _High betweenness centrality (0.051) - this node is a cross-community bridge._
 - **Why does `ArucoConfig` connect `ArucoConfig` to `main`, `StaticObjective`, `ArucoTracker`, `objective.h`, `runOptimisation`, `BaslerPylonSource`, `param_space.h`, `string`?**
-  _High betweenness centrality (0.051) - this node is a cross-community bridge._
+  _High betweenness centrality (0.057) - this node is a cross-community bridge._
+- **Why does `Vehicle` connect `Vehicle` to `latency_plot.cpp`?**
+  _High betweenness centrality (0.052) - this node is a cross-community bridge._
 - **Are the 4 inferred relationships involving `SwarmClient` (e.g. with `main()` and `main()`) actually correct?**
   _`SwarmClient` has 4 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `open`, `id`, `x` to the rest of the system?**
