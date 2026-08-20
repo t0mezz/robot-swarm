@@ -16,7 +16,7 @@ import { StatusBar } from './components/StatusBar.js';
 import { Roster } from './components/Roster.js';
 import { LatencyGraph } from './components/LatencyGraph.js';
 import { Arena } from './components/Arena.js';
-import { Focus } from './components/Focus.js';
+import { Focus, FocusStrip } from './components/Focus.js';
 import { Log, KeyHints } from './components/Log.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
@@ -49,39 +49,100 @@ function useTerminalSize() {
 
 // Divides the terminal into panels. Pulled out of the component so the
 // breakpoints can be reasoned about (and tested) on their own.
+//
+// Two shapes, not one shape that shrinks:
+//
+//   WIDE (>=118 cols)   roster + swarm graph | arena + focus
+//   STACKED (<118)      roster
+//                       focus strip
+//                       arena | swarm graph
+//
+// The arena reflows rather than disappearing. Dropping it below a width
+// threshold was the original behaviour and it was wrong: at 100x30 the
+// dashboard showed no vision at all while nine rows of empty graph sat
+// underneath the roster.
 export function computeLayout(cols, rows, robotCount) {
-  // The right column yields width before it disappears: at 132 columns a
+  // ── Vertical: the log yields rows to the body, then disappears ──
+  let logH = clamp(Math.floor(rows * 0.18), 3, 8);
+  let showLog = true;
+  const chrome = () => 2 + 1 + (showLog ? 1 + logH : 0);  // status+rule, hints, rule+log
+  const MIN_BODY = 6;
+
+  let bodyH = rows - chrome();
+  if (bodyH < MIN_BODY) {
+    logH = Math.max(3, logH - (MIN_BODY - bodyH));
+    bodyH = rows - chrome();
+  }
+  if (bodyH < MIN_BODY) {
+    showLog = false;
+    logH = 0;
+    bodyH = rows - chrome();
+  }
+  bodyH = Math.max(0, bodyH);
+
+  // ── Horizontal ──
+  // The right column yields width before it restructures: at 132 columns a
   // 62-wide arena would squeeze the roster's trend column down to nothing,
   // and a latency trend you can't read is worse than a smaller arena.
   const rightW = cols >= 150 ? 62 : cols >= 118 ? 52 : 0;
-  const gap = rightW ? 2 : 0;
+  const stacked = rightW === 0;
+  const gap = stacked ? 0 : 2;
   const leftW = cols - rightW - gap;
 
-  const logH = clamp(Math.floor(rows * 0.18), 3, 8);
-  // status + rule + body + rule + log + hints
-  const bodyH = rows - 1 - 1 - 1 - logH - 1;
+  const rosterH = Math.min(robotCount + 1, Math.max(3, Math.floor(bodyH * 0.55)));
 
-  const showRight = rightW > 0 && bodyH >= 12;
-  const showFocus = showRight && bodyH >= 20;
-  const focusH = showFocus ? clamp(Math.floor(bodyH * 0.45), 11, 14) : 0;
-  const arenaH = showRight ? Math.max(5, bodyH - focusH - (showFocus ? 1 : 0)) : 0;
-
-  // The roster gets what it needs up to half the body; the swarm graph takes
-  // the rest. Below ~8 rows a braille graph carries no more information than
-  // the per-robot sparklines already do, so it yields entirely.
-  const rosterWanted = robotCount + 1;
-  const rosterH = Math.min(rosterWanted, Math.max(3, Math.floor(bodyH * 0.55)));
-  // Capped, not stretched to fill: past ~12 rows a braille trace gains no
-  // readable detail, and a 28-row graph next to a 6-row roster reads as if
-  // the graph were the point of the screen. Spare rows stay empty.
-  const graphH = Math.min(12, bodyH - rosterH - 1);
-  const showGraph = graphH >= 7;
-
-  return {
-    cols, rows, leftW, rightW, gap, bodyH, logH,
-    showRight, showFocus, focusH, arenaH,
-    rosterH, graphH: showGraph ? graphH : 0, showGraph
+  const L = {
+    cols, rows, stacked, leftW, rightW, gap, bodyH, logH, showLog, rosterH,
+    showRight: false, showFocus: false, focusH: 0, arenaH: 0, arenaW: 0,
+    graphH: 0, graphW: 0, showGraph: false, focusStrip: false
   };
+
+  if (!stacked) {
+    L.showRight = bodyH >= 12;
+    L.showFocus = L.showRight && bodyH >= 20;
+    L.focusH = L.showFocus ? clamp(Math.floor(bodyH * 0.45), 11, 14) : 0;
+    L.arenaH = L.showRight ? Math.max(5, bodyH - L.focusH - (L.showFocus ? 1 : 0)) : 0;
+    L.arenaW = rightW;
+    // Capped, not stretched to fill: past ~12 rows a braille trace gains no
+    // readable detail, and a 28-row graph beside a 6-row roster reads as if
+    // the graph were the point of the screen.
+    L.graphH = Math.min(12, bodyH - rosterH - 1);
+    L.graphW = leftW;
+    L.showGraph = L.graphH >= 7;
+    if (!L.showGraph) L.graphH = 0;
+    return L;
+  }
+
+  // Stacked: the roster is always followed by a spacer row (which doubles as
+  // the "N more" indicator), then the focus strip, then the lower band.
+  // Forgetting that spacer here overruns the body by one row, and Ink clips
+  // the overflow out of the middle of the frame — it cost a robot row and
+  // half the arena legend.
+  const SPACER = 1;
+  L.focusStrip = bodyH - rosterH - SPACER >= 2;
+  const band = bodyH - rosterH - SPACER - (L.focusStrip ? 1 : 0);
+
+  // An arena narrower than a 5x5 grid says nothing a coordinate readout
+  // doesn't say better, so below that the band goes entirely to the graph.
+  const MIN_ARENA_H = 8;
+  if (band >= MIN_ARENA_H) {
+    L.arenaH = Math.min(band, 16);
+    // Square grid: pick the width that exactly fits the height, so the arena
+    // box has no dead padding inside it.
+    L.arenaW = Math.min(leftW, 2 * (L.arenaH - 3) + 4);
+    L.showRight = true;
+  }
+  L.graphW = leftW - L.arenaW - (L.arenaW ? 2 : 0);
+  L.graphH = band;
+  L.showGraph = band >= 4 && L.graphW >= 28;
+  if (!L.showGraph) {
+    L.graphH = 0;
+    L.graphW = 0;
+    // Nothing to share the band with — let the arena use the full width it
+    // can square off against.
+    if (L.arenaW) L.arenaW = Math.min(leftW, 2 * (L.arenaH - 3) + 4);
+  }
+  return L;
 }
 
 function sortRobots(robots, sortBy) {
@@ -178,6 +239,9 @@ export function App({ source, onExit }) {
 
   const banner = state.producer === 'failed' ? state.producerError : null;
 
+  const linked = state.robots.filter((r) => !r.lost).length;
+  const graphSubtitle = `mean of ${linked} linked robot${linked === 1 ? '' : 's'}`;
+
   return html`
     <${Box} flexDirection="column" width=${cols} height=${frameH}>
       <${StatusBar} state=${state} width=${cols} paused=${paused} />
@@ -203,27 +267,48 @@ export function App({ source, onExit }) {
             ? html`<${Text} color=${C.dim}>   … ${hidden} more (↑↓ to scroll)<//>`
             : html`<${Text}> <//>`}
 
-          ${L.showGraph
+          ${L.focusStrip
+            ? html`<${FocusStrip} robot=${selected} width=${L.leftW} />`
+            : null}
+
+          ${L.stacked
             ? html`
-                <${Box} flexGrow=${1} flexDirection="column" justifyContent="flex-end">
-                  <${LatencyGraph} series=${state.avgLat} width=${L.leftW}
-                                   height=${L.graphH} windowSec=${windowSec}
-                                   subtitle=${(() => {
-                                     const n = state.robots.filter((r) => !r.lost).length;
-                                     return `mean of ${n} linked robot${n === 1 ? '' : 's'}`;
-                                   })()} />
+                <${Box} flexGrow=${1} flexDirection="row" alignItems="flex-end">
+                  ${L.showRight
+                    ? html`
+                        <${Arena} vision=${state.vision} robots=${state.robots}
+                                  selectedId=${selected?.id ?? null}
+                                  width=${L.arenaW} height=${L.arenaH} />
+                        ${L.showGraph ? html`<${Box} width=${2}><${Text}> <//><//>` : null}
+                      `
+                    : null}
+                  ${L.showGraph
+                    ? html`
+                        <${LatencyGraph} series=${state.avgLat} width=${L.graphW}
+                                         height=${L.graphH} windowSec=${windowSec}
+                                         subtitle=${graphSubtitle} />
+                      `
+                    : null}
                 <//>
               `
-            : null}
+            : L.showGraph
+              ? html`
+                  <${Box} flexGrow=${1} flexDirection="column" justifyContent="flex-end">
+                    <${LatencyGraph} series=${state.avgLat} width=${L.graphW}
+                                     height=${L.graphH} windowSec=${windowSec}
+                                     subtitle=${graphSubtitle} />
+                  <//>
+                `
+              : null}
         <//>
 
-        ${L.showRight
+        ${!L.stacked && L.showRight
           ? html`
               <${Box} width=${L.gap}><${Text}> <//><//>
               <${Box} width=${L.rightW} flexDirection="column">
                 <${Arena} vision=${state.vision} robots=${state.robots}
                           selectedId=${selected?.id ?? null}
-                          width=${L.rightW} height=${L.arenaH} />
+                          width=${L.arenaW} height=${L.arenaH} />
                 ${L.showFocus
                   ? html`<${Focus} robot=${selected} width=${L.rightW} height=${L.focusH} />`
                   : null}
@@ -232,8 +317,12 @@ export function App({ source, onExit }) {
           : null}
       <//>
 
-      <${Text} color=${C.rule}>${'─'.repeat(cols)}<//>
-      <${Log} entries=${state.log} width=${cols} height=${L.logH} now=${Date.now()} />
+      ${L.showLog
+        ? html`
+            <${Text} color=${C.rule}>${'─'.repeat(cols)}<//>
+            <${Log} entries=${state.log} width=${cols} height=${L.logH} now=${Date.now()} />
+          `
+        : null}
       <${KeyHints} width=${cols} sortBy=${sortBy} follow=${follow} paused=${paused} />
     <//>
   `;

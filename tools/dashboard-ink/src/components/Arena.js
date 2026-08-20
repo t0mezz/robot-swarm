@@ -44,6 +44,7 @@ export function Arena({ vision, robots, selectedId, width, height }) {
     grid[row][col] = p;
   }
 
+  const tracked = vision.robots?.length ?? 0;
   const title = ' ARENA ';
   const right = vision.ok ? ` ${fw}² ` : ' no camera ';
   const fill = Math.max(0, width - 2 - 2 - title.length - right.length);
@@ -79,11 +80,19 @@ export function Arena({ vision, robots, selectedId, width, height }) {
       <${Box}>
         <${Text} color=${C.rule}>╰${'─'.repeat(Math.max(0, width - 2))}╯<//>
       <//>
-      <${Box}>
-        <${Text} color=${C.cyanBright}> ↑→<//>
-        <${Text} color=${C.dim}> heading   <//>
-        <${Text} color=${C.yellow}>●<//>
-        <${Text} color=${C.dim}> low batt   ${vision.robots?.length ?? 0} tracked<//>
+      ${/* The legend must never wrap: a second line pushes the box past the
+            height it was budgeted, and Ink clips the overflow out of the
+            middle of the frame rather than the end. Below the width that
+            fits the key, only the count survives. */ null}
+      <${Box} width=${width}>
+        ${width >= 36
+          ? html`
+              <${Text} color=${C.cyanBright}> ↑→<//>
+              <${Text} color=${C.dim}> heading   <//>
+              <${Text} color=${C.yellow}>●<//>
+              <${Text} color=${C.dim} wrap="truncate"> low batt   ${tracked} tracked<//>
+            `
+          : html`<${Text} color=${C.dim} wrap="truncate"> ${tracked} tracked<//>`}
       <//>
     <//>
   `;

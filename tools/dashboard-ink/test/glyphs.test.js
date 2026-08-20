@@ -128,11 +128,15 @@ test('formatting helpers', () => {
   assert.equal(fit('ab', 4), 'ab  ');
 });
 
-test('headingArrow snaps yaw to 8 compass points and wraps', () => {
-  assert.equal(headingArrow(0), '→');
-  assert.equal(headingArrow(90), '↑');
-  assert.equal(headingArrow(180), '←');
-  assert.equal(headingArrow(-90), '↓');
+test('headingArrow converts y-up yaw into y-down screen space', () => {
+  // Yaw is CCW from +X with y up; the arena's rows run downward. Only the
+  // vertical component flips, which is exactly how the bug presented.
+  assert.equal(headingArrow(0), '→', 'horizontal axis is unaffected');
+  assert.equal(headingArrow(180), '←', 'horizontal axis is unaffected');
+  assert.equal(headingArrow(90), '↓', '+90 is CCW in world space = down on screen');
+  assert.equal(headingArrow(-90), '↑');
+  assert.equal(headingArrow(45), '↘');
+  assert.equal(headingArrow(135), '↙');
   assert.equal(headingArrow(360), '→', 'wraps past a full turn');
   assert.equal(headingArrow(-180), '←', 'negative half turn is the same as +180');
   assert.equal(headingArrow(null), '•');
@@ -194,10 +198,45 @@ test('roster columns drop in priority order as width shrinks', () => {
   assert.equal(rosterLayout(50).showDrive, false);
 });
 
-test('computeLayout drops the right column on narrow terminals', () => {
-  assert.equal(computeLayout(90, 40, 6).showRight, false);
-  assert.equal(computeLayout(90, 40, 6).leftW, 90);
-  assert.equal(computeLayout(160, 48, 6).showRight, true);
+test('computeLayout stacks rather than dropping the arena when narrow', () => {
+  const wide = computeLayout(160, 48, 6);
+  assert.equal(wide.stacked, false);
+  assert.equal(wide.showRight, true);
+  assert.equal(wide.showFocus, true, 'the full focus panel needs a side column');
+
+  // The regression this replaces: below the side-column width the arena used
+  // to vanish entirely, leaving rows of empty graph and no vision at all.
+  const narrow = computeLayout(100, 30, 6);
+  assert.equal(narrow.stacked, true);
+  assert.equal(narrow.leftW, 100, 'stacked mode uses the full width');
+  assert.equal(narrow.showRight, true, 'the arena must survive the reflow');
+  assert.ok(narrow.arenaW > 0 && narrow.arenaH >= 8);
+  assert.equal(narrow.focusStrip, true, 'pose still reachable via the one-line strip');
+});
+
+test('a stacked arena is exactly square, with no dead padding', () => {
+  for (const [cols, rows] of [[100, 30], [80, 24], [110, 40], [60, 30]]) {
+    const L = computeLayout(cols, rows, 6);
+    if (!L.stacked || !L.showRight) continue;
+    const gridW = Math.floor((L.arenaW - 4) / 2);
+    const gridH = L.arenaH - 3;
+    assert.equal(gridW, gridH, `arena not square at ${cols}x${rows}`);
+  }
+});
+
+test('computeLayout survives terminals too small for every panel', () => {
+  for (const rows of [8, 10, 12, 16, 20]) {
+    for (const cols of [40, 60, 80]) {
+      const L = computeLayout(cols, rows, 6);
+      const chrome = 2 + 1 + (L.showLog ? 1 + L.logH : 0);
+      assert.equal(chrome + L.bodyH, rows, `budget wrong at ${cols}x${rows}`);
+      assert.ok(L.bodyH >= 0, `negative body at ${cols}x${rows}`);
+      // +1 for the spacer row the roster is always followed by.
+      const used = L.rosterH + 1 + (L.focusStrip ? 1 : 0)
+        + Math.max(L.arenaH, L.showGraph ? L.graphH : 0);
+      assert.ok(used <= L.bodyH, `body overruns at ${cols}x${rows}: ${used} > ${L.bodyH}`);
+    }
+  }
 });
 
 test('computeLayout caps the swarm graph instead of stretching it', () => {

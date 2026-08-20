@@ -150,11 +150,18 @@ export function fmtUptime(sec) {
   return `${sec}s`;
 }
 
-// Heading arrow for a yaw in degrees CCW from world +X, snapped to 8 points.
+// Heading arrow for a yaw in degrees, snapped to 8 compass points.
+//
+// The yaw is measured CCW from +X in a y-UP frame (see RobotPose in
+// lib/ArucoTracker/aruco_tracker.h), but the arena draws into terminal rows,
+// where y runs DOWN. Rendering the angle as-is mirrors the vertical component:
+// a robot facing away from the camera's origin drew an arrow pointing back
+// toward it. Negating the angle converts to screen space — the horizontal
+// component is unaffected, which is why only the y axis looked wrong.
 const ARROWS = ['→', '↗', '↑', '↖', '←', '↙', '↓', '↘'];
 export function headingArrow(yaw) {
   if (yaw == null) return '•';
-  const idx = ((Math.round(yaw / 45) % 8) + 8) % 8;
+  const idx = ((Math.round(-yaw / 45) % 8) + 8) % 8;
   return ARROWS[idx];
 }
 

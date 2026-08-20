@@ -48,6 +48,39 @@ function Field({ width, label, children }) {
   `;
 }
 
+// Single-row stand-in for the full panel, used by the stacked layout. Carries
+// the two things the roster row can't: where the robot is, and how steady its
+// link has been.
+export function FocusStrip({ robot, width }) {
+  if (!robot) {
+    return html`<${Box} width=${width}><${Text} color=${C.dim}> no robot selected<//><//>`;
+  }
+  const live = robot.hist.filter((v) => v > 0);
+  const avg = live.length ? live.reduce((a, b) => a + b, 0) / live.length : 0;
+  const max = live.length ? Math.max(...live) : 0;
+
+  return html`
+    <${Box} width=${width}>
+      <${Text} color=${C.white} bold> R${robot.id}<//>
+      ${robot.pose
+        ? html`
+            <${Text} color=${C.dim}>  x <//>
+            <${Text} color=${C.fg}>${robot.pose.x.toFixed(0)}<//>
+            <${Text} color=${C.dim}>  y <//>
+            <${Text} color=${C.fg}>${robot.pose.y.toFixed(0)}<//>
+            <${Text} color=${C.dim}>  yaw <//>
+            <${Text} color=${C.fg}>${robot.pose.yaw.toFixed(0)}° <//>
+            <${Text} color=${C.cyanBright}>${headingArrow(robot.pose.yaw)}<//>
+          `
+        : html`<${Text} color=${C.dim}>  no vision fix<//>`}
+      <${Text} color=${C.dim}>   avg <//>
+      <${Text} color=${C.fg}>${(avg / 1000).toFixed(1)}<//>
+      <${Text} color=${C.dim}>  max <//>
+      <${Text} color=${C.fg}>${(max / 1000).toFixed(1)} ms<//>
+    <//>
+  `;
+}
+
 export function Focus({ robot, width, height }) {
   const inner = width - 2;
 
