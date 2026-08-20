@@ -114,6 +114,16 @@ struct ArucoConfig {
     // stays invisible indefinitely. 0 = unknown/uncapped: always keep
     // sweeping every frame.
     int   robotCount  = 0;
+    // Throttle for the forced/rediscovery global sweep above: when a sweep is
+    // wanted (robotCount not yet reached, or some marker fell back to
+    // RoiState::GLOBAL), only actually run it on every Nth detection-thread
+    // frame instead of every frame. Trades slower marker (re)acquisition —
+    // up to N-1 extra detection-thread frames of pure Kalman dead-reckoning
+    // before a lost/new marker is looked for again — for det_fps, since a
+    // forced-every-frame global sweep costs roughly 2x a pure-ROI frame (see
+    // TODO.md/circle_demo --log-perf). 1 = sweep every wanted frame (default,
+    // matches pre-throttling behavior).
+    int   globalSweepInterval = 1;
 
     // CLAHE — applied lazily (only to the image actually passed to detectMarkers)
     float claheClip = 2.0f;
@@ -185,6 +195,7 @@ inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
     rf("roi_area_max",    c.roiAreaMax);
     ri("global_reset",    c.globalReset);
     ri("robot_count",     c.robotCount);
+    ri("global_sweep_interval", c.globalSweepInterval);
     rf("clahe_clip",      c.claheClip);
     ri("clahe_tile",      c.claheTile);
     rb("debug_overlay",   c.debugOverlay);
@@ -473,6 +484,7 @@ private:
         float fps        = 0.f;
         float emaLatency = 0.f;
         Clock::time_point lastFpsTime;
+        long  sweepFrameCounter = 0;  // for globalSweepInterval throttling
 
         while (true) {
             // Wait for a new frame from the capture thread
@@ -533,11 +545,18 @@ private:
                 // (see TODO.md). Once we've seen enough markers, drop back to
                 // sweeping only when needed (no markers yet, or one has fully
                 // lost tracking) to save the full-frame detection cost.
-                bool needGlobal = markerStates_.empty();
+                bool wantsGlobal = markerStates_.empty();
                 for (auto& [_, ms] : markerStates_)
-                    if (ms.state == RoiState::GLOBAL) { needGlobal = true; break; }
+                    if (ms.state == RoiState::GLOBAL) { wantsGlobal = true; break; }
                 if (cfg_.robotCount <= 0 || (int)markerStates_.size() < cfg_.robotCount)
-                    needGlobal = true;
+                    wantsGlobal = true;
+
+                // Throttle: only actually run a wanted sweep on every Nth
+                // detection-thread frame (see ArucoConfig::globalSweepInterval).
+                bool needGlobal = wantsGlobal &&
+                    (cfg_.globalSweepInterval <= 1 ||
+                     sweepFrameCounter % cfg_.globalSweepInterval == 0);
+                ++sweepFrameCounter;
 
                 struct Best { float perim; std::vector<cv::Point2f> c; };
                 std::unordered_map<int, Best> best;

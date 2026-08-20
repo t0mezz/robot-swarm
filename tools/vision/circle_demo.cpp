@@ -595,8 +595,8 @@ int main(int argc, char* argv[]) {
             fps = frameCount / dt;
             if (frameCount > 0 && logPerf) {
                 double n = (double)frameCount;
-                printf("[perf] loop_fps=%.0f  total=%.2fms  control=%.2fms  draw=%.2fms  imshow=%.2fms  waitKey=%.2fms  other=%.2fms\n",
-                       fps, accTotal/n*1000.0, accControl/n*1000.0, accDraw/n*1000.0,
+                printf("[perf] loop_fps=%.0f  det_fps=%.0f  total=%.2fms  control=%.2fms  draw=%.2fms  imshow=%.2fms  waitKey=%.2fms  other=%.2fms\n",
+                       fps, tracker.detectionFps(), accTotal/n*1000.0, accControl/n*1000.0, accDraw/n*1000.0,
                        accImshow/n*1000.0, accWaitKey/n*1000.0,
                        (accTotal - accControl - accDraw - accImshow - accWaitKey)/n*1000.0);
             }
