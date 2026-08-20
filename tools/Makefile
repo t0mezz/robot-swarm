@@ -64,8 +64,8 @@ $(BUILD_DIR)/swarm_terminal: $(SWARMDIR)/swarm_terminal.cpp $(LIBDIR)/SwarmClien
 $(BUILD_DIR)/latency_plot: $(SWARMDIR)/latency_plot.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@
 
-$(BUILD_DIR)/swarm_dashboard: $(SWARMDIR)/swarm_dashboard.cpp $(SWARMDIR)/telemetry_history.h $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@
+$(BUILD_DIR)/swarm_dashboard: $(SWARMDIR)/swarm_dashboard.cpp $(SWARMDIR)/telemetry_history.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS)
 
 $(BUILD_DIR)/swarm_controller: $(SWARMDIR)/swarm_controller.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@ $(CONTROLLER_LDFLAGS)
