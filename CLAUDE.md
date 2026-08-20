@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ESP-NOW based swarm control system for up to 32 Pololu 3pi+ 2040 robots. A controller PC sends motor commands over USB serial to a dongle ESP32, which broadcasts them via ESP-NOW to all robot ESP32s; each robot ESP32 forwards commands to its onboard RP2040 (running MicroPython) over UART. A Basler ace2 GigE camera with OpenCV ArUco tracking provides overhead vision for the vision-based control modes. End-to-end latency from keypress to motor response is ~4ms — see `docs/architecture.md` for the full per-segment latency budget and `PERFORMANCE.md` for measured PC-tool performance history.
 
-The codebase has three independent toolchains that don't share a build system: PlatformIO firmware (C++), a plain Makefile for PC tools (C++), and MicroPython deployed directly to the robot (no build step at all).
+The codebase has four independent toolchains that don't share a build system: PlatformIO firmware (C++), a plain Makefile for PC tools (C++), MicroPython deployed directly to the robot (no build step at all), and npm for the Ink terminal dashboard (`tools/dashboard-ink/`, Node — dependencies only, also no build step).
 
 ## Commands
 
@@ -36,6 +36,18 @@ Requires OpenCV, SFML 3 (not `sfml@2`), and Basler pylon 8.1.0 on the host — s
 
 No build step. Deploy `robot_uart.py`, `screen_manager.py`, and `uart_controller.py` directly to the Pololu 3pi+ 2040 over MicroPython (`uart_controller.py` is the entry point / `main.py`).
 
+### Ink dashboard (`tools/dashboard-ink/`, npm)
+
+```bash
+cd tools && make build/swarm_telemetry_json   # the C++ producer it spawns
+cd dashboard-ink && npm install               # no build step; htm, not JSX
+npm start          # live
+npm run demo       # synthetic swarm — no dongle, hub or camera needed
+npm test           # node:test unit tests for the glyph + layout functions
+```
+
+Requires Node >= 20. Uses `htm` tagged templates instead of JSX specifically so there is no transpile step — see the comment in `src/html.js` before adding a bundler.
+
 ### Tests (`tests/`, plain Makefile)
 
 ```bash
@@ -57,6 +69,8 @@ The frame format `[0xAA][0x55][type][len][payload...][CRC-8 (poly 0x07)]` and th
 - `src/robots/robot_uart.py` — MicroPython parser on the RP2040 (`UARTProtocol` class)
 
 When changing a message type or payload layout, all three need updating; there's no shared codegen.
+
+Keep it at three. Non-C++ UIs consume the swarm through `swarm_telemetry_json` (`tools/swarm/swarm_telemetry_json.cpp`), which links `SwarmClient` and `ArucoTracker` and emits one NDJSON snapshot per tick on stdout — that's how `tools/dashboard-ink/` gets its data. Parsing frames in a fourth language would add another hand-synced copy of this table, and vision data (pylon + OpenCV) isn't reachable from outside C++ anyway.
 
 ### `swarm_hub` is the only process that owns the serial port
 
