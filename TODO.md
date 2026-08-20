@@ -1,5 +1,9 @@
 # TODO
 
+# install gh on ubuntu machine
+
+# add 2 params to circle_demo maybe create a new polished circle util drop "demo" phrase
+
 # We need to add a feature for pose log (saving) and analysis.
 - maybe a format to efficiently save the poses with util to capture (can be put in eval or add a headless capture)
 - add an analysis util that calculates speeds, distances with academic grade statistics. (how do we do that)
