@@ -296,19 +296,6 @@
       "source_location": "L92"
     },
     {
-      "id": "tools_vision_drag_drop_demo_avoidstate",
-      "label": "AvoidState",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 19,
-      "community_name": "drag_drop_demo.cpp",
-      "file_type": "code",
-      "norm_label": "avoidstate",
-      "source_file": "tools/vision/drag_drop_demo.cpp",
-      "source_location": "L106"
-    },
-    {
       "id": "tools_vision_drag_drop_demo_calibstate",
       "label": "CalibState",
       "_callable": true,
@@ -738,6 +725,19 @@
       "source_location": "L69"
     },
     {
+      "id": "tools_vision_drag_drop_demo_avoidstate",
+      "label": "AvoidState",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "AvoidState",
+      "file_type": "code",
+      "norm_label": "avoidstate",
+      "source_file": "tools/vision/drag_drop_demo.cpp",
+      "source_location": "L106"
+    },
+    {
       "id": "lib_calibration_objective_iobjective",
       "label": "IObjective",
       "_callable": true,
@@ -1055,18 +1055,6 @@
       "norm_label": ".sample()",
       "source_file": "tools/swarm/telemetry_history.h",
       "source_location": "L70"
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_swarmclient_registerrobot",
-      "label": ".registerRobot()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 1,
-      "community_name": "Vehicle",
-      "file_type": "code",
-      "norm_label": ".registerrobot()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L186"
     },
     {
       "id": "tools_game_alpha",
@@ -1981,18 +1969,6 @@
       "source_location": "L95"
     },
     {
-      "id": "lib_swarmclient_swarmclient_swarmclient_buildframe",
-      "label": ".buildFrame()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".buildframe()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L365"
-    },
-    {
       "id": "lib_swarmclient_swarmclient_swarmclient_cleardebuglog",
       "label": ".clearDebugLog()",
       "_callable": true,
@@ -2003,102 +1979,6 @@
       "norm_label": ".cleardebuglog()",
       "source_file": "lib/SwarmClient/SwarmClient.h",
       "source_location": "L333"
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_swarmclient_connect",
-      "label": ".connect()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".connect()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L108"
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_swarmclient_crc8",
-      "label": ".crc8()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".crc8()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L355"
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_swarmclient_disconnect",
-      "label": ".disconnect()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".disconnect()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L156"
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_swarmclient_findserialport",
-      "label": ".findSerialPort()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".findserialport()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L505"
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_swarmclient_flush",
-      "label": ".flush()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".flush()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L194"
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_swarmclient_formatdebugvalue",
-      "label": ".formatDebugValue()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".formatdebugvalue()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L378"
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_swarmclient_framesize",
-      "label": ".frameSize()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".framesize()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L375"
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_swarmclient_hubisrunning",
-      "label": ".hubIsRunning()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".hubisrunning()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L476"
     },
     {
       "id": "lib_swarmclient_swarmclient_swarmclient_isknown",
@@ -2125,54 +2005,6 @@
       "source_location": "L318"
     },
     {
-      "id": "lib_swarmclient_swarmclient_swarmclient_opensocket",
-      "label": ".openSocket()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".opensocket()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L463"
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_swarmclient_parseframe",
-      "label": ".parseFrame()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".parseframe()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L400"
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_swarmclient_poll",
-      "label": ".poll()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".poll()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L261"
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_swarmclient_sendping",
-      "label": ".sendPing()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".sendping()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L227"
-    },
-    {
       "id": "lib_swarmclient_swarmclient_swarmclient_setall",
       "label": ".setAll()",
       "_callable": true,
@@ -2195,18 +2027,6 @@
       "norm_label": ".setspeed()",
       "source_file": "lib/SwarmClient/SwarmClient.h",
       "source_location": "L165"
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_swarmclient_siblinghubpath",
-      "label": ".siblingHubPath()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".siblinghubpath()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L489"
     },
     {
       "id": "lib_swarmclient_swarmclient_swarmclient_stop",
@@ -2233,66 +2053,6 @@
       "source_location": "L182"
     },
     {
-      "id": "lib_swarmclient_swarmclient_swarmclient_swarmclient",
-      "label": ".SwarmClient()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": ".swarmclient()",
-      "source_file": "lib/SwarmClient/SwarmClient.h",
-      "source_location": "L98"
-    },
-    {
-      "id": "tools_swarm_latency_plot_drawplot",
-      "label": "drawPlot()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": "drawplot()",
-      "source_file": "tools/swarm/latency_plot.cpp",
-      "source_location": "L76"
-    },
-    {
-      "id": "tools_swarm_latency_plot_main",
-      "label": "main()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": "main()",
-      "source_file": "tools/swarm/latency_plot.cpp",
-      "source_location": "L153"
-    },
-    {
-      "id": "tools_swarm_latency_plot_onpong",
-      "label": "onPong()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": "onpong()",
-      "source_file": "tools/swarm/latency_plot.cpp",
-      "source_location": "L52"
-    },
-    {
-      "id": "tools_swarm_latency_plot_signal_handler",
-      "label": "signal_handler()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": "signal_handler()",
-      "source_file": "tools/swarm/latency_plot.cpp",
-      "source_location": "L31"
-    },
-    {
       "id": "tools_swarm_swarm_dashboard_main",
       "label": "main()",
       "_callable": true,
@@ -2303,54 +2063,6 @@
       "norm_label": "main()",
       "source_file": "tools/swarm/swarm_dashboard.cpp",
       "source_location": "L333"
-    },
-    {
-      "id": "tools_swarm_swarm_terminal_drawui",
-      "label": "drawUI()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": "drawui()",
-      "source_file": "tools/swarm/swarm_terminal.cpp",
-      "source_location": "L44"
-    },
-    {
-      "id": "tools_swarm_swarm_terminal_main",
-      "label": "main()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": "main()",
-      "source_file": "tools/swarm/swarm_terminal.cpp",
-      "source_location": "L133"
-    },
-    {
-      "id": "tools_swarm_swarm_terminal_signal_handler",
-      "label": "signal_handler()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": "signal_handler()",
-      "source_file": "tools/swarm/swarm_terminal.cpp",
-      "source_location": "L30"
-    },
-    {
-      "id": "tools_swarm_swarm_terminal_statusparts",
-      "label": "statusParts()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": "statusparts()",
-      "source_file": "tools/swarm/swarm_terminal.cpp",
-      "source_location": "L36"
     },
     {
       "id": "src_robots_robot_uart_uartprotocol_check_heartbeat",
@@ -2497,18 +2209,6 @@
       "source_location": "L129"
     },
     {
-      "id": "lib_arucotracker_aruco_tracker_arucotracker_drawtext",
-      "label": ".drawText()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 19,
-      "community_name": "drag_drop_demo.cpp",
-      "file_type": "code",
-      "norm_label": ".drawtext()",
-      "source_file": "lib/ArucoTracker/aruco_tracker.h",
-      "source_location": "L375"
-    },
-    {
       "id": "tools_vision_drag_drop_demo_buildavoidance",
       "label": "buildAvoidance()",
       "_callable": true,
@@ -2627,6 +2327,18 @@
       "norm_label": "worldtopixel()",
       "source_file": "tools/vision/drag_drop_demo.cpp",
       "source_location": "L96"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_registerrobot",
+      "label": ".registerRobot()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 2,
+      "community_name": "shape_demo.cpp",
+      "file_type": "code",
+      "norm_label": ".registerrobot()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L186"
     },
     {
       "id": "tools_vision_shape_demo_buildwaypoints",
@@ -2759,18 +2471,6 @@
       "norm_label": "pixeltoworld()",
       "source_file": "tools/vision/shape_demo.cpp",
       "source_location": "L91"
-    },
-    {
-      "id": "tools_vision_shape_demo_runcalibration",
-      "label": "runCalibration()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 2,
-      "community_name": "shape_demo.cpp",
-      "file_type": "code",
-      "norm_label": "runcalibration()",
-      "source_file": "tools/vision/shape_demo.cpp",
-      "source_location": "L377"
     },
     {
       "id": "tools_vision_shape_demo_sampleshape",
@@ -3097,6 +2797,30 @@
       "source_location": "L363"
     },
     {
+      "id": "lib_arucotracker_aruco_tracker_arucotracker_drawdebugoverlay",
+      "label": ".drawDebugOverlay()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 22,
+      "community_name": ".drawText",
+      "file_type": "code",
+      "norm_label": ".drawdebugoverlay()",
+      "source_file": "lib/ArucoTracker/aruco_tracker.h",
+      "source_location": "L764"
+    },
+    {
+      "id": "lib_arucotracker_aruco_tracker_arucotracker_drawtext",
+      "label": ".drawText()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 22,
+      "community_name": ".drawText",
+      "file_type": "code",
+      "norm_label": ".drawtext()",
+      "source_file": "lib/ArucoTracker/aruco_tracker.h",
+      "source_location": "L375"
+    },
+    {
       "id": "lib_arucotracker_aruco_tracker_arucotracker_framesize",
       "label": ".frameSize()",
       "_callable": true,
@@ -3107,6 +2831,18 @@
       "norm_label": ".framesize()",
       "source_file": "lib/ArucoTracker/aruco_tracker.h",
       "source_location": "L364"
+    },
+    {
+      "id": "lib_arucotracker_aruco_tracker_arucotracker_initkalman",
+      "label": ".initKalman()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 22,
+      "community_name": ".drawText",
+      "file_type": "code",
+      "norm_label": ".initkalman()",
+      "source_file": "lib/ArucoTracker/aruco_tracker.h",
+      "source_location": "L740"
     },
     {
       "id": "lib_arucotracker_aruco_tracker_clahepreprocessor_process",
@@ -3155,6 +2891,18 @@
       "norm_label": ".ready()",
       "source_file": "lib/ArucoTracker/aruco_tracker.h",
       "source_location": "L258"
+    },
+    {
+      "id": "tools_vision_shape_demo_runcalibration",
+      "label": "runCalibration()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 22,
+      "community_name": ".drawText",
+      "file_type": "code",
+      "norm_label": "runcalibration()",
+      "source_file": "tools/vision/shape_demo.cpp",
+      "source_location": "L377"
     },
     {
       "id": "lib_arucotracker_basler_pylon_source_baslerpylonsource_baslerpylonsource",
@@ -4465,30 +4213,6 @@
       "source_location": "L465"
     },
     {
-      "id": "lib_arucotracker_aruco_tracker_arucotracker_drawdebugoverlay",
-      "label": ".drawDebugOverlay()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 39,
-      "community_name": "vector",
-      "file_type": "code",
-      "norm_label": ".drawdebugoverlay()",
-      "source_file": "lib/ArucoTracker/aruco_tracker.h",
-      "source_location": "L764"
-    },
-    {
-      "id": "lib_arucotracker_aruco_tracker_arucotracker_initkalman",
-      "label": ".initKalman()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 39,
-      "community_name": "vector",
-      "file_type": "code",
-      "norm_label": ".initkalman()",
-      "source_file": "lib/ArucoTracker/aruco_tracker.h",
-      "source_location": "L740"
-    },
-    {
       "id": "lib_arucotracker_aruco_tracker_arucotracker_sethomography",
       "label": ".setHomography()",
       "_callable": true,
@@ -5149,6 +4873,78 @@
       "source_location": "L72"
     },
     {
+      "id": "lib_swarmclient_swarmclient_swarmclient_connect",
+      "label": ".connect()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 55,
+      "community_name": ".connect",
+      "file_type": "code",
+      "norm_label": ".connect()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L108"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_findserialport",
+      "label": ".findSerialPort()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 55,
+      "community_name": ".connect",
+      "file_type": "code",
+      "norm_label": ".findserialport()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L505"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_formatdebugvalue",
+      "label": ".formatDebugValue()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 55,
+      "community_name": ".connect",
+      "file_type": "code",
+      "norm_label": ".formatdebugvalue()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L378"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_hubisrunning",
+      "label": ".hubIsRunning()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 55,
+      "community_name": ".connect",
+      "file_type": "code",
+      "norm_label": ".hubisrunning()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L476"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_opensocket",
+      "label": ".openSocket()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 55,
+      "community_name": ".connect",
+      "file_type": "code",
+      "norm_label": ".opensocket()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L463"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_siblinghubpath",
+      "label": ".siblingHubPath()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 55,
+      "community_name": ".connect",
+      "file_type": "code",
+      "norm_label": ".siblinghubpath()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L489"
+    },
+    {
       "id": "tools_swarm_evdev_keys_evdevkeyboard_close",
       "label": ".close()",
       "_callable": true,
@@ -5449,6 +5245,162 @@
       "source_location": "L94"
     },
     {
+      "id": "lib_swarmclient_swarmclient_swarmclient_buildframe",
+      "label": ".buildFrame()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 61,
+      "community_name": ".poll",
+      "file_type": "code",
+      "norm_label": ".buildframe()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L365"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_crc8",
+      "label": ".crc8()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 61,
+      "community_name": ".poll",
+      "file_type": "code",
+      "norm_label": ".crc8()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L355"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_flush",
+      "label": ".flush()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 61,
+      "community_name": ".poll",
+      "file_type": "code",
+      "norm_label": ".flush()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L194"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_framesize",
+      "label": ".frameSize()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 61,
+      "community_name": ".poll",
+      "file_type": "code",
+      "norm_label": ".framesize()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L375"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_parseframe",
+      "label": ".parseFrame()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 61,
+      "community_name": ".poll",
+      "file_type": "code",
+      "norm_label": ".parseframe()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L400"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_poll",
+      "label": ".poll()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 61,
+      "community_name": ".poll",
+      "file_type": "code",
+      "norm_label": ".poll()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L261"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_sendping",
+      "label": ".sendPing()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 61,
+      "community_name": ".poll",
+      "file_type": "code",
+      "norm_label": ".sendping()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L227"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_disconnect",
+      "label": ".disconnect()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "swarm_terminal.cpp",
+      "file_type": "code",
+      "norm_label": ".disconnect()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L156"
+    },
+    {
+      "id": "lib_swarmclient_swarmclient_swarmclient_swarmclient",
+      "label": ".SwarmClient()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "swarm_terminal.cpp",
+      "file_type": "code",
+      "norm_label": ".swarmclient()",
+      "source_file": "lib/SwarmClient/SwarmClient.h",
+      "source_location": "L98"
+    },
+    {
+      "id": "tools_swarm_swarm_terminal_drawui",
+      "label": "drawUI()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "swarm_terminal.cpp",
+      "file_type": "code",
+      "norm_label": "drawui()",
+      "source_file": "tools/swarm/swarm_terminal.cpp",
+      "source_location": "L44"
+    },
+    {
+      "id": "tools_swarm_swarm_terminal_main",
+      "label": "main()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "swarm_terminal.cpp",
+      "file_type": "code",
+      "norm_label": "main()",
+      "source_file": "tools/swarm/swarm_terminal.cpp",
+      "source_location": "L133"
+    },
+    {
+      "id": "tools_swarm_swarm_terminal_signal_handler",
+      "label": "signal_handler()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "swarm_terminal.cpp",
+      "file_type": "code",
+      "norm_label": "signal_handler()",
+      "source_file": "tools/swarm/swarm_terminal.cpp",
+      "source_location": "L30"
+    },
+    {
+      "id": "tools_swarm_swarm_terminal_statusparts",
+      "label": "statusParts()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "swarm_terminal.cpp",
+      "file_type": "code",
+      "norm_label": "statusparts()",
+      "source_file": "tools/swarm/swarm_terminal.cpp",
+      "source_location": "L36"
+    },
+    {
       "id": "tools_vision_circle_demo_updaterate",
       "label": "updateRate()",
       "_callable": true,
@@ -5459,6 +5411,54 @@
       "norm_label": "updaterate()",
       "source_file": "tools/vision/circle_demo.cpp",
       "source_location": "L117"
+    },
+    {
+      "id": "tools_swarm_latency_plot_drawplot",
+      "label": "drawPlot()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 65,
+      "community_name": "latency_plot.cpp",
+      "file_type": "code",
+      "norm_label": "drawplot()",
+      "source_file": "tools/swarm/latency_plot.cpp",
+      "source_location": "L76"
+    },
+    {
+      "id": "tools_swarm_latency_plot_main",
+      "label": "main()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 65,
+      "community_name": "latency_plot.cpp",
+      "file_type": "code",
+      "norm_label": "main()",
+      "source_file": "tools/swarm/latency_plot.cpp",
+      "source_location": "L153"
+    },
+    {
+      "id": "tools_swarm_latency_plot_onpong",
+      "label": "onPong()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 65,
+      "community_name": "latency_plot.cpp",
+      "file_type": "code",
+      "norm_label": "onpong()",
+      "source_file": "tools/swarm/latency_plot.cpp",
+      "source_location": "L52"
+    },
+    {
+      "id": "tools_swarm_latency_plot_signal_handler",
+      "label": "signal_handler()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 65,
+      "community_name": "latency_plot.cpp",
+      "file_type": "code",
+      "norm_label": "signal_handler()",
+      "source_file": "tools/swarm/latency_plot.cpp",
+      "source_location": "L31"
     },
     {
       "id": "src_robots_uart_controller_pi_init",
@@ -7990,17 +7990,6 @@
       "source_location": ""
     },
     {
-      "id": "deque",
-      "label": "deque",
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": "deque",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
       "id": "lib_swarmclient_swarmclient_h_debugentry",
       "label": "DebugEntry",
       "_origin": "ast",
@@ -8030,17 +8019,6 @@
       "community_name": "SwarmClient",
       "file_type": "code",
       "norm_label": "robotstate",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "lib_swarmclient_swarmclient_h_string",
-      "label": "string",
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": "string",
       "source_file": "",
       "source_location": ""
     },
@@ -8144,28 +8122,6 @@
       "source_location": "L343"
     },
     {
-      "id": "tools_swarm_latency_plot",
-      "label": "latency_plot.cpp",
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": "latency_plot.cpp",
-      "source_file": "tools/swarm/latency_plot.cpp",
-      "source_location": "L1"
-    },
-    {
-      "id": "tools_swarm_swarm_terminal",
-      "label": "swarm_terminal.cpp",
-      "_origin": "ast",
-      "community": 17,
-      "community_name": "SwarmClient",
-      "file_type": "code",
-      "norm_label": "swarm_terminal.cpp",
-      "source_file": "tools/swarm/swarm_terminal.cpp",
-      "source_location": "L1"
-    },
-    {
       "id": "uart",
       "label": "UART",
       "_origin": "ast",
@@ -8254,17 +8210,6 @@
       "source_location": "L93"
     },
     {
-      "id": "lib_arucotracker_aruco_tracker_h_point",
-      "label": "Point",
-      "_origin": "ast",
-      "community": 19,
-      "community_name": "drag_drop_demo.cpp",
-      "file_type": "code",
-      "norm_label": "point",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
       "id": "tools_vision_drag_drop_demo",
       "label": "drag_drop_demo.cpp",
       "_origin": "ast",
@@ -8274,50 +8219,6 @@
       "norm_label": "drag_drop_demo.cpp",
       "source_file": "tools/vision/drag_drop_demo.cpp",
       "source_location": "L1"
-    },
-    {
-      "id": "tools_vision_drag_drop_demo_avoidstate_arc",
-      "label": "arc",
-      "_origin": "ast",
-      "community": 19,
-      "community_name": "drag_drop_demo.cpp",
-      "file_type": "code",
-      "norm_label": "arc",
-      "source_file": "tools/vision/drag_drop_demo.cpp",
-      "source_location": "L108"
-    },
-    {
-      "id": "tools_vision_drag_drop_demo_avoidstate_arcdx",
-      "label": "arcDx",
-      "_origin": "ast",
-      "community": 19,
-      "community_name": "drag_drop_demo.cpp",
-      "file_type": "code",
-      "norm_label": "arcdx",
-      "source_file": "tools/vision/drag_drop_demo.cpp",
-      "source_location": "L109"
-    },
-    {
-      "id": "tools_vision_drag_drop_demo_avoidstate_arcdy",
-      "label": "arcDy",
-      "_origin": "ast",
-      "community": 19,
-      "community_name": "drag_drop_demo.cpp",
-      "file_type": "code",
-      "norm_label": "arcdy",
-      "source_file": "tools/vision/drag_drop_demo.cpp",
-      "source_location": "L110"
-    },
-    {
-      "id": "tools_vision_drag_drop_demo_avoidstate_mindist",
-      "label": "minDist",
-      "_origin": "ast",
-      "community": 19,
-      "community_name": "drag_drop_demo.cpp",
-      "file_type": "code",
-      "norm_label": "mindist",
-      "source_file": "tools/vision/drag_drop_demo.cpp",
-      "source_location": "L107"
     },
     {
       "id": "tools_vision_drag_drop_demo_calibstate_done",
@@ -8826,6 +8727,17 @@
       "source_location": "L76"
     },
     {
+      "id": "kalmanfilter",
+      "label": "KalmanFilter",
+      "_origin": "ast",
+      "community": 22,
+      "community_name": ".drawText",
+      "file_type": "code",
+      "norm_label": "kalmanfilter",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
       "id": "lib_arucotracker_aruco_tracker_fisheyeundistortpreprocessor_map1",
       "label": "map1_",
       "_origin": "ast",
@@ -8855,6 +8767,28 @@
       "community_name": ".drawText",
       "file_type": "code",
       "norm_label": "mat",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "lib_arucotracker_aruco_tracker_h_point",
+      "label": "Point",
+      "_origin": "ast",
+      "community": 22,
+      "community_name": ".drawText",
+      "file_type": "code",
+      "norm_label": "point",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "lib_arucotracker_aruco_tracker_h_scalar",
+      "label": "Scalar",
+      "_origin": "ast",
+      "community": 22,
+      "community_name": ".drawText",
+      "file_type": "code",
+      "norm_label": "scalar",
       "source_file": "",
       "source_location": ""
     },
@@ -10421,17 +10355,6 @@
       "source_location": "L54"
     },
     {
-      "id": "kalmanfilter",
-      "label": "KalmanFilter",
-      "_origin": "ast",
-      "community": 39,
-      "community_name": "vector",
-      "file_type": "code",
-      "norm_label": "kalmanfilter",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
       "id": "lib_arucotracker_aruco_tracker_h_point2f",
       "label": "Point2f",
       "_origin": "ast",
@@ -10439,17 +10362,6 @@
       "community_name": "vector",
       "file_type": "code",
       "norm_label": "point2f",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "lib_arucotracker_aruco_tracker_h_scalar",
-      "label": "Scalar",
-      "_origin": "ast",
-      "community": 39,
-      "community_name": "vector",
-      "file_type": "code",
-      "norm_label": "scalar",
       "source_file": "",
       "source_location": ""
     },
@@ -11785,6 +11697,17 @@
       "source_location": "L73"
     },
     {
+      "id": "lib_swarmclient_swarmclient_h_string",
+      "label": "string",
+      "_origin": "ast",
+      "community": 55,
+      "community_name": ".connect",
+      "file_type": "code",
+      "norm_label": "string",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
       "id": "tools_swarm_evdev_keys",
       "label": "evdev_keys.h",
       "_origin": "ast",
@@ -11904,6 +11827,17 @@
       "norm_label": "string",
       "source_file": "",
       "source_location": ""
+    },
+    {
+      "id": "tools_swarm_swarm_terminal",
+      "label": "swarm_terminal.cpp",
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "swarm_terminal.cpp",
+      "file_type": "code",
+      "norm_label": "swarm_terminal.cpp",
+      "source_file": "tools/swarm/swarm_terminal.cpp",
+      "source_location": "L1"
     },
     {
       "id": "readme",
@@ -12071,6 +12005,28 @@
       "source_location": "L113"
     },
     {
+      "id": "deque",
+      "label": "deque",
+      "_origin": "ast",
+      "community": 65,
+      "community_name": "latency_plot.cpp",
+      "file_type": "code",
+      "norm_label": "deque",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "tools_swarm_latency_plot",
+      "label": "latency_plot.cpp",
+      "_origin": "ast",
+      "community": 65,
+      "community_name": "latency_plot.cpp",
+      "file_type": "code",
+      "norm_label": "latency_plot.cpp",
+      "source_file": "tools/swarm/latency_plot.cpp",
+      "source_location": "L1"
+    },
+    {
       "id": "src_robots_uart_controller_rationale_70",
       "label": "Discrete PI controller with anti-windup integral clamp. Target and measurement\u2026",
       "_origin": "ast",
@@ -12091,6 +12047,50 @@
       "norm_label": "returns clamped motor power for this timestep.",
       "source_file": "src/robots/uart_controller.py",
       "source_location": "L87"
+    },
+    {
+      "id": "tools_vision_drag_drop_demo_avoidstate_arc",
+      "label": "arc",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "AvoidState",
+      "file_type": "code",
+      "norm_label": "arc",
+      "source_file": "tools/vision/drag_drop_demo.cpp",
+      "source_location": "L108"
+    },
+    {
+      "id": "tools_vision_drag_drop_demo_avoidstate_arcdx",
+      "label": "arcDx",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "AvoidState",
+      "file_type": "code",
+      "norm_label": "arcdx",
+      "source_file": "tools/vision/drag_drop_demo.cpp",
+      "source_location": "L109"
+    },
+    {
+      "id": "tools_vision_drag_drop_demo_avoidstate_arcdy",
+      "label": "arcDy",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "AvoidState",
+      "file_type": "code",
+      "norm_label": "arcdy",
+      "source_file": "tools/vision/drag_drop_demo.cpp",
+      "source_location": "L110"
+    },
+    {
+      "id": "tools_vision_drag_drop_demo_avoidstate_mindist",
+      "label": "minDist",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "AvoidState",
+      "file_type": "code",
+      "norm_label": "mindist",
+      "source_file": "tools/vision/drag_drop_demo.cpp",
+      "source_location": "L107"
     },
     {
       "id": "lib_calibration_objective_iobjective_evaluate",

@@ -4,7 +4,7 @@
 - cluster-only mode — file stats not available
 
 ## Summary
-- 1161 nodes · 1904 edges · 70 communities (64 shown, 6 thin omitted)
+- 1161 nodes · 1904 edges · 75 communities (68 shown, 7 thin omitted)
 - Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 138 edges (avg confidence: 0.81)
 - Token cost: 0 input · 0 output
 
@@ -69,14 +69,18 @@
 - PC Tools
 - generate_markers_pdf.py
 - LineGraph
+- .connect
 - MicroPython Feature-Flag + Isolated-Module Pattern
 - Safety Watchdogs Live on the Robot
 - CRC Error Handling (Silent Drop)
 - Latency Budget (~4ms End-to-End)
 - ODOMETRY_ENABLED Control-Strategy Toggle
+- swarm_terminal.cpp
 - Robot Swarm
 - RateEstimator
+- latency_plot.cpp
 - PI
+- AvoidState
 - Fisheye Calibration (planned)
 - IObjective
 - ArUco Tracker Calibration
@@ -96,15 +100,15 @@
 10. `main()` - 19 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `drawUI()` --calls--> `scBatteryVolts()`  [INFERRED]
-  tools/swarm/swarm_dashboard.cpp → lib/SwarmClient/SwarmClient.h
 - `drawShapeWorld()` --calls--> `px`  [INFERRED]
   tools/vision/shape_demo.cpp → lib/ArucoTracker/aruco_tracker.h
-- `main()` --references--> `SwarmClient`  [INFERRED]
-  tools/vision/circle_demo.cpp → lib/SwarmClient/SwarmClient.h
-- `main()` --references--> `SwarmClient`  [INFERRED]
-  tools/vision/shape_demo.cpp → lib/SwarmClient/SwarmClient.h
-- `main()` --calls--> `decode()`  [INFERRED]
+- `drawUI()` --calls--> `scBatteryVolts()`  [INFERRED]
+  tools/swarm/swarm_dashboard.cpp → lib/SwarmClient/SwarmClient.h
+- `main()` --calls--> `buildArucoDetector()`  [INFERRED]
+  tools/vision/frame_inspector.cpp → lib/ArucoTracker/aruco_tracker.h
+- `main()` --calls--> `bestX_`  [INFERRED]
+  tools/vision/calibration/calib_main.cpp → lib/Calibration/cmaes.h
+- `main()` --calls--> `fromNorm()`  [INFERRED]
   tools/vision/calibration/calib_main.cpp → lib/Calibration/param_space.h
 
 ## Import Cycles
@@ -115,7 +119,7 @@
 - **Vision-Based Swarm Controllers** — readme_vision_controller, readme_wingman, readme_circle_demo, readme_shape_demo [EXTRACTED 0.90]
 - **Wire Protocol Three-Language Implementation** — claudemd_wire_protocol_three_implementations, readme_wire_protocol_frame_format, src_robots_readme_uartprotocol, docs_architecture_crc_error_handling [INFERRED 0.85]
 
-## Communities (70 total, 6 thin omitted)
+## Communities (75 total, 7 thin omitted)
 
 ### Community 0 - "swarm_dashboard.cpp"
 Cohesion: 0.07
@@ -127,7 +131,7 @@ Nodes (44): Color, Font, RenderWindow, alpha(), pair, string, draw_boost(), draw
 
 ### Community 2 - "shape_demo.cpp"
 Cohesion: 0.09
-Nodes (38): Tool, buildWaypoints(), CalibState, done, pixPts, clampf(), Mat, Point2f (+30 more)
+Nodes (37): Tool, buildWaypoints(), CalibState, done, pixPts, clampf(), Mat, Point2f (+29 more)
 
 ### Community 3 - "receiver/main.cpp"
 Cohesion: 0.09
@@ -186,16 +190,16 @@ Cohesion: 0.12
 Nodes (19): DemoHud, COL_BAD, COL_GAP, COL_OK, COL_TEXT, COL_WARN, FONT, FONT_SCALE (+11 more)
 
 ### Community 17 - "SwarmClient"
-Cohesion: 0.07
-Nodes (22): deque, DebugEntry, mutex, RobotState, string, vector, SwarmClient, m_debugLog (+14 more)
+Cohesion: 0.12
+Nodes (14): DebugEntry, mutex, RobotState, vector, SwarmClient, m_debugLog, m_fd, m_robots (+6 more)
 
 ### Community 18 - "UARTProtocol"
 Cohesion: 0.15
 Nodes (9): Sendet ein Paket ueber UART., Sendet ein kombiniertes SPEED Paket (MSG_SPEED). :param left: Geschwindigkeit…, Sendet die Batteriespannung an den ESP32 (MSG_METRICS). :param battery_byte:…, Sendet eine Debug-Log-Zeile an den PC (MSG_DEBUG). Der ESP32 stellt die…, Muss regelmaessig in der Hauptschleife aufgerufen werden., Ueberprueft den Heartbeat-Timeout und sendet ggf. einen Ping., Verwaltet das Senden und Empfangen von strukturierten UART-Paketen. MSG_SPEED…, UARTProtocol (+1 more)
 
 ### Community 19 - "drag_drop_demo.cpp"
-Cohesion: 0.10
-Nodes (24): Point, AvoidState, arc, arcDx, arcDy, minDist, buildAvoidance(), CalibState (+16 more)
+Cohesion: 0.14
+Nodes (18): buildAvoidance(), CalibState, done, pixPts, clampf(), Point2f, unordered_map, vector (+10 more)
 
 ### Community 20 - "ScreenManager"
 Cohesion: 0.12
@@ -206,8 +210,8 @@ Cohesion: 0.20
 Nodes (18): connected_robot_ports(), deploy_cmd(), deploy_problems(), eject_micropython_volume(), flash(), main(), onboard_verify_problems(), Returns human-readable problems with a deploy attempt; empty = verified OK. (+10 more)
 
 ### Community 22 - ".drawText"
-Cohesion: 0.20
-Nodes (5): FisheyeUndistortPreprocessor, map1_, map2_, Mat, Size
+Cohesion: 0.12
+Nodes (9): KalmanFilter, FisheyeUndistortPreprocessor, map1_, map2_, Mat, Point, Scalar, Size (+1 more)
 
 ### Community 23 - "BaslerPylonSource"
 Cohesion: 0.12
@@ -274,8 +278,8 @@ Cohesion: 0.18
 Nodes (11): Args, baslerIp, baslerSerial, cacheDir, config, eval, idsMax, maxIter (+3 more)
 
 ### Community 39 - "vector"
-Cohesion: 0.21
-Nodes (5): KalmanFilter, Point2f, Scalar, vector, MarkerState
+Cohesion: 0.31
+Nodes (3): Point2f, vector, MarkerState
 
 ### Community 40 - "thread"
 Cohesion: 0.20
@@ -337,6 +341,10 @@ Nodes (4): LineGraph, Scrollender Liniengraph für kontinuierliche Werte. Verwen
 Cohesion: 0.67
 Nodes (3): MicroPython Feature-Flag + Isolated-Module Pattern, Buzzer Sound (silent-by-design protocol), MSG_DEBUG Robot-to-PC Channel (0x02)
 
+### Community 62 - "swarm_terminal.cpp"
+Cohesion: 0.38
+Nodes (3): drawUI(), main(), statusParts()
+
 ### Community 63 - "Robot Swarm"
 Cohesion: 0.20
 Nodes (9): Architecture, Camera Setup (Basler ace2 GigE), Firmware (all platforms), PC Tools — macOS (Apple Silicon), PC Tools — Ubuntu 22.04 / 24.04 (x86\_64), Prerequisites, Project Structure, Robot Swarm (+1 more)
@@ -345,9 +353,17 @@ Nodes (9): Architecture, Camera Setup (Basler ace2 GigE), Firmware (all platform
 Cohesion: 0.33
 Nodes (7): time_point, RateEstimator, baseAngle, baseTime, init, rate, updateRate()
 
+### Community 65 - "latency_plot.cpp"
+Cohesion: 0.47
+Nodes (4): deque, drawPlot(), main(), onPong()
+
 ### Community 66 - "PI"
 Cohesion: 0.33
 Nodes (3): PI, Discrete PI controller with anti-windup integral clamp. Target and measurement…, Returns clamped motor power for this timestep.
+
+### Community 67 - "AvoidState"
+Cohesion: 0.40
+Nodes (5): AvoidState, arc, arcDx, arcDy, minDist
 
 ### Community 69 - "IObjective"
 Cohesion: 0.50
@@ -366,24 +382,24 @@ Cohesion: 0.33
 Nodes (6): Combined static + motion objective, Fisheye calibration (`objective_fisheye.h`), GP with ARD kernel (`gp_ard.h`), Motion objective (`objective_motion.h`), Parameter range narrowing, Planned extensions
 
 ## Knowledge Gaps
-- **387 isolated node(s):** `termios`, `meterWidth`, `sparkWidth`, `robots`, `buf_` (+382 more)
+- **387 isolated node(s):** `open`, `id`, `x`, `y`, `yaw` (+382 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **7 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `ArucoTracker` connect `ArucoTracker` to `swarm_dashboard.cpp`, `shape_demo.cpp`, `IPreprocessor`, `ArucoConfig`, `wingman.cpp`, `vector`, `thread`, `main`, `vision_controller.cpp`, `drag_drop_demo.cpp`, `.drawText`, `string`?**
-  _High betweenness centrality (0.057) - this node is a cross-community bridge._
+- **Why does `ArucoTracker` connect `ArucoTracker` to `swarm_dashboard.cpp`, `IPreprocessor`, `ArucoConfig`, `wingman.cpp`, `vector`, `thread`, `main`, `vision_controller.cpp`, `drag_drop_demo.cpp`, `.drawText`, `string`?**
+  _High betweenness centrality (0.082) - this node is a cross-community bridge._
 - **Why does `ArucoConfig` connect `ArucoConfig` to `main`, `StaticObjective`, `ArucoTracker`, `objective.h`, `runOptimisation`, `BaslerPylonSource`, `param_space.h`, `string`?**
-  _High betweenness centrality (0.048) - this node is a cross-community bridge._
-- **Why does `Vehicle` connect `Vehicle` to `SwarmClient`?**
-  _High betweenness centrality (0.045) - this node is a cross-community bridge._
+  _High betweenness centrality (0.057) - this node is a cross-community bridge._
+- **Why does `Vehicle` connect `Vehicle` to `latency_plot.cpp`?**
+  _High betweenness centrality (0.052) - this node is a cross-community bridge._
 - **Are the 4 inferred relationships involving `SwarmClient` (e.g. with `main()` and `main()`) actually correct?**
   _`SwarmClient` has 4 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `termios`, `meterWidth`, `sparkWidth` to the rest of the system?**
+- **What connects `open`, `id`, `x` to the rest of the system?**
   _387 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `swarm_dashboard.cpp` be split into smaller, more focused modules?**
   _Cohesion score 0.06547619047619048 - nodes in this community are weakly interconnected._
 - **Should `Vehicle` be split into smaller, more focused modules?**
-  _Cohesion score 0.07142857142857142 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07358156028368794 - nodes in this community are weakly interconnected._
