@@ -32,7 +32,7 @@ function emptyState() {
     producer: 'starting',   // starting | running | failed | stopped
     producerError: null,
     hub: false,
-    vision: { ok: false, fps: 0, w: 0, h: 0, robots: [] },
+    vision: { ok: false, source: 'none', fps: 0, w: 0, h: 0, robots: [] },
     robots: [],
     avgLat: [],
     log: [],
@@ -44,10 +44,14 @@ function emptyState() {
 }
 
 export class TelemetrySource extends EventEmitter {
-  constructor({ producerPath = DEFAULT_PRODUCER, noVision = false } = {}) {
+  constructor({ producerPath = DEFAULT_PRODUCER, noVision = false, ownCamera = false } = {}) {
     super();
     this.producerPath = producerPath;
     this.noVision = noVision;
+    // Off by default on purpose: the producer subscribes to whichever tool
+    // owns the camera rather than opening it, so a dashboard left running
+    // never stops a vision demo from starting.
+    this.ownCamera = ownCamera;
     this.state = emptyState();
     this.hist = new Map();      // robot id -> latency samples
     this.proc = null;
@@ -67,7 +71,9 @@ export class TelemetrySource extends EventEmitter {
   }
 
   spawnProducer() {
-    const args = this.noVision ? ['--no-vision'] : [];
+    const args = [];
+    if (this.noVision) args.push('--no-vision');
+    if (this.ownCamera) args.push('--camera');
     this.proc = spawn(this.producerPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
     let buf = '';
@@ -140,9 +146,10 @@ export class TelemetrySource extends EventEmitter {
     const s = this.state;
     s.hub = !!msg.hub;
     s.vision = msg.vision?.ok
-      ? { ok: true, fps: msg.vision.fps ?? 0, w: msg.vision.w ?? 0, h: msg.vision.h ?? 0,
+      ? { ok: true, source: msg.vision.source ?? 'camera',
+          fps: msg.vision.fps ?? 0, w: msg.vision.w ?? 0, h: msg.vision.h ?? 0,
           robots: msg.vision.robots ?? [] }
-      : { ok: false, fps: 0, w: 0, h: 0, robots: [] };
+      : { ok: false, source: msg.vision?.source ?? 'none', fps: 0, w: 0, h: 0, robots: [] };
 
     const seen = new Set();
     s.robots = (msg.robots ?? []).map((r) => {
@@ -262,7 +269,7 @@ export class DemoSource extends EventEmitter {
       };
     });
 
-    s.vision = { ok: true, fps: 116 + Math.sin(this.t) * 3, w: 2048, h: 2048, robots: visionRobots };
+    s.vision = { ok: true, source: 'demo', fps: 116 + Math.sin(this.t) * 3, w: 2048, h: 2048, robots: visionRobots };
 
     const live = s.robots.filter((r) => !r.lost);
     if (live.length) {

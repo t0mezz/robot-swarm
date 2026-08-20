@@ -1,4 +1,6 @@
 #pragma once
+#include "pose_hub.h"
+
 #include <opencv2/opencv.hpp>
 #include <opencv2/aruco.hpp>
 #include <memory>
@@ -295,6 +297,11 @@ public:
         detectionRunning_ = true;
         captureThread_   = std::thread(&ArucoTracker::captureLoop,   this);
         detectionThread_ = std::thread(&ArucoTracker::detectionLoop, this);
+        // We own the camera, so we are the only process that can answer "where
+        // are the robots" — publish it. Costs nothing when nobody subscribes,
+        // and lets pose-only tools (the dashboards) run alongside this one
+        // instead of losing a race for the device. See lib/ArucoTracker/pose_hub.h.
+        poseHub_.start();
         return true;
     }
 
@@ -307,6 +314,15 @@ public:
         fps_       = latestResult_.fps;
         latencyMs_ = latestResult_.latencyMs;
         latestResult_.fresh = false;
+
+        poseHub_.poll();  // take pending subscribers before asking if any exist
+        if (poseHub_.clientCount()) {
+            hubPoses_.clear();
+            hubPoses_.reserve(robots_.size());
+            for (const auto& r : robots_)
+                hubPoses_.push_back(HubPose{r.id, r.x, r.y, r.yaw, r.px, r.py});
+            poseHub_.publish(hubPoses_, fps_, (int)fw_, (int)fh_);
+        }
         return true;
     }
 
@@ -711,6 +727,7 @@ private:
         frameCv_.notify_all();
         if (captureThread_.joinable())   captureThread_.join();
         if (detectionThread_.joinable()) detectionThread_.join();
+        poseHub_.stop();
         source_.reset();
     }
 
@@ -839,4 +856,8 @@ private:
     cv::Mat                debug_;
     float                  fps_       = 0.f;
     float                  latencyMs_ = 0.f;
+
+    // ── Pose publishing (main thread, inside update()) ────────────────────────
+    PoseHubPublisher     poseHub_;
+    std::vector<HubPose> hubPoses_;   // reused so publishing never allocates
 };

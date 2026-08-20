@@ -25,6 +25,7 @@
 
 #include "SwarmClient.h"
 #include "aruco_tracker.h"
+#include "pose_hub.h"
 
 #include <algorithm>
 #include <chrono>
@@ -105,6 +106,7 @@ static void emitLine(std::string& line) {
 int main(int argc, char** argv) {
     int  intervalMs = 250;
     bool wantVision = true;
+    bool ownCamera  = false;
 
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -112,8 +114,18 @@ int main(int argc, char** argv) {
             intervalMs = std::max(20, atoi(argv[++i]));
         } else if (a == "--no-vision") {
             wantVision = false;
+        } else if (a == "--camera") {
+            ownCamera = true;
         } else if (a == "--help" || a == "-h") {
-            fprintf(stderr, "usage: %s [--interval MS] [--no-vision]\n", argv[0]);
+            fprintf(stderr,
+                    "usage: %s [--interval MS] [--no-vision] [--camera]\n"
+                    "\n"
+                    "  Poses come from the vision hub (%s) by default, so this\n"
+                    "  process never opens the camera and any vision demo can run\n"
+                    "  alongside it. --camera opens the camera directly instead,\n"
+                    "  for using this on its own; that makes it the owner, and a\n"
+                    "  demo started afterwards will fail to get the device.\n",
+                    argv[0], POSE_HUB_SOCK_PATH);
             return 0;
         } else {
             fprintf(stderr, "unknown argument: %s\n", a.c_str());
@@ -126,9 +138,26 @@ int main(int argc, char** argv) {
     fprintf(stderr, hubConnected ? "[hub] connected\n"
                                  : "[hub] unavailable, retrying in background\n");
 
-    ArucoTracker tracker(ArucoConfig::fromFile());
-    bool visionOk = wantVision && tracker.open();
-    fprintf(stderr, visionOk ? "[vision] camera open\n" : "[vision] no camera\n");
+    // Two ways to get poses, and the default is the polite one: subscribe to
+    // whichever tool owns the camera. The camera admits a single application,
+    // so a dashboard that opened it directly would lock every vision demo out
+    // for as long as it ran — and being a passive observer, it has the weakest
+    // claim to the device of anything in the tree.
+    ArucoTracker      tracker(ArucoConfig::fromFile());
+    PoseHubSubscriber poseHub;
+    bool cameraOwned = false;
+    bool hubLinked   = false;
+
+    if (wantVision && ownCamera) {
+        cameraOwned = tracker.open();
+        fprintf(stderr, cameraOwned ? "[vision] camera open (owner; demos will be locked out)\n"
+                                    : "[vision] camera unavailable\n");
+    } else if (wantVision) {
+        hubLinked = poseHub.connect();
+        fprintf(stderr, hubLinked ? "[vision] subscribed to " POSE_HUB_SOCK_PATH "\n"
+                                  : "[vision] no publisher yet — will keep retrying\n");
+    }
+    const bool visionEnabled = wantVision;
 
     // Unlike swarm_dashboard this does NOT bail out when both sources are
     // missing: the consumer is a long-lived UI that should render an honest
@@ -141,14 +170,17 @@ int main(int argc, char** argv) {
     {
         std::string hello;
         appendf(hello, "{\"type\":\"hello\",\"intervalMs\":%d,\"maxRobots\":%d,"
-                       "\"visionRequested\":%s,\"latencyMaxUs\":5000,"
+                       "\"visionRequested\":%s,\"visionSource\":\"%s\","
+                       "\"latencyMaxUs\":5000,"
                        "\"batteryMaxV\":6.5,\"motorMax\":127}",
-                intervalMs, SC_MAX_ROBOTS, wantVision ? "true" : "false");
+                intervalMs, SC_MAX_ROBOTS, wantVision ? "true" : "false",
+                !wantVision ? "off" : ownCamera ? "camera" : "hub");
         emitLine(hello);
     }
 
-    auto lastTick     = std::chrono::steady_clock::now();
-    auto lastHubRetry = lastTick - std::chrono::seconds(10);
+    auto lastTick      = std::chrono::steady_clock::now();
+    auto lastHubRetry  = lastTick - std::chrono::seconds(10);
+    auto lastPoseRetry = lastTick - std::chrono::seconds(10);
 
     while (running) {
         if (!swarm.isConnected()) {
@@ -162,7 +194,24 @@ int main(int argc, char** argv) {
             }
         }
         swarm.poll();
-        if (visionOk) tracker.update();
+        if (cameraOwned) {
+            tracker.update();
+        } else if (visionEnabled) {
+            hubLinked = poseHub.isConnected();
+            if (hubLinked) {
+                poseHub.poll();
+                hubLinked = poseHub.isConnected();  // poll() drops us if the publisher exits
+            } else {
+                // Reconnect quietly in the background: the publisher is a demo
+                // the operator starts and stops at will, so "not there yet" is
+                // the normal state, not an error worth reporting each retry.
+                auto t = std::chrono::steady_clock::now();
+                if (std::chrono::duration<float>(t - lastPoseRetry).count() >= 2.0f) {
+                    lastPoseRetry = t;
+                    hubLinked = poseHub.connect();
+                }
+            }
+        }
 
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastTick).count() < intervalMs) {
@@ -201,19 +250,33 @@ int main(int argc, char** argv) {
                 line += "\"batteryV\":null}";
         }
 
-        appendf(line, "],\"vision\":{\"ok\":%s", visionOk ? "true" : "false");
+        const bool visionOk = cameraOwned || hubLinked;
+        appendf(line, "],\"vision\":{\"ok\":%s,\"source\":\"%s\"",
+                visionOk ? "true" : "false",
+                !visionEnabled ? "off" : cameraOwned ? "camera" : hubLinked ? "hub" : "none");
         if (visionOk) {
-            auto sz = tracker.frameSize();
-            appendf(line, ",\"fps\":%.1f,\"w\":%d,\"h\":%d,\"robots\":[",
-                    tracker.detectionFps(), sz.width, sz.height);
+            int   vw, vh;
+            float vfps;
+            if (cameraOwned) {
+                auto sz = tracker.frameSize();
+                vw = sz.width; vh = sz.height; vfps = tracker.detectionFps();
+            } else {
+                vw = poseHub.frameWidth(); vh = poseHub.frameHeight();
+                vfps = poseHub.detectionFps();
+            }
+            appendf(line, ",\"fps\":%.1f,\"w\":%d,\"h\":%d,\"robots\":[", vfps, vw, vh);
+
             first = true;
-            for (const auto& p : tracker.robots()) {
+            auto emitPose = [&](int id, float x, float y, float yaw, float px, float py) {
                 if (!first) line += ',';
                 first = false;
                 appendf(line, "{\"id\":%d,\"x\":%.1f,\"y\":%.1f,\"yaw\":%.1f,"
-                              "\"px\":%.1f,\"py\":%.1f}",
-                        p.id, p.x, p.y, p.yaw, p.px, p.py);
-            }
+                              "\"px\":%.1f,\"py\":%.1f}", id, x, y, yaw, px, py);
+            };
+            if (cameraOwned)
+                for (const auto& p : tracker.robots()) emitPose(p.id, p.x, p.y, p.yaw, p.px, p.py);
+            else
+                for (const auto& p : poseHub.poses()) emitPose(p.id, p.x, p.y, p.yaw, p.px, p.py);
             line += ']';
         }
         line += "},\"log\":[";

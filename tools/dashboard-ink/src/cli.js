@@ -3,7 +3,10 @@
 //
 //   node src/cli.js                 live: spawns tools/build/swarm_telemetry_json
 //   node src/cli.js --demo          synthetic swarm, no hardware needed
-//   node src/cli.js --no-vision     skip the camera (hub telemetry only)
+//   node src/cli.js --no-vision     no vision at all (swarm telemetry only)
+//   node src/cli.js --camera        open the camera directly instead of
+//                                   subscribing to the vision hub — this locks
+//                                   vision demos out, so only for standalone use
 //   node src/cli.js --producer PATH point at a producer binary elsewhere
 //
 // Sends no motor commands — like swarm_dashboard it is a pure observer and
@@ -25,7 +28,9 @@ if (has('--help') || has('-h')) {
   process.stdout.write(`swarm-dashboard-ink
 
   --demo             synthetic swarm; no dongle, hub or camera required
-  --no-vision        don't open the camera (hub telemetry only)
+  --no-vision        no vision at all (swarm telemetry only)
+  --camera           own the camera instead of subscribing to the vision hub;
+                     locks out vision demos, for running standalone
   --producer PATH    producer binary (default: ${DEFAULT_PRODUCER})
   --robots N         demo mode only: how many robots to synthesise (default 6)
   -h, --help         this message
@@ -37,7 +42,8 @@ const source = has('--demo')
   ? new DemoSource({ robots: Number(valueOf('--robots', 6)) })
   : new TelemetrySource({
       producerPath: valueOf('--producer', DEFAULT_PRODUCER),
-      noVision: has('--no-vision')
+      noVision: has('--no-vision'),
+      ownCamera: has('--camera')
     });
 
 // Alternate screen buffer: the dashboard gets the whole terminal and the

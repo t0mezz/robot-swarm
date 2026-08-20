@@ -37,8 +37,12 @@ function chips({ state, paused }) {
     { priority: 0, segs: [[' swarm', C.white, true], [' / ', C.rule], ['telemetry', C.dim]] },
     { priority: 2, segs: [['●', state.hub ? C.green : C.red], [' hub', C.fg],
                           [state.hub ? ' linked' : ' offline', C.dim]] },
+    // The source tag is not decoration: "no vision" almost always means
+    // something else holds the camera, and seeing `hub` vs `own` is what tells
+    // you whether this process is the one locking demos out.
     { priority: 4, segs: [['●', state.vision.ok ? C.green : C.red], [' cam', C.fg],
-                          [state.vision.ok ? ` ${state.vision.fps.toFixed(0)}fps` : ' none', C.dim]] },
+                          [state.vision.ok ? ` ${state.vision.fps.toFixed(0)}fps` : ' none', C.dim],
+                          [visionTag(state.vision), C.rule]] },
     { priority: 3, segs: [['●', C.cyan], [` ${live.length}`, C.white, true],
                           [`/${robots.length} robots`, C.dim]] },
     { priority: 5, segs: [['avg ', C.dim], [fmtMs(avg), C.fg],
@@ -49,6 +53,15 @@ function chips({ state, paused }) {
   if (paused)
     out.push({ priority: 0, segs: [[' PAUSED ', C.bg, true, C.yellow]] });
   return out;
+}
+
+// 'hub' = poses arrive from whichever tool owns the camera; 'own' = this
+// process opened it (and demos will fail to start while it runs).
+function visionTag(vision) {
+  if (!vision.ok) return '';
+  if (vision.source === 'hub') return '·hub';
+  if (vision.source === 'camera') return '·own';
+  return '';
 }
 
 const chipWidth = (chip) => chip.segs.reduce((n, [t]) => n + t.length, 0);
