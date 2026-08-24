@@ -345,16 +345,38 @@ per second, no window); `--debug` opens the usual view and HUD.
 ```bash
 ./build/car_following [--model NAME] [--speed-max M/S] [--car-size M] [--time-gap S]
                       [--reaction-time S] [--sigma A] [--sim-length M] [--radius MM]
-                      [--centre X Y] [--dir cw|ccw] [--robot-max-speed MM_S]
-                      [--bridge] [--port N] [--debug]
+                      [--centre X Y] [--ring-file PATH] [--fit] [--dir cw|ccw]
+                      [--time-scale K] [--robot-max-speed MM_S] [--bridge]
+                      [--port N] [--debug]
 ```
 
 Models: `Reuschel` `Pipes` `OVM` `CF-OVM` `FVDM` `ATG` `IDM` (default `FVDM`, the
 NetLogo page's default). Parameter defaults match that page's sliders.
 
-The ring is fitted automatically to wherever the robots are standing on the
-first frame, so the usual setup is just: place the robots in a circle and start
-the tool. `--radius`/`--centre` pin it instead; `r` re-fits in `--debug`.
+**The ring** is a saved fixture of the arena, kept in `/tmp/car_following_ring.yml`
+in the same format `circle_demo` uses for its circle — so if you have already
+calibrated a circle there, `/tmp/circle_demo.yml` is read as a fallback and no
+setup is needed. Set it with `--centre X Y` / `--radius MM`, or interactively in
+`--debug`; every change is written straight back, so the ring one run ends with
+is the ring the next one starts on.
+
+| Key / action | Effect (in `--debug`) |
+|---|---|
+| Left-click | Move the ring centre there |
+| `+` / `-` | Radius ±25 mm |
+| `f` | Fit the ring to the robots that are visible |
+| `,` / `.` | Time scale ÷ / × 1.25 |
+| `s` | Stop all (toggle) |
+| `q` / Esc | Quit |
+
+`--fit` does that same fit once at startup: it takes the centroid of the visible
+robots and their mean distance from it, waiting up to 5 s for at least three to
+be detected. That is only a ring if the robots are already standing on one — it
+used to be the automatic startup behaviour, and a scatter that was slightly off,
+or a robot not yet detected, produced an off-centre ring the controller then
+fought for the whole run (and which silently rescaled the model, since the
+simulated-metres-per-mm factor divides by the radius). Hence: opt-in, and saved
+like any other edit.
 
 **Scale.** The models are written in the paper's units (a 230 m ring, 5 m cars,
 15 m/s) and the arena is under a metre across, so positions and speeds are
@@ -363,6 +385,34 @@ depends on metres per vehicle, not on the ring's absolute size — so by default
 the physical ring maps to `N × (230/22)` simulated metres for however many robots
 are on it, and four robots see the spacing 22 cars see in the paper.
 `--sim-length` pins the virtual ring length instead.
+
+**`--time-scale` — start here.** That factor maps *space* only. Time was mapped
+1:1, so a lap took as long on a 300 mm ring as it does on the paper's 230 m one,
+and the models asked for motor commands the robot cannot deliver:
+
+| Robots | Ring 250 mm | 300 mm | 350 mm |
+|---|---|---|---|
+| 3 | 114 | 137 | 159 |
+| 4 | 85 | 102 | 120 |
+| 5 | 68 | 82 | 96 |
+| 6 | 57 | 68 | 80 |
+
+(steady-state motor command at `K=1`, FVDM defaults, `--robot-max-speed 300`;
+100 is full throttle, so the top rows are clamped.)
+
+`--time-scale K` supplies the missing half: K real seconds become one simulated
+second. Measured speeds are scaled up by K, the model integrates a dt that is K
+times smaller, and the commanded speed is scaled back down by K — so the loop
+stays self-consistent and the trajectories and the wave are unchanged, the whole
+experiment just runs K times slower in wall clock. Divide the table above by K.
+`--time-scale 4` is a sane starting point; `,` and `.` adjust it live in
+`--debug`. The heading controller is deliberately untouched by it and keeps
+running in real time.
+
+Above roughly `K=10` a model tick's travel starts to shrink into the tracker's
+own position noise (at `K=10`, four robots on a 300 mm ring move ~3 mm per
+100 ms tick), which shows up as jitter in the measured speeds — hence the
+`--time-scale` ceiling of 50.
 
 `--robot-max-speed` is the robot's physical speed (mm/s) at motor command 100 and
 is what converts simulated m/s into motor units — measure it once for your

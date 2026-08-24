@@ -1,5 +1,10 @@
 # TODO
 
+# ink dashboards plots are not plottet over the whole horizontal dimention correctly
+
+# simplify the whole pipeline for modular, headless use with ability to attach different hud
+- get rid of redundant and unsed code
+
 # add 2 params to circle_demo maybe create a new polished circle util drop "demo" phrase
 - partly addressed: `tools/vision/car_following.cpp` is a new ring util without
   the "demo" phrase (headless by default, models in a tested pure library).
@@ -14,6 +19,10 @@
   the 300 default is a guess and is what converts model m/s into motor units.
 - Check the yaw/servo gains inherited from circle_demo still behave when the
   commanded speed varies per robot instead of being one global orbit rate.
+- The ring is now a saved fixture (`/tmp/car_following_ring.yml`, circle_demo's
+  format, `--centre`/`--radius`/`--fit` or click and +/- in `--debug`) rather
+  than auto-fitted at startup — set it once on the real arena and confirm the
+  robots hold it.
 - `--bridge` DOM selectors were verified against the NetLogo Web widget
   templates in the vendored HTML, but not yet in a live browser.
 
