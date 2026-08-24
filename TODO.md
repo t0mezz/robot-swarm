@@ -1,7 +1,5 @@
 # TODO
 
-# install gh on ubuntu machine
-
 # add 2 params to circle_demo maybe create a new polished circle util drop "demo" phrase
 
 # We need to add a feature for pose log (saving) and analysis.
