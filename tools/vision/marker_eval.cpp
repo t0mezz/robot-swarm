@@ -8,6 +8,12 @@
 // before launching any controller.
 //
 // Keys: r = reset FPS/latency counters,  q / Esc = quit
+//
+// BRANCH-ONLY: this tool also opens a second "Color Ramp Debug" window that
+// previews ArucoConfig::colorRampEnabled's contrast stretch (see aruco_tracker.h)
+// applied to the live frame, so the two windows can be eyeballed side by side
+// while judging whether the ramp helps detection consistency. Not meant to
+// merge to main — see feature/color-ramp-input.
 
 #include "aruco_tracker.h"
 #include "DemoHud.h"
@@ -89,6 +95,17 @@ int main(int argc, char* argv[]) {
     cv::namedWindow("Camera Eval", cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
     cv::resizeWindow("Camera Eval", sz.width, sz.height);
 
+    // BRANCH-ONLY: preview window for cfg.color_ramp_low/high (see the
+    // comment block at the top of this file). Independent of whether
+    // colorRampEnabled actually feeds the detector — this just visualizes
+    // the same LUT against the live debug frame for eyeballing.
+    cv::namedWindow("Color Ramp Debug", cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
+    cv::resizeWindow("Color Ramp Debug", sz.width, sz.height);
+    uchar rampLut[256];
+    buildColorRampLUT(rampLut, cfg.colorRampLow, cfg.colorRampHigh);
+    printf("[eval] color ramp preview: low=%.1f high=%.1f (enabled=%d)\n",
+           cfg.colorRampLow, cfg.colorRampHigh, (int)cfg.colorRampEnabled);
+
     // loop_fps = this display/render loop's rate (distinct from
     // tracker.detectionFps(), the detection thread's rate). Tick every iteration.
     DemoHud::LoopFps loopFps;
@@ -102,6 +119,14 @@ int main(int argc, char* argv[]) {
                       sz.width, sz.height,
                       (int)tracker.robots().size());
             cv::imshow("Camera Eval", frame);
+
+            cv::Mat gray, ramped;
+            cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+            cv::LUT(gray, cv::Mat(1, 256, CV_8U, rampLut), ramped);
+            ArucoTracker::drawText(ramped, "ramp preview  lo:" + std::to_string((int)cfg.colorRampLow)
+                                    + " hi:" + std::to_string((int)cfg.colorRampHigh),
+                                    {10, 28}, 24, {255});
+            cv::imshow("Color Ramp Debug", ramped);
         }
 
         int key = cv::waitKey(1) & 0xFF;

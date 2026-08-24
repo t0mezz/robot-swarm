@@ -121,6 +121,18 @@ struct ArucoConfig {
     float claheClip = 2.0f;
     int   claheTile = 8;
 
+    // Color ramp — a cheap global contrast stretch (piecewise-linear LUT)
+    // applied to the whole grayscale frame before the global sweep / ROI
+    // crops are split off. Maps [colorRampLow, colorRampHigh] to [0, 255],
+    // clamping outside that range. Unlike CLAHE (local, per-tile), this is a
+    // single global remap — cheaper, and free of tile-boundary artifacts that
+    // can distort marker edges under uneven lighting. Experimental: disabled
+    // by default until proven to help detection consistency — see the
+    // dedicated ramp-preview window in tools/vision/marker_eval.cpp.
+    bool  colorRampEnabled = false;
+    float colorRampLow     = 40.0f;   // input intensity mapped to 0
+    float colorRampHigh    = 215.0f;  // input intensity mapped to 255
+
     bool debugOverlay = false;
     bool mirrorInput  = false;
 
@@ -189,6 +201,9 @@ inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
     ri("robot_count",     c.robotCount);
     rf("clahe_clip",      c.claheClip);
     ri("clahe_tile",      c.claheTile);
+    rb("color_ramp_enabled", c.colorRampEnabled);
+    rf("color_ramp_low",     c.colorRampLow);
+    rf("color_ramp_high",    c.colorRampHigh);
     rb("debug_overlay",   c.debugOverlay);
     rb("mirror_input",    c.mirrorInput);
     ri("offset_x",        c.offsetX);
@@ -237,6 +252,29 @@ private:
     cv::Ptr<cv::CLAHE> clahe_;
 };
 
+// Piecewise-linear stretch: maps [low, high] -> [0, 255], clamped outside
+// that range. Shared by ColorRampPreprocessor and marker_eval's ramp-preview
+// window so both use identical math.
+inline void buildColorRampLUT(uchar lut[256], float low, float high) {
+    float range = std::max(1.0f, high - low);
+    for (int i = 0; i < 256; ++i) {
+        float v = (i - low) / range * 255.0f;
+        lut[i] = (uchar)std::clamp(v, 0.0f, 255.0f);
+    }
+}
+
+// Global contrast-stretch preprocessor — see ArucoConfig::colorRampEnabled.
+struct ColorRampPreprocessor : IPreprocessor {
+    ColorRampPreprocessor(float low = 40.0f, float high = 215.0f) {
+        buildColorRampLUT(lut_, low, high);
+    }
+    void process(cv::Mat& gray) override {
+        cv::LUT(gray, cv::Mat(1, 256, CV_8U, lut_), gray);
+    }
+private:
+    uchar lut_[256];
+};
+
 struct FisheyeUndistortPreprocessor : IPreprocessor {
     bool load(const std::string& calibYaml, cv::Size frameSize) {
         cv::FileStorage fs(calibYaml, cv::FileStorage::READ);
@@ -283,6 +321,10 @@ public:
 
         if (cfg_.claheClip > 0)
             clahe_ = cv::createCLAHE(cfg_.claheClip, {cfg_.claheTile, cfg_.claheTile});
+
+        if (cfg_.colorRampEnabled)
+            addPreprocessor(std::make_unique<ColorRampPreprocessor>(
+                cfg_.colorRampLow, cfg_.colorRampHigh));
     }
 
     ~ArucoTracker() { stopThreads(); }
