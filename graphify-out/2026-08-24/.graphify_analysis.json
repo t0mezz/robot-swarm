@@ -1676,54 +1676,54 @@
   "surprises": [
     {
       "source": "main()",
-      "target": "SwarmClient",
+      "target": "buildArucoDetector()",
       "source_files": [
-        "tools/swarm/latency_plot.cpp",
-        "lib/SwarmClient/SwarmClient.h"
+        "tools/vision/frame_inspector.cpp",
+        "lib/ArucoTracker/aruco_tracker.h"
       ],
       "confidence": "INFERRED",
-      "relation": "references",
+      "relation": "calls",
       "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
     },
     {
       "source": "main()",
-      "target": "SwarmClient",
+      "target": "bestX_",
       "source_files": [
-        "tools/swarm/swarm_telemetry_json.cpp",
-        "lib/SwarmClient/SwarmClient.h"
+        "tools/vision/calibration/calib_main.cpp",
+        "lib/Calibration/cmaes.h"
       ],
       "confidence": "INFERRED",
-      "relation": "references",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; peripheral node `bestX_` unexpectedly reaches hub `main()`"
+    },
+    {
+      "source": "main()",
+      "target": "fromNorm()",
+      "source_files": [
+        "tools/vision/calibration/calib_main.cpp",
+        "lib/Calibration/param_space.h"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
       "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
     },
     {
       "source": "main()",
-      "target": "SwarmClient",
+      "target": "encode()",
       "source_files": [
-        "tools/vision/circle_demo.cpp",
-        "lib/SwarmClient/SwarmClient.h"
+        "tools/vision/calibration/calib_main.cpp",
+        "lib/Calibration/param_space.h"
       ],
       "confidence": "INFERRED",
-      "relation": "references",
+      "relation": "calls",
       "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
     },
     {
-      "source": "main()",
-      "target": "SwarmClient",
+      "source": "runOptimisation()",
+      "target": "encode()",
       "source_files": [
-        "tools/vision/shape_demo.cpp",
-        "lib/SwarmClient/SwarmClient.h"
-      ],
-      "confidence": "INFERRED",
-      "relation": "references",
-      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
-    },
-    {
-      "source": "drawUI()",
-      "target": "scBatteryVolts()",
-      "source_files": [
-        "tools/swarm/swarm_dashboard.cpp",
-        "lib/SwarmClient/SwarmClient.h"
+        "tools/vision/calibration/calib_main.cpp",
+        "lib/Calibration/param_space.h"
       ],
       "confidence": "INFERRED",
       "relation": "calls",
@@ -1733,18 +1733,18 @@
   "questions": [
     {
       "type": "bridge_node",
-      "question": "Why does `ArucoConfig` connect `ArucoConfig` to `param_space.h`, `main`, `ArucoTracker`, `StaticObjective`, `aruco_tracker.h`, `objective.h`, `BaslerPylonSource`, `runOptimisation`?",
-      "why": "High betweenness centrality (0.072) - this node is a cross-community bridge."
+      "question": "Why does `ArucoTracker` connect `ArucoTracker` to `MarkerState`, `swarm_dashboard.cpp`, `main`, `wingman.cpp`, `ArucoConfig`, `IPreprocessor`, `main`, `vision_controller.cpp`, `aruco_tracker.h`, `drag_drop_demo.cpp`, `.drawText`, `ICameraSource`, `vector`?",
+      "why": "High betweenness centrality (0.104) - this node is a cross-community bridge."
     },
     {
       "type": "bridge_node",
-      "question": "Why does `ArucoTracker` connect `ArucoTracker` to `MarkerState`, `swarm_dashboard.cpp`, `main`, `wingman.cpp`, `ArucoConfig`, `IPreprocessor`, `main`, `vision_controller.cpp`, `aruco_tracker.h`, `drag_drop_demo.cpp`, `.drawText`, `ICameraSource`, `vector`?",
-      "why": "High betweenness centrality (0.066) - this node is a cross-community bridge."
+      "question": "Why does `ArucoConfig` connect `ArucoConfig` to `param_space.h`, `main`, `ArucoTracker`, `StaticObjective`, `aruco_tracker.h`, `objective.h`, `BaslerPylonSource`, `runOptimisation`?",
+      "why": "High betweenness centrality (0.041) - this node is a cross-community bridge."
     },
     {
       "type": "bridge_node",
       "question": "Why does `SwarmClient` connect `SwarmClient` to `swarm_dashboard.cpp`, `main`, `swarm_terminal.cpp`, `shape_demo.cpp`, `latency_plot.cpp`, `.connect`, `drawTelHud`, `main`, `aruco_tracker.h`, `drag_drop_demo.cpp`?",
-      "why": "High betweenness centrality (0.043) - this node is a cross-community bridge."
+      "why": "High betweenness centrality (0.029) - this node is a cross-community bridge."
     },
     {
       "type": "verify_inferred",
@@ -1753,7 +1753,7 @@
     },
     {
       "type": "isolated_nodes",
-      "question": "What connects `termios`, `SORTS`, `app` to the rest of the system?",
+      "question": "What connects `open`, `id`, `x` to the rest of the system?",
       "why": "473 weakly-connected nodes found - possible documentation gaps or missing edges."
     },
     {

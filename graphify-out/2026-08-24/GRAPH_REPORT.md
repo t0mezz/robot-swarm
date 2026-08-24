@@ -105,16 +105,16 @@
 10. `html` - 22 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `main()` --references--> `SwarmClient`  [INFERRED]
-  tools/swarm/latency_plot.cpp → lib/SwarmClient/SwarmClient.h
-- `main()` --references--> `SwarmClient`  [INFERRED]
-  tools/swarm/swarm_telemetry_json.cpp → lib/SwarmClient/SwarmClient.h
-- `main()` --references--> `SwarmClient`  [INFERRED]
-  tools/vision/circle_demo.cpp → lib/SwarmClient/SwarmClient.h
-- `main()` --references--> `SwarmClient`  [INFERRED]
-  tools/vision/shape_demo.cpp → lib/SwarmClient/SwarmClient.h
-- `drawUI()` --calls--> `scBatteryVolts()`  [INFERRED]
-  tools/swarm/swarm_dashboard.cpp → lib/SwarmClient/SwarmClient.h
+- `main()` --calls--> `buildArucoDetector()`  [INFERRED]
+  tools/vision/frame_inspector.cpp → lib/ArucoTracker/aruco_tracker.h
+- `main()` --calls--> `bestX_`  [INFERRED]
+  tools/vision/calibration/calib_main.cpp → lib/Calibration/cmaes.h
+- `main()` --calls--> `fromNorm()`  [INFERRED]
+  tools/vision/calibration/calib_main.cpp → lib/Calibration/param_space.h
+- `main()` --calls--> `encode()`  [INFERRED]
+  tools/vision/calibration/calib_main.cpp → lib/Calibration/param_space.h
+- `runOptimisation()` --calls--> `encode()`  [INFERRED]
+  tools/vision/calibration/calib_main.cpp → lib/Calibration/param_space.h
 
 ## Import Cycles
 - None detected.
@@ -411,22 +411,22 @@ Cohesion: 0.33
 Nodes (6): Combined static + motion objective, Fisheye calibration (`objective_fisheye.h`), GP with ARD kernel (`gp_ard.h`), Motion objective (`objective_motion.h`), Parameter range narrowing, Planned extensions
 
 ## Knowledge Gaps
-- **473 isolated node(s):** `termios`, `SORTS`, `app`, `argv`, `ARROWS` (+468 more)
+- **473 isolated node(s):** `open`, `id`, `x`, `y`, `yaw` (+468 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `ArucoConfig` connect `ArucoConfig` to `param_space.h`, `main`, `ArucoTracker`, `StaticObjective`, `aruco_tracker.h`, `objective.h`, `BaslerPylonSource`, `runOptimisation`?**
-  _High betweenness centrality (0.072) - this node is a cross-community bridge._
 - **Why does `ArucoTracker` connect `ArucoTracker` to `MarkerState`, `swarm_dashboard.cpp`, `main`, `wingman.cpp`, `ArucoConfig`, `IPreprocessor`, `main`, `vision_controller.cpp`, `aruco_tracker.h`, `drag_drop_demo.cpp`, `.drawText`, `ICameraSource`, `vector`?**
-  _High betweenness centrality (0.066) - this node is a cross-community bridge._
+  _High betweenness centrality (0.104) - this node is a cross-community bridge._
+- **Why does `ArucoConfig` connect `ArucoConfig` to `param_space.h`, `main`, `ArucoTracker`, `StaticObjective`, `aruco_tracker.h`, `objective.h`, `BaslerPylonSource`, `runOptimisation`?**
+  _High betweenness centrality (0.041) - this node is a cross-community bridge._
 - **Why does `SwarmClient` connect `SwarmClient` to `swarm_dashboard.cpp`, `main`, `swarm_terminal.cpp`, `shape_demo.cpp`, `latency_plot.cpp`, `.connect`, `drawTelHud`, `main`, `aruco_tracker.h`, `drag_drop_demo.cpp`?**
-  _High betweenness centrality (0.043) - this node is a cross-community bridge._
+  _High betweenness centrality (0.029) - this node is a cross-community bridge._
 - **Are the 5 inferred relationships involving `SwarmClient` (e.g. with `main()` and `main()`) actually correct?**
   _`SwarmClient` has 5 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `termios`, `SORTS`, `app` to the rest of the system?**
+- **What connects `open`, `id`, `x` to the rest of the system?**
   _473 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `app.js` be split into smaller, more focused modules?**
   _Cohesion score 0.07026307026307026 - nodes in this community are weakly interconnected._
