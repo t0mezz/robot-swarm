@@ -9,7 +9,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `2fd5b958`
+- Built from commit: `303add7c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -179,8 +179,8 @@ Cohesion: 0.07
 Nodes (15): Repräsentiert einen einzelnen Debug-Screen. Verwendung: screen = Screen("MY…, Fügt eine neue Nachricht zum Log hinzu., Löscht alle Log-Einträge., Persistente Linie. Gibt Handle zurück., Persistenter Kreis. Gibt Handle zurück., Persistentes Rechteck. Gibt Handle zurück., Persistentes Pixel. Gibt Handle zurück., Entfernt eine einzelne Primitive per Handle. (+7 more)
 
 ### Community 13 - "main"
-Cohesion: 0.11
-Nodes (26): assignNearestSlots(), CircleState, centre, centreSet, minGapMm, orbitSpeed, radius, tracking (+18 more)
+Cohesion: 0.10
+Nodes (29): assignNearestSlots(), CircleState, centre, centreSet, minGapMm, orbitSpeed, radius, tracking (+21 more)
 
 ### Community 14 - "dongle/main.cpp"
 Cohesion: 0.09
@@ -347,8 +347,8 @@ Cohesion: 0.31
 Nodes (9): box_triangles(), get_marker_grid(), main(), print_marker(), Write a list of (normal, v1, v2, v3) tuples as a binary STL file., Return a 6×6 list-of-lists (1 = black, 0 = white) via OpenCV., 12 outward-facing triangles for an axis-aligned box., _tri() (+1 more)
 
 ### Community 55 - "ControlScore"
-Cohesion: 0.20
-Nodes (10): ControlScore, biasEma, init, jerkVar, oscVar, posBiasEma, posVar, prevTurn (+2 more)
+Cohesion: 0.33
+Nodes (7): time_point, RateEstimator, baseAngle, baseTime, init, rate, updateRate()
 
 ### Community 56 - "MicroPython Feature-Flag + Isolated-Module Pattern"
 Cohesion: 0.67
