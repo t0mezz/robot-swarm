@@ -309,8 +309,9 @@ public:
     bool update() {
         std::unique_lock<std::mutex> lk(resultMutex_);
         if (!latestResult_.fresh) return false;
-        robots_    = std::move(latestResult_.robots);
-        debug_     = std::move(latestResult_.debug);
+        robots_      = std::move(latestResult_.robots);
+        debug_       = std::move(latestResult_.debug);
+        claheDebug_  = std::move(latestResult_.claheDebug);
         fps_       = latestResult_.fps;
         latencyMs_ = latestResult_.latencyMs;
         latestResult_.fresh = false;
@@ -377,6 +378,10 @@ public:
 
     const std::vector<RobotPose>& robots()    const { return robots_; }
     cv::Mat  debugFrame() const { return debug_; }
+    // BGR visualization of the grayscale image after CLAHE (only populated
+    // when cfg.debugOverlay is set and CLAHE is enabled) — for comparing
+    // against debugFrame() side by side, e.g. in marker_eval.cpp.
+    cv::Mat  claheFrame() const { return claheDebug_; }
     cv::Size frameSize()  const { return {(int)fw_, (int)fh_}; }
     bool     isOpen()     const { return source_ != nullptr; }
     // Detection-thread throughput (frames actually processed per second), NOT
@@ -458,6 +463,7 @@ private:
     struct DetectionResult {
         std::vector<RobotPose> robots;
         cv::Mat                debug;
+        cv::Mat                claheDebug;
         float                  fps       = 0.f;
         float                  latencyMs = 0.f;
         bool                   fresh     = false;
@@ -520,6 +526,19 @@ private:
                 cv::Mat sweep = gray;
                 if (cfg_.halfResSweep)
                     cv::resize(gray, sweep, {}, 0.5, 0.5, cv::INTER_AREA);
+
+                // ── CLAHE debug view — full-frame, for side-by-side comparison
+                // against the raw debug frame (e.g. marker_eval.cpp). Skipped
+                // unless debugOverlay is on, so headless tools pay nothing for
+                // it. clahe_ is only ever touched from this thread (ROI-crop
+                // tasks below use their own local CLAHE instance), so reusing
+                // it here is safe.
+                cv::Mat claheDebugImg;
+                if (cfg_.debugOverlay && clahe_) {
+                    cv::Mat eq;
+                    clahe_->apply(gray, eq);
+                    cv::cvtColor(eq, claheDebugImg, cv::COLOR_GRAY2BGR);
+                }
 
                 // ── FPS ───────────────────────────────────────────────────────
                 auto now = Clock::now();
@@ -706,8 +725,9 @@ private:
                 // ── Publish ───────────────────────────────────────────────────
                 {
                     std::unique_lock<std::mutex> lk(resultMutex_);
-                    latestResult_.robots    = std::move(outRobots);
-                    latestResult_.debug     = std::move(debug);
+                    latestResult_.robots     = std::move(outRobots);
+                    latestResult_.debug      = std::move(debug);
+                    latestResult_.claheDebug = std::move(claheDebugImg);
                     latestResult_.fps       = fps;
                     latestResult_.latencyMs = emaLatency;
                     latestResult_.fresh     = true;
@@ -854,6 +874,7 @@ private:
     // ── Main-thread-visible state (written only in update()) ──────────────────
     std::vector<RobotPose> robots_;
     cv::Mat                debug_;
+    cv::Mat                claheDebug_;
     float                  fps_       = 0.f;
     float                  latencyMs_ = 0.f;
 

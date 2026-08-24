@@ -89,6 +89,12 @@ int main(int argc, char* argv[]) {
     cv::namedWindow("Camera Eval", cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
     cv::resizeWindow("Camera Eval", sz.width, sz.height);
 
+    // Second window: the grayscale frame after CLAHE, for comparing contrast
+    // enhancement against the raw feed. Only appears once the tracker has
+    // published a non-empty claheFrame() (i.e. CLAHE is enabled — clahe_clip
+    // > 0 in the config); stays closed otherwise.
+    bool claheWindowOpen = false;
+
     // loop_fps = this display/render loop's rate (distinct from
     // tracker.detectionFps(), the detection thread's rate). Tick every iteration.
     DemoHud::LoopFps loopFps;
@@ -102,6 +108,18 @@ int main(int argc, char* argv[]) {
                       sz.width, sz.height,
                       (int)tracker.robots().size());
             cv::imshow("Camera Eval", frame);
+
+            cv::Mat claheFrame = tracker.claheFrame();
+            if (!claheFrame.empty()) {
+                if (!claheWindowOpen) {
+                    cv::namedWindow("CLAHE", cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
+                    cv::resizeWindow("CLAHE", sz.width, sz.height);
+                    claheWindowOpen = true;
+                }
+                cv::putText(claheFrame, "CLAHE", {10, 28}, cv::FONT_HERSHEY_SIMPLEX,
+                            0.7, {0, 255, 0}, 2);
+                cv::imshow("CLAHE", claheFrame);
+            }
         }
 
         int key = cv::waitKey(1) & 0xFF;
