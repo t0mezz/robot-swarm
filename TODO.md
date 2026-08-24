@@ -1,6 +1,23 @@
 # TODO
 
 # add 2 params to circle_demo maybe create a new polished circle util drop "demo" phrase
+- partly addressed: `tools/vision/car_following.cpp` is a new ring util without
+  the "demo" phrase (headless by default, models in a tested pure library).
+  circle_demo itself is untouched — still open whether it gets folded in.
+
+# car_following: verify on hardware
+- Models + ring maths are unit-tested and validated in software (every model
+  matches its published linear-stability condition; FVDM at the paper's
+  defaults grows a full stop-and-go wave from a 0.1m perturbation in ~30 min
+  simulated). Nothing has run on robots yet.
+- Measure `--robot-max-speed` for the 3pi+ (physical mm/s at motor command 100);
+  the 300 default is a guess and is what converts model m/s into motor units.
+- Check the yaw/servo gains inherited from circle_demo still behave when the
+  commanded speed varies per robot instead of being one global orbit rate.
+- `--bridge` DOM selectors were verified against the NetLogo Web widget
+  templates in the vendored HTML, but not yet in a live browser.
+
+# remove the debug frame feature from aruco tracker, it should just transfer data with a frame generator helper not bitmap
 
 # We need to add a feature for pose log (saving) and analysis.
 - maybe a format to efficiently save the poses with util to capture (can be put in eval or add a headless capture)

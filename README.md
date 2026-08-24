@@ -39,6 +39,7 @@ robot-swarm/
 │       ├── vision_controller.cpp  # Main vision-based swarm controller
 │       ├── wingman.cpp            # V-formation follower controller
 │       ├── circle_demo.cpp        # Circle orbit formation
+│       ├── car_following.cpp      # Sugiyama ring experiment (headless; optional NetLogo page bridge)
 │       ├── shape_demo.cpp         # Freehand path drawing controller
 │       ├── marker_eval.cpp        # Camera + detection benchmarking tool
 │       ├── frame_inspector.cpp    # Record N seconds, step through frames, inspect detections
@@ -327,6 +328,56 @@ Robots orbit a point you click. Speed, radius, and orbit direction are adjustabl
 | `+` / `-` | Radius ±25 mm (or speed ±10% when robot selected) |
 | `[` / `]` | Orbit speed ±5 °/s |
 | `t` | Toggle orbit tracking |
+| `s` | Stop all |
+| `q` / Esc | Quit |
+
+---
+
+### `car_following`
+Runs the [Sugiyama et al. (2007)](https://iopscience.iop.org/article/10.1088/1367-2630/10/3/033001/meta)
+ring-road experiment on real robots: each robot follows the one ahead using one
+of seven car-following models, and — at a tight enough time gap — the ring
+spontaneously develops the phantom traffic jam the experiment is famous for.
+
+Unlike the other vision tools this is **headless by default** (one status line
+per second, no window); `--debug` opens the usual view and HUD.
+
+```bash
+./build/car_following [--model NAME] [--speed-max M/S] [--car-size M] [--time-gap S]
+                      [--reaction-time S] [--sigma A] [--sim-length M] [--radius MM]
+                      [--centre X Y] [--dir cw|ccw] [--robot-max-speed MM_S]
+                      [--bridge] [--port N] [--debug]
+```
+
+Models: `Reuschel` `Pipes` `OVM` `CF-OVM` `FVDM` `ATG` `IDM` (default `FVDM`, the
+NetLogo page's default). Parameter defaults match that page's sliders.
+
+The ring is fitted automatically to wherever the robots are standing on the
+first frame, so the usual setup is just: place the robots in a circle and start
+the tool. `--radius`/`--centre` pin it instead; `r` re-fits in `--debug`.
+
+**Scale.** The models are written in the paper's units (a 230 m ring, 5 m cars,
+15 m/s) and the arena is under a metre across, so positions and speeds are
+converted through one factor. What that factor preserves is *density* — the wave
+depends on metres per vehicle, not on the ring's absolute size — so by default
+the physical ring maps to `N × (230/22)` simulated metres for however many robots
+are on it, and four robots see the spacing 22 cars see in the paper.
+`--sim-length` pins the virtual ring length instead.
+
+`--robot-max-speed` is the robot's physical speed (mm/s) at motor command 100 and
+is what converts simulated m/s into motor units — measure it once for your
+robots if the motion looks uniformly too fast or too slow.
+
+**Live bridge.** `--bridge` serves the vendored NetLogo page from
+`tools/car-following-models/` at `http://127.0.0.1:8770/` (loopback only) with a
+small script appended that reports the model chooser and slider values back as
+they change. The robots then follow whatever the page is set to, so the
+simulation and the real ring run the same dynamics side by side. The vendored
+HTML on disk is never modified — the script is injected at serve time.
+
+| Key (`--debug`) | Action |
+|-----|--------|
+| `r` | Re-fit the ring to current positions |
 | `s` | Stop all |
 | `q` / Esc | Quit |
 

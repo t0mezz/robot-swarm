@@ -56,7 +56,7 @@ make test         # builds and runs tests/build/test_protocol
 make clean        # removes tests/build/
 ```
 
-Covers the CRC-8 framing pure functions (`crc8`, `buildFrame`, `validateFrame`, `frameSize` in `lib/SwarmProtocol/protocol.h`) and the pose-hub publish/subscribe round trip (`test_pose_hub.cpp` — real sockets, no camera) with a small assert-based harness — no test framework dependency. There's no CI configured yet. Formation-math unit tests are still pending extraction of that logic into testable pure functions (see `TODO.md` under "Tooling / Tests").
+Covers the CRC-8 framing pure functions (`crc8`, `buildFrame`, `validateFrame`, `frameSize` in `lib/SwarmProtocol/protocol.h`), the pose-hub publish/subscribe round trip (`test_pose_hub.cpp` — real sockets, no camera), and the car-following models (`test_car_following.cpp`) with a small assert-based harness — no test framework dependency. There's no CI configured yet. Formation-math unit tests are still pending extraction of that logic into testable pure functions (see `TODO.md` under "Tooling / Tests"); `lib/CarFollowing/car_following.h` is the model for how that extraction should look.
 
 ## Architecture
 
@@ -98,6 +98,19 @@ Each robot's ID is baked into firmware at flash time (`ROBOT_ID` env var, defaul
 
 `lib/ArucoTracker/` wraps the Basler camera (via pylon) and OpenCV ArUco detection behind `aruco_tracker.h`. Vision-based controllers (`tools/vision/vision_controller.cpp`, `wingman.cpp`, `circle_demo.cpp`, `shape_demo.cpp`) consume tracked poses and then drive robots through the same `SwarmClient` as any other PC tool — vision and swarm control aren't otherwise coupled. Per `TODO.md`, this separation is still informal (most demos build ArUco poses and protocol frames inline rather than through a clean `PoseStream`-style interface); `drag_drop_demo.cpp` is cited there as the tool that already does this more cleanly via `SwarmClient`.
 
+### `car_following` is headless-first, and its models are a separate pure library
+
+`tools/vision/car_following.cpp` runs the Sugiyama ring experiment on real robots. Two things about it differ from the other vision tools deliberately:
+
+- **Headless by default.** No `namedWindow`/`imshow`/`waitKey` unless `--debug` is passed; the default is a status line per second, like `swarm_telemetry_json`. This is the direction `TODO.md` "Webserver / Headless" wants the vision tools to move, so prefer this shape for new ones.
+- **The physics lives in `lib/CarFollowing/car_following.h`**, free of OpenCV, pylon and SwarmClient, and unit-tested in `tests/test_car_following.cpp`. The tool itself only does geometry, control and I/O. This is exactly the extraction `TODO.md` asks for under "Tooling / Tests" for the formation math — use it as the template.
+
+The heading controller is `circle_demo.cpp`'s orbit controller (yaw feedforward + PD, `MAX_TURN_RATE` slew limit, time-constant yaw low-pass); only the source of the tangential speed setpoint differs — per robot from the model, rather than one global orbit rate. Fixes to that control law should probably land in both.
+
+Models are written in the paper's units (230m ring, 5m cars) and the arena is under a metre, so one scale factor maps between them. It is chosen to preserve **density** (metres per vehicle), not absolute size, because that is what determines whether the stop-and-go wave forms — hence the default of `N × (230/22)` simulated metres for N robots.
+
+`lib/CarFollowing/http_bridge.h` is a ~150-line loopback HTTP server used by `--bridge` to serve the vendored NetLogo page and receive its slider/chooser values back as `name=value` lines. It is **not** a fourth implementation of the swarm wire protocol — it carries UI parameters only, never `MSG_*` frames, so the "keep it at three" rule above is unaffected. Plain HTTP rather than WebSockets because the traffic is one small POST per parameter change over loopback; the handshake and framing a WebSocket needs would be larger than the whole file. The vendored HTML is never modified on disk — the reporting script is injected at serve time.
+
 ### MicroPython robot firmware: feature-flag + isolated-module pattern
 
 `src/robots/uart_controller.py` is the main loop (UART receive → PID speed control → motor output → display), and it deliberately keeps optional features out of the core file: each one is gated by a module-level `..._ENABLED` flag and implemented in its own module, with the main loop calling at most one hook per loop iteration. Example: `ENGINE_SOUND_ENABLED` guards both the import of `engine_sound.EngineSound` and the single `engine.update(actual_l, actual_r, dt)` call inside `run_pid()`. Follow this pattern for new robot-local features (sound, additional sensors, etc.) rather than growing `uart_controller.py` or `robot_uart.py` directly — and keep such features computed from data the robot already has rather than extending the shared wire protocol, since that protocol is also implemented independently in the C++ firmware and PC client (see above).
@@ -112,6 +125,7 @@ src/robots/                — MicroPython firmware for the RP2040, deployed wit
 lib/SwarmProtocol/         — wire protocol shared by both firmware targets (canonical C++ definition)
 lib/SwarmClient/           — header-only PC client library; new PC tools should build on this
 lib/ArucoTracker/          — camera + ArUco tracking abstraction (Basler pylon + OpenCV)
+lib/CarFollowing/          — car-following models + localhost HTTP bridge (no OpenCV/pylon/SwarmClient)
 tools/                     — Makefile + PC tool entry points (game.cpp, vision/*.cpp, swarm/*.cpp); binaries land in tools/build/
 docs/architecture.md       — protocol/timing design doc (German)
 ```
