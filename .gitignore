@@ -15,6 +15,7 @@
 # Build artifacts
 tools/build/
 tests/build/
+node_modules/
 lib/SwarmProtocol/robot_id_cfg.h
 *.o
 *.d

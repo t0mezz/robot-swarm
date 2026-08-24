@@ -40,7 +40,7 @@ OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config -
 
 .PHONY: all clean calibrate
 
-all: $(BUILD_DIR)/swarm_hub $(BUILD_DIR)/swarm_hub_simulation $(BUILD_DIR)/swarm_terminal $(BUILD_DIR)/latency_plot $(BUILD_DIR)/swarm_dashboard $(BUILD_DIR)/swarm_controller $(BUILD_DIR)/game $(BUILD_DIR)/vision_controller $(BUILD_DIR)/circle_demo $(BUILD_DIR)/wingman $(BUILD_DIR)/shape_demo $(BUILD_DIR)/drag_drop_demo $(BUILD_DIR)/marker_eval $(BUILD_DIR)/frame_inspector $(BUILD_DIR)/demo_hud_preview calibrate
+all: $(BUILD_DIR)/swarm_hub $(BUILD_DIR)/swarm_hub_simulation $(BUILD_DIR)/swarm_terminal $(BUILD_DIR)/latency_plot $(BUILD_DIR)/swarm_dashboard $(BUILD_DIR)/swarm_telemetry_json $(BUILD_DIR)/swarm_controller $(BUILD_DIR)/game $(BUILD_DIR)/vision_controller $(BUILD_DIR)/circle_demo $(BUILD_DIR)/wingman $(BUILD_DIR)/shape_demo $(BUILD_DIR)/drag_drop_demo $(BUILD_DIR)/marker_eval $(BUILD_DIR)/frame_inspector $(BUILD_DIR)/demo_hud_preview calibrate
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -62,6 +62,12 @@ $(BUILD_DIR)/latency_plot: $(SWARMDIR)/latency_plot.cpp $(LIBDIR)/SwarmClient/Sw
 
 $(BUILD_DIR)/swarm_dashboard: $(SWARMDIR)/swarm_dashboard.cpp $(SWARMDIR)/telemetry_history.h $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@
+
+# Headless NDJSON producer behind the Ink dashboard (tools/dashboard-ink).
+# Same two data sources as swarm_dashboard, so it carries the same
+# OpenCV/pylon dependencies.
+$(BUILD_DIR)/swarm_telemetry_json: $(SWARMDIR)/swarm_telemetry_json.cpp $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS)
 
 $(BUILD_DIR)/swarm_controller: $(SWARMDIR)/swarm_controller.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@ $(CONTROLLER_LDFLAGS)

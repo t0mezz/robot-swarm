@@ -1,0 +1,23 @@
+{
+  "name": "swarm-dashboard-ink",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ink/React terminal dashboard for the robot swarm; renders NDJSON from tools/build/swarm_telemetry_json",
+  "type": "module",
+  "bin": {
+    "swarm-dashboard-ink": "src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "demo": "node src/cli.js --demo",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "htm": "^3.1.1",
+    "ink": "^7.1.1",
+    "react": "^19.2.0"
+  }
+}

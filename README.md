@@ -34,6 +34,7 @@ robot-swarm/
 ├── tools/
 │   ├── Makefile                # Builds all PC tools (macOS arm64 + Ubuntu x86_64)
 │   ├── game.cpp                # SFML game pad controller
+│   ├── dashboard-ink/          # Ink/React terminal dashboard (Node; own package.json, no build step)
 │   └── vision/
 │       ├── vision_controller.cpp  # Main vision-based swarm controller
 │       ├── wingman.cpp            # V-formation follower controller
@@ -234,6 +235,39 @@ Live ASCII latency plot for a specific robot. Shows round-trip ping time in µs.
 ```bash
 ./build/latency_plot <robot_id>
 ```
+
+---
+
+### `swarm_telemetry_json`
+Headless telemetry producer: connects to `swarm_hub`, subscribes to the vision hub for poses, and writes one JSON object per tick to stdout. Sends no motor commands. Exists so UIs that aren't C++ can consume the swarm without reimplementing the wire protocol — it's what `dashboard-ink` runs underneath.
+
+It does **not** open the camera by default. The Basler allows one application at a time, so any tool that owns it publishes poses on `/tmp/vision_hub.sock` (see `lib/ArucoTracker/pose_hub.h`) and this subscribes — which is what lets a dashboard run alongside `circle_demo` or `vision_controller`. `--camera` opens the device directly for standalone use, and locks those demos out while it runs.
+
+```bash
+./build/swarm_telemetry_json [--interval MS] [--no-vision] [--camera]
+./build/swarm_telemetry_json --no-vision | jq .        # inspect the stream
+```
+
+---
+
+### `dashboard-ink` (Ink/React terminal dashboard)
+Rework of `swarm_dashboard` as a Node/Ink TUI: one row per robot (32 fit on a screen), severity-coloured latency and battery, L/R drive in a single half-block meter, a square arena minimap with heading arrows, and a focus panel for the selected robot. Keyboard: `↑↓` select, `f` follow the worst robot, `s` cycle sort, `p` pause, `q` quit.
+
+Needs Node ≥ 20. It is a separate toolchain from the Makefile — but has no build step of its own, only `npm install`.
+
+```bash
+cd tools && make build/swarm_telemetry_json   # the data producer it spawns
+cd dashboard-ink && npm install
+
+npm start                  # live; subscribes to the vision hub for poses
+npm run demo               # synthetic swarm — no dongle, hub or camera needed
+npm test                   # glyph + layout unit tests (node:test)
+node src/cli.js --camera   # own the camera instead (locks vision demos out)
+```
+
+Poses come from whichever tool owns the camera, so this can run alongside a vision demo. The status bar tags the source: `cam 116fps·hub` (subscribed) vs `cam 116fps·own` (this process holds the device).
+
+The C++ `swarm_dashboard` is unchanged and still works; the two can be compared side by side.
 
 ---
 

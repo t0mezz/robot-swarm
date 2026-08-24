@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ESP-NOW based swarm control system for up to 32 Pololu 3pi+ 2040 robots. A controller PC sends motor commands over USB serial to a dongle ESP32, which broadcasts them via ESP-NOW to all robot ESP32s; each robot ESP32 forwards commands to its onboard RP2040 (running MicroPython) over UART. A Basler ace2 GigE camera with OpenCV ArUco tracking provides overhead vision for the vision-based control modes. End-to-end latency from keypress to motor response is ~4ms — see `docs/architecture.md` for the full per-segment latency budget and `PERFORMANCE.md` for measured PC-tool performance history.
 
-The codebase has three independent toolchains that don't share a build system: PlatformIO firmware (C++), a plain Makefile for PC tools (C++), and MicroPython deployed directly to the robot (no build step at all).
+The codebase has four independent toolchains that don't share a build system: PlatformIO firmware (C++), a plain Makefile for PC tools (C++), MicroPython deployed directly to the robot (no build step at all), and npm for the Ink terminal dashboard (`tools/dashboard-ink/`, Node — dependencies only, also no build step).
 
 ## Commands
 
@@ -36,6 +36,18 @@ Requires OpenCV, SFML 3 (not `sfml@2`), and Basler pylon 8.1.0 on the host — s
 
 No build step. Deploy `robot_uart.py`, `screen_manager.py`, and `uart_controller.py` directly to the Pololu 3pi+ 2040 over MicroPython (`uart_controller.py` is the entry point / `main.py`).
 
+### Ink dashboard (`tools/dashboard-ink/`, npm)
+
+```bash
+cd tools && make build/swarm_telemetry_json   # the C++ producer it spawns
+cd dashboard-ink && npm install               # no build step; htm, not JSX
+npm start          # live
+npm run demo       # synthetic swarm — no dongle, hub or camera needed
+npm test           # node:test unit tests for the glyph + layout functions
+```
+
+Requires Node >= 20. Uses `htm` tagged templates instead of JSX specifically so there is no transpile step — see the comment in `src/html.js` before adding a bundler.
+
 ### Tests (`tests/`, plain Makefile)
 
 ```bash
@@ -44,7 +56,7 @@ make test         # builds and runs tests/build/test_protocol
 make clean        # removes tests/build/
 ```
 
-Currently covers the CRC-8 framing pure functions (`crc8`, `buildFrame`, `validateFrame`, `frameSize` in `lib/SwarmProtocol/protocol.h`) with a small assert-based harness — no test framework dependency. There's no CI configured yet. Formation-math unit tests are still pending extraction of that logic into testable pure functions (see `TODO.md` under "Tooling / Tests").
+Covers the CRC-8 framing pure functions (`crc8`, `buildFrame`, `validateFrame`, `frameSize` in `lib/SwarmProtocol/protocol.h`) and the pose-hub publish/subscribe round trip (`test_pose_hub.cpp` — real sockets, no camera) with a small assert-based harness — no test framework dependency. There's no CI configured yet. Formation-math unit tests are still pending extraction of that logic into testable pure functions (see `TODO.md` under "Tooling / Tests").
 
 ## Architecture
 
@@ -58,11 +70,21 @@ The frame format `[0xAA][0x55][type][len][payload...][CRC-8 (poly 0x07)]` and th
 
 When changing a message type or payload layout, all three need updating; there's no shared codegen.
 
+Keep it at three. Non-C++ UIs consume the swarm through `swarm_telemetry_json` (`tools/swarm/swarm_telemetry_json.cpp`), which links `SwarmClient` and `ArucoTracker` and emits one NDJSON snapshot per tick on stdout — that's how `tools/dashboard-ink/` gets its data. Parsing frames in a fourth language would add another hand-synced copy of this table, and vision data (pylon + OpenCV) isn't reachable from outside C++ anyway.
+
 ### `swarm_hub` is the only process that owns the serial port
 
 PC tools never open the dongle's serial device directly. `swarm_hub` (`tools/swarm/swarm_hub.cpp`) bridges the USB-serial connection to a Unix socket at `/tmp/swarm_hub.sock`, and every other PC tool connects to that socket. Vision tools auto-launch `swarm_hub` as a daemon if a USB dongle is detected and the hub isn't already running.
 
 For new PC tools, use `lib/SwarmClient/SwarmClient.h` rather than talking to the socket directly — it auto-connects (and will auto-launch `swarm_hub` via `fork`/`exec` if needed), builds outgoing `MSG_SWARM` frames from a `setSpeed()`/`flush()` call pair, and parses incoming `MSG_ANNOUNCE`/`MSG_TELEMETRY`/`MSG_PONG` frames into per-robot `RobotState`. Calling `poll()` regularly is required even if you don't care about telemetry — it's what reads and parses incoming frames (including the `MSG_PONG`s that populate `latencyUs`). The round-robin pinging that produces those pongs is driven centrally by `swarm_hub` (it snoops announce/telemetry/pong frames to learn live robot IDs and emits one `MSG_PING` per interval), **not** per-client: this keeps exactly one ping in flight no matter how many tools are connected, since the dongle's latency tracker (`src/dongle/main.cpp`, single `pingTracker`) only holds one outstanding ping at a time — multiple independent pingers would clobber it and corrupt RTT.
+
+### `ArucoTracker` is the only process that owns the camera
+
+The Basler admits exactly one application — a second `open()` gets `0xE1018006` ("device is controlled by another application") — so the camera cannot be multiplexed the way `swarm_hub` multiplexes the dongle. Instead, whichever tool opens it publishes tracked poses on `/tmp/vision_hub.sock` automatically (`lib/ArucoTracker/pose_hub.h`, wired into `ArucoTracker::open()`/`update()`); pose-only tools subscribe rather than opening the camera.
+
+The rule this buys: **only tools that need pixels own the camera.** Every vision demo calls `debugFrame()`/`cv::imshow`, so they own it and publish. `swarm_telemetry_json` needs poses only, so it subscribes by default and a demo can always start alongside it. `--camera` makes it own the device instead, for standalone use — at the cost of locking demos out.
+
+`pose_hub.h` is deliberately free of OpenCV and pylon includes, so subscribers link neither. Frames are *not* shared (2048² at ~116 fps is ~470 MB/s — that needs shared memory, see `TODO.md` under "Webserver / Headless").
 
 ### Robot registration and addressing
 
