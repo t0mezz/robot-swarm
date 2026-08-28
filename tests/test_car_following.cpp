@@ -163,6 +163,65 @@ static void test_noise_is_off_by_default() {
     EXPECT_TRUE(kicked > 0.f, "noise gated off near zero speed");
 }
 
+// ── Cooperative buffering ────────────────────────────────────────────────────
+// Reference values are the NetLogo source of the companion page,
+// "Stop-and-Go Mitigation via Cooperative Buffering": T = (N - B)/(N - 1) for
+// the followers and T = B for the buffering vehicle, on a nominal gap of 1s
+// with N = 20.
+
+static void test_buffering_time_gaps() {
+    // The page's own numbers: nominal 1s, 20 vehicles, B = 7.
+    EXPECT_NEAR(cfBufferedTimeGap(1.f, 7.f, 20, true),  7.0, 1e-6, "buffer keeps B * T");
+    EXPECT_NEAR(cfBufferedTimeGap(1.f, 7.f, 20, false), 13.0 / 19.0, 1e-6,
+                "followers keep (N - B)/(N - 1)");
+
+    // B = 1 must be exactly the uniform baseline, or the "non-cooperative"
+    // setting would not reproduce the plain model.
+    EXPECT_NEAR(cfBufferedTimeGap(0.8f, 1.f, 20, true),  0.8, 1e-6, "B = 1: buffer at T");
+    EXPECT_NEAR(cfBufferedTimeGap(0.8f, 1.f, 20, false), 0.8, 1e-6, "B = 1: followers at T");
+
+    // The mean desired time gap is what the strategy holds constant — that is
+    // what keeps B from being a disguised density change.
+    for (float b = 1.f; b <= 9.f; b += 2.f) {
+        int n = 20;
+        double mean = (cfBufferedTimeGap(1.f, b, n, true)
+                       + (n - 1) * cfBufferedTimeGap(1.f, b, n, false)) / n;
+        EXPECT_NEAR(mean, 1.0, 1e-5, "mean time gap is preserved");
+    }
+
+    // Hardware guards: a single robot has nobody to trade gaps with, and B is
+    // clamped rather than allowed to drive a follower's gap negative.
+    EXPECT_NEAR(cfBufferedTimeGap(0.8f, 5.f, 1, false), 0.8, 1e-6, "n < 2: unchanged");
+    EXPECT_NEAR(cfBufferedTimeGap(0.8f, 0.f, 20, true), 0.8, 1e-6, "B < 1 clamps to 1");
+    EXPECT_TRUE(cfBufferedTimeGap(0.8f, 99.f, 4, false) >= CF_MIN_TIME_GAP,
+                "an over-large B cannot zero a follower's time gap");
+    EXPECT_NEAR(cfMaxBuffering(20), 10.5, 1e-6, "cap matches the page's slider max");
+    EXPECT_NEAR(cfMaxBuffering(1), 1.0, 1e-6, "no buffering with one vehicle");
+}
+
+static void test_buffering_applies_to_every_model_but_pipes() {
+    CfParams p = defaults();
+    CfInput  in{8.f, 8.f, 8.f, 8.f};      // uniform flow, so only T differs
+
+    for (int i = 0; i <= (int)CfModel::IDM; ++i) {
+        CfModel m = (CfModel)i;
+        CfParams buffered = cfBufferedParams(p, 4.f, 10, true);
+        float plain = cfStep(m, in, p, 0.1f);
+        float buf   = cfStep(m, in, buffered, 0.1f);
+
+        if (cfModelHasDesiredGap(m)) {
+            // Wanting four times the room at the same gap means backing off.
+            EXPECT_TRUE(buf < plain, cfModelName(m));
+        } else {
+            // Pipes reads only the relative speed, so there is nothing for the
+            // buffer to act on — it must be a no-op, not a silent almost-op.
+            EXPECT_NEAR(buf, plain, 1e-6, "Pipes ignores buffering");
+        }
+    }
+    EXPECT_TRUE(!cfModelHasDesiredGap(CfModel::Pipes), "Pipes has no desired gap");
+    EXPECT_TRUE(cfModelHasDesiredGap(CfModel::IDM), "IDM has a desired gap");
+}
+
 int main() {
     test_model_names_round_trip();
     test_optimal_velocity();
@@ -173,6 +232,8 @@ int main() {
     test_atg_time_gap_is_bounded();
     test_first_order_models_set_speed_directly();
     test_noise_is_off_by_default();
+    test_buffering_time_gaps();
+    test_buffering_applies_to_every_model_but_pipes();
 
     std::printf("test_car_following: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

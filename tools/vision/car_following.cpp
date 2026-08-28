@@ -12,7 +12,7 @@
 //                   [--time-gap S] [--reaction-time S] [--sigma A]
 //                   [--sim-length M] [--radius MM] [--centre X Y] [--dir cw|ccw]
 //                   [--ring-file PATH] [--fit] [--robot-max-speed MM_S]
-//                   [--time-scale K] [--start]
+//                   [--time-scale K] [--start] [--buffer-b B] [--buffer-id ID]
 //                   [--bridge] [--port N] [--debug] [--serial SN] [--ip IP]
 //                   [--count N]
 //
@@ -95,6 +95,33 @@
 // trajectories and the wave are unchanged — the whole experiment just runs in
 // slow motion. The heading controller is untouched by it and keeps working in
 // real time.
+//
+// ── Cooperative buffering ───────────────────────────────────────────────────
+//
+// --buffer-id names one robot as the buffering vehicle and --buffer-b sets how
+// much room it takes: it drives at B times the nominal time gap while the rest
+// of the ring gives up (N-B)/(N-1) of theirs, so the mean is unchanged and the
+// experiment stays at the density it was set up for. See the long comment in
+// lib/CarFollowing/car_following.h — including why Pipes cannot buffer.
+//
+// Two guards that only matter on hardware, not on the reference page. Both
+// live in CfRing::step(), with the ring's own live vehicle count and roster:
+//
+//   * B is capped at cfMaxBuffering(N) — where the followers are down to half
+//     the nominal gap. The page can afford its fixed slider max of 10 because
+//     it always has 20 vehicles; three robots on the arena ring cannot.
+//   * Buffering is applied only while the buffering robot is actually on the
+//     ring. If it is lifted off or drops out of the tracker, the compensation
+//     would otherwise shrink every remaining robot's gap with nothing holding
+//     the space open — tighter than the baseline, which is the wrong way to
+//     fail.
+//
+// Turning B up is not monotonically better under every model, because the
+// compensation is also tightening the other N-1. Under IDM — the model the
+// strategy was published for — it is: on a 20-vehicle ring the speed spread
+// falls steadily as B rises. Under FVDM and CF-OVM a large B destabilises the
+// followers before the buffer can absorb anything, so it is worth sweeping B
+// rather than assuming more is better.
 //
 // The heading controller underneath is circle_demo.cpp's orbit controller:
 // a yaw feedforward carries the steady turn and a PD corrects the residual
@@ -375,8 +402,18 @@ struct PageState {
     long setupNo = -1;   // <0 = the page has not reported yet
 };
 
+// The buffering knobs. Not part of CfParams: `id` is a robot id, which the
+// model library has no notion of, and `b` is resolved against the live robot
+// count at each tick rather than stored as a time gap. They come from the
+// panel car_following_bridge.js injects, not from a NetLogo widget.
+struct Buffering {
+    float b  = 1.f;    // buffering parameter B; 1 = the non-cooperative baseline
+    int   id = -1;     // robot id of the buffering vehicle; -1 = nobody
+    bool on() const { return id >= 0 && b > 1.f; }
+};
+
 static void applyParams(const std::string& body, CfParams& p, CfModel& model,
-                        PageState& page) {
+                        PageState& page, Buffering& buf) {
     size_t pos = 0;
     while (pos < body.size()) {
         size_t nl = body.find('\n', pos);
@@ -398,6 +435,8 @@ static void applyParams(const std::string& body, CfParams& p, CfModel& model,
         else if (k == "sigma")         p.sigma        = (float)atof(v.c_str());
         else if (k == "run")           page.run       = atoi(v.c_str()) != 0;
         else if (k == "setup")         page.setupNo   = atol(v.c_str());
+        else if (k == "buffer-b")      buf.b          = (float)atof(v.c_str());
+        else if (k == "buffer-id")     buf.id         = atoi(v.c_str());
     }
 }
 
@@ -437,6 +476,7 @@ int main(int argc, char* argv[]) {
     std::string serial, ip;
     CfParams    params;
     CfModel     model = CfModel::FVDM;   // the page's default chooser entry
+    Buffering   buf;
     float  simLengthM  = -1.f;           // <0 = derive from the robot count
     float  argRadiusMm = -1.f;           // <0 = keep whatever the ring file holds
     float  argCentreX = 0.f, argCentreY = 0.f;
@@ -468,6 +508,8 @@ int main(int argc, char* argv[]) {
         else if (arg("--time-gap"))        params.timeGap      = (float)atof(argv[++i]);
         else if (arg("--reaction-time"))   params.reactionTime = (float)atof(argv[++i]);
         else if (arg("--sigma"))           params.sigma        = (float)atof(argv[++i]);
+        else if (arg("--buffer-b"))        buf.b       = (float)atof(argv[++i]);
+        else if (arg("--buffer-id"))       buf.id      = atoi(argv[++i]);
         else if (arg("--sim-length"))      simLengthM  = (float)atof(argv[++i]);
         else if (arg("--radius"))          argRadiusMm = (float)atof(argv[++i]);
         else if (arg("--ring-file"))       ringFile    = argv[++i];
@@ -489,6 +531,7 @@ int main(int argc, char* argv[]) {
                    "       [--reaction-time S] [--sigma A] [--sim-length M] [--radius MM]\n"
                    "       [--centre X Y] [--ring-file PATH] [--fit] [--dir cw|ccw]\n"
                    "       [--time-scale K] [--robot-max-speed MM_S] [--start]\n"
+                   "       [--buffer-b B] [--buffer-id ID]\n"
                    "       [--bridge] [--port N] [--debug] [--serial SN] [--ip IP] [--count N]\n\n"
                    "models: Reuschel Pipes OVM CF-OVM FVDM ATG IDM\n\n"
                    "The robots are set up but held still until a run is cued: the page's\n"
@@ -498,6 +541,11 @@ int main(int argc, char* argv[]) {
                    "\"a\"/\"align\" on stdin) rests them the same way and then drives them to\n"
                    "evenly spaced slots on the ring, finishing on its own once everyone\n"
                    "visible is in place.\n\n"
+                   "--buffer-id ID makes robot ID the buffering vehicle: it keeps B times the\n"
+                   "nominal time gap while the other N-1 keep (N-B)/(N-1) of theirs, so the\n"
+                   "mean gap — and the density — is unchanged. B = 1 is the non-cooperative\n"
+                   "baseline. B is capped where the followers reach half the nominal gap.\n"
+                   "Pipes has no desired gap, so buffering does nothing under it.\n\n"
                    "--time-scale K runs the experiment in slow motion: K real seconds per\n"
                    "simulated second, same trajectories, K times slower. Start around 4-6 —\n"
                    "at K=1 the defaults ask for full throttle on a sub-metre ring.\n\n"
@@ -509,6 +557,15 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         else { fprintf(stderr, "unknown argument: %s\n", argv[i]); return 2; }
+    }
+
+    if (buf.b < 1.f) {
+        fprintf(stderr, "--buffer-b must be at least 1 (1 = no buffering)\n");
+        return 2;
+    }
+    if (buf.id >= SC_MAX_ROBOTS) {
+        fprintf(stderr, "--buffer-id must be below %d\n", SC_MAX_ROBOTS);
+        return 2;
     }
 
     if (timeScale < TIME_SCALE_MIN || timeScale > TIME_SCALE_MAX) {
@@ -666,6 +723,11 @@ int main(int argc, char* argv[]) {
         printf("[cf] setup — robots at rest (%s)\n", why);
     };
 
+    if (buf.on() && !cfModelHasDesiredGap(model))
+        printf("[cf] note: %s has no desired gap — buffering has no effect under it\n",
+               cfModelName(model));
+    if (buf.on())
+        printf("[cf] buffering: robot %d at B=%.2g\n", buf.id, buf.b);
     printf("[cf] model=%s  speed-max=%.1f  car-size=%.1f  time-gap=%.2f  "
            "reaction-time=%.2f  sigma=%.2f  time-scale=%.2gx\n",
            cfModelName(model), params.speedMax, params.carSize,
@@ -698,7 +760,7 @@ int main(int argc, char* argv[]) {
             for (const auto& body : http.poll()) {
                 bool wasRun  = page.run;
                 long wasSetup = page.setupNo;
-                applyParams(body, params, model, page);
+                applyParams(body, params, model, page, buf);
                 if (page.setupNo != wasSetup && wasSetup >= 0)
                     run.requestAlign("page setup");
                 else if (page.run != wasRun)
@@ -854,7 +916,7 @@ int main(int argc, char* argv[]) {
             // explicit-Euler step, so a dt smaller than the paper's 0.1s only
             // makes the integration finer.
             cfRing.step(model, params, modelDt / timeScale, ring.radius,
-                        [&] { return gauss(rng); });
+                        [&] { return gauss(rng); }, buf.id, buf.b);
         }
 
         // ── Servo each robot onto its commanded speed ────────────────────────
@@ -975,9 +1037,16 @@ int main(int argc, char* argv[]) {
                        cfModelName(model), loopFps.fps(),
                        cfRing.visibleCount(), cfRing.rosterCount(), timeScale,
                        swarm.isConnected() ? "ok" : "--");
+                if (buf.on())
+                    printf("  buf:%d@B=%.2g%s", buf.id, cfRing.bufferB(),
+                           cfRing.bufferActive() ? "" : "(absent)");
+                // A '*' marks the buffering vehicle, the way the reference
+                // page colours it cyan.
                 for (int id : cfRing.order()) {
                     const CfRingCar* c = cfRing.car(id);
-                    printf("  %d:%.2f/%.2fm/s@%.1fm", id, c->speed, c->measured, c->gap);
+                    printf("  %d%s:%.2f/%.2fm/s@%.1fm", id,
+                           (cfRing.bufferActive() && id == buf.id) ? "*" : "",
+                           c->speed, c->measured, c->gap);
                 }
                 printf("\n");
                 fflush(stdout);
@@ -1023,19 +1092,24 @@ int main(int argc, char* argv[]) {
             const CfRingCar* c = cfRing.car(id);
             auto it = poseById.find(id);
             if (it == poseById.end()) continue;
-            tracker.drawText(disp, DemoHud::fmt("%.2fm/s  gap %.1fm", c->speed, c->gap),
+            bool isBuf = cfRing.bufferActive() && id == buf.id;
+            // Cyan for the buffering vehicle, as the reference page draws it.
+            tracker.drawText(disp, DemoHud::fmt("%.2fm/s  gap %.1fm%s",
+                                                c->speed, c->gap, isBuf ? "  BUF" : ""),
                              {(int)it->second.px + 12, (int)it->second.py - 12},
-                             18, {0, 255, 128});
+                             18, isBuf ? cv::Scalar{255, 255, 0} : cv::Scalar{0, 255, 128});
         }
 
         DemoHud hud;
-        hud.title(DemoHud::fmt("loop_fps:%.0f  %s  %s  robots:%d/%d  ring:%.0f  %.2gx  HUB:%s%s",
+        hud.title(DemoHud::fmt("loop_fps:%.0f  %s  %s  robots:%d/%d  ring:%.0f  %.2gx%s  HUB:%s%s",
                                loopFps.fps(),
                                run.running()  ? "RUNNING" :
                                run.aligning() ? "ALIGNING" : (run.pending() ? "CUED" : "SETUP"),
                                cfModelName(model),
                                cfRing.visibleCount(), cfRing.rosterCount(),
                                ring.radius, timeScale,
+                               buf.on() ? DemoHud::fmt("  buf:%d@B=%.2g",
+                                                       buf.id, cfRing.bufferB()).c_str() : "",
                                swarm.isConnected() ? "OK" : "INACTIVE",
                                bridge ? "  BRIDGE" : ""),
                   run.running() && swarm.isConnected()  ? DemoHud::COL_OK :
@@ -1049,7 +1123,8 @@ int main(int argc, char* argv[]) {
         for (int id : cfRing.order()) {
             const CfRingCar* c  = cfRing.car(id);
             const auto&      ss = swarm.robotState((uint8_t)id);
-            hud.row({DemoHud::fmt("%d", id),
+            hud.row({DemoHud::fmt("%d%s", id,
+                                  (cfRing.bufferActive() && id == buf.id) ? "*" : ""),
                      run.aligning() ? DemoHud::fmt("%.0f", c->alignTargetDeg) : DemoHud::fmt("%.1f", c->gap),
                      run.aligning() ? DemoHud::fmt("%+.0f", c->alignErrorDeg) : DemoHud::fmt("%.2f", c->speed),
                      run.aligning() ? "-" : DemoHud::fmt("%.2f", c->measured),

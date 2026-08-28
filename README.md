@@ -347,6 +347,7 @@ per second, no window); `--debug` opens the usual view and HUD.
                       [--reaction-time S] [--sigma A] [--sim-length M] [--radius MM]
                       [--centre X Y] [--ring-file PATH] [--fit] [--dir cw|ccw]
                       [--time-scale K] [--robot-max-speed MM_S] [--start]
+                      [--buffer-b B] [--buffer-id ID]
                       [--bridge] [--port N] [--debug] [--count N]
 ```
 
@@ -453,6 +454,34 @@ turned and the measurement stayed at zero with them.
 is what converts simulated m/s into motor units — measure it once for your
 robots if the motion looks uniformly too fast or too slow.
 
+**Cooperative buffering.** `--buffer-id ID` nominates one robot as the
+*buffering vehicle*, after
+[Korbmacher & Tordeux](https://vzu.uni-wuppertal.de/fileadmin/site/vzu/Stop-and-Go_Mitigation_via_Cooperative_Buffering.html):
+it keeps `B` times the nominal time gap (`--buffer-b B`), while the other `N-1`
+keep `(N-B)/(N-1)` of theirs. The mean time gap — and so the density — is
+unchanged, which is what makes it a strategy rather than a disguised reduction
+in traffic; the one enlarged gap gives that robot room to decelerate gently, and
+the wave dies at it instead of being reflected back. `B = 1` is the
+non-cooperative baseline.
+
+This is a change to the *desired spacing*, so it is not IDM-specific: every
+model here that has one takes it — `Reuschel`, `OVM`, `CF-OVM` and `FVDM`
+through `V(s)`, `ATG` through `T0`, `IDM` through `s*`. **`Pipes` is the
+exception**: its `dv/dt = Δv/τ` never reads the gap, so it has no desired
+spacing to enlarge and buffering does nothing under it (the tool says so at
+startup rather than appearing to act).
+
+More buffering is not always better, though — the compensation is simultaneously
+tightening the other `N-1`. Under `IDM`, the model the strategy was published
+for, damping is monotone; under `FVDM` and `CF-OVM` a large `B` destabilises the
+followers before the buffer can absorb anything, so sweep `B` rather than
+assuming. Two guards apply on hardware that the reference page does not need:
+`B` is capped where the followers reach half the nominal gap (the page can
+afford a fixed slider max of 10 because it always has 20 vehicles; three robots
+cannot), and buffering is suspended whenever the buffering robot is not
+currently on the ring, since otherwise every remaining robot would tighten up
+with nothing holding the space open.
+
 **Live bridge.** `--bridge` serves the vendored NetLogo page from
 `tools/car-following-models/` at `http://127.0.0.1:8770/` (loopback only) with a
 small script appended that reports the model chooser, the slider values and the
@@ -462,6 +491,12 @@ returns them to rest — so the simulation and the real ring run the same dynami
 side by side. The vendored HTML on disk is never modified: the script is
 injected at serve time, and the bridge carries UI parameters only, never `MSG_*`
 frames.
+
+That script also injects a small **Cooperative buffering** panel of its own
+(bottom right) with fields for `B` and the buffering robot's id, which ride out
+on the same POST as the NetLogo widgets. They are not NetLogo widgets because
+the vendored page is a fixed artefact, and because a robot id has no meaning
+inside the simulation.
 
 ---
 

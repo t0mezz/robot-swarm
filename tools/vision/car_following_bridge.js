@@ -10,6 +10,12 @@
 // updates widgets programmatically (and re-renders them on tab switches), and
 // a poll catches every one of those paths without knowing any of them. At a
 // few dozen elements every 200ms the cost is irrelevant.
+//
+// It also injects two controls of its own — the cooperative-buffering
+// parameter B and the id of the robot that plays the buffering vehicle. They
+// are not NetLogo widgets: the vendored page is a fixed artefact and is never
+// edited on disk, and a robot id has no meaning inside the simulation anyway.
+// They ride out on the same POST as everything else, as buffer-b / buffer-id.
 
 (function () {
   var last = "";
@@ -28,6 +34,64 @@
     var label = el.querySelector(".netlogo-label");
     if (label && label.textContent.trim().toLowerCase() === "setup") setupClicks++;
   }, true);
+
+  // Survives a reload of the page; the tool holds its own copy either way.
+  function stored(key, fallback) {
+    try { var v = localStorage.getItem(key); return v === null ? fallback : v; }
+    catch (e) { return fallback; }        // storage disabled — defaults are fine
+  }
+  function store(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) { /* not worth failing over */ }
+  }
+
+  var panel = null;
+
+  // One labelled number input, appended to the panel.
+  function field(labelText, key, attrs, hint) {
+    var wrap = document.createElement("label");
+    wrap.style.cssText = "display:block;margin:6px 0;font:12px sans-serif";
+    wrap.appendChild(document.createTextNode(labelText));
+
+    var input = document.createElement("input");
+    input.type = "number";
+    for (var a in attrs) input.setAttribute(a, attrs[a]);
+    input.value = stored(key, attrs.value);
+    input.style.cssText = "width:70px;margin-left:8px";
+    input.addEventListener("input", function () { store(key, input.value); });
+    wrap.appendChild(input);
+
+    var note = document.createElement("div");
+    note.textContent = hint;
+    note.style.cssText = "color:#555;font:10px sans-serif;margin-top:2px";
+    wrap.appendChild(note);
+
+    panel.appendChild(wrap);
+    return input;
+  }
+
+  var bInput, idInput;
+
+  function buildPanel() {
+    panel = document.createElement("div");
+    panel.style.cssText =
+      "position:fixed;right:12px;bottom:12px;z-index:9999;background:#fff;" +
+      "border:1px solid #999;border-radius:4px;padding:8px 10px;" +
+      "box-shadow:0 1px 6px rgba(0,0,0,.25)";
+
+    var title = document.createElement("div");
+    title.textContent = "Cooperative buffering";
+    title.style.cssText = "font:bold 12px sans-serif;margin-bottom:4px";
+    panel.appendChild(title);
+
+    // B = 1 is the non-cooperative baseline, so it is the default. The tool
+    // caps B against the live robot count (see cfMaxBuffering) rather than at
+    // a fixed maximum, so this input is deliberately not bounded above.
+    bInput  = field("B", "cf-buffer-b", { min: "1", step: "0.5", value: "1" },
+                    "buffering vehicle keeps B x the time gap");
+    idInput = field("Robot id", "cf-buffer-id", { min: "-1", step: "1", value: "-1" },
+                    "which robot buffers; -1 = none");
+    document.body.appendChild(panel);
+  }
 
   // Widget names come from the rendered labels, so this stays in step with
   // the page rather than with a hard-coded list of parameters. The names are
@@ -61,8 +125,15 @@
     });
     out.push("run=" + (running ? 1 : 0));
     out.push("setup=" + setupClicks);
+
+    // Our own two fields, on the same POST. The tool reads them per key, so
+    // they can ride along from the first snapshot like everything else.
+    out.push("buffer-b=" + (bInput.value || "1"));
+    out.push("buffer-id=" + (idInput.value || "-1"));
     return out.join("\n");
   }
+
+  buildPanel();
 
   setInterval(function () {
     var s = snapshot();

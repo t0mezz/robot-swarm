@@ -672,6 +672,63 @@ static void test_stop_cancels_alignment_in_progress() {
     EXPECT_TRUE(!run.aligning() && run.phase() == CfPhase::Setup, "back in setup");
 }
 
+// ── Cooperative buffering ────────────────────────────────────────────────────
+
+static void test_buffering_is_off_unless_the_buffering_vehicle_is_on_the_ring() {
+    CfRingConfig cfg;
+    cfg.simLengthM = 200.f;
+    CfRing ring(cfg);
+    CfParams p;
+
+    double t = 0.0;
+    placeEvenly(ring, 4, t);
+
+    // No buffering asked for.
+    ring.step(CfModel::IDM, p, 0.1f, RADIUS_MM, noNoise);
+    EXPECT_TRUE(!ring.bufferActive(), "no buffering by default");
+
+    // B = 1 is the non-cooperative baseline, not a buffer.
+    ring.step(CfModel::IDM, p, 0.1f, RADIUS_MM, noNoise, 2, 1.f);
+    EXPECT_TRUE(!ring.bufferActive(), "B = 1 is not buffering");
+
+    ring.step(CfModel::IDM, p, 0.1f, RADIUS_MM, noNoise, 2, 2.f);
+    EXPECT_TRUE(ring.bufferActive(), "buffering with the vehicle on the ring");
+
+    // A robot that is not on the ring cannot hold space open for anyone, so
+    // the followers must not be tightened on its behalf.
+    ring.step(CfModel::IDM, p, 0.1f, RADIUS_MM, noNoise, 9, 2.f);
+    EXPECT_TRUE(!ring.bufferActive(), "an absent buffering vehicle disables it");
+
+    // B is capped against the live count, not left at whatever was asked for.
+    ring.step(CfModel::IDM, p, 0.1f, RADIUS_MM, noNoise, 2, 99.f);
+    EXPECT_NEAR(ring.bufferB(), cfMaxBuffering(4), 1e-4, "B capped to the count");
+}
+
+static void test_the_buffering_vehicle_hangs_back() {
+    CfRingConfig cfg;
+    cfg.simLengthM = 200.f;
+    CfRing ring(cfg);
+    CfParams p;
+
+    double t = 0.0;
+    placeEvenly(ring, 4, t);
+
+    // Same start for both: everyone at rest, evenly spaced, so the only
+    // difference between the runs is the time gap each vehicle wants.
+    for (int i = 0; i < 40; ++i)
+        ring.step(CfModel::IDM, p, 0.1f, RADIUS_MM, noNoise);
+    float plain = ring.car(2)->speed;
+
+    ring.rest();
+    for (int i = 0; i < 40; ++i)
+        ring.step(CfModel::IDM, p, 0.1f, RADIUS_MM, noNoise, 2, 2.f);
+
+    EXPECT_TRUE(ring.car(2)->speed < plain,
+                "the buffering vehicle accelerates less into the same gap");
+    EXPECT_TRUE(ring.car(1)->speed > plain,
+                "the others take up the slack it gives back");
+}
+
 int main() {
     test_angle_helpers();
     test_order_is_sorted_by_angle();
@@ -701,6 +758,8 @@ int main() {
     test_align_cue_rests_a_running_ring_first();
     test_a_start_cue_cancels_a_pending_align();
     test_stop_cancels_alignment_in_progress();
+    test_buffering_is_off_unless_the_buffering_vehicle_is_on_the_ring();
+    test_the_buffering_vehicle_hangs_back();
 
     std::printf("test_car_following_ring: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

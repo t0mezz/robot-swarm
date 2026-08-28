@@ -206,9 +206,14 @@ public:
     // One model tick over the whole ring. `simDt` is the model's own (time
     // dilated) step; `noise()` supplies a unit gaussian and is only called
     // when params.sigma > 0.
+    //
+    // `bufferId` names the cooperative-buffering vehicle and `bufferB` how much
+    // room it takes (see cfBufferedParams). Both are passed per tick rather
+    // than held in CfRingConfig because the page can change either mid-run, and
+    // because B is resolved against the live vehicle count.
     template <class NoiseFn>
     void step(CfModel m, const CfParams& p, float simDt, float radiusMm,
-              NoiseFn&& noise) {
+              NoiseFn&& noise, int bufferId = -1, float bufferB = 1.f) {
         const int M = (int)order_.size();
         if (M == 0 || simDt <= 0.f) return;
 
@@ -216,6 +221,14 @@ public:
         if (spm <= 0.f) return;
 
         ++tick_;
+
+        // Buffering only means anything while the buffering vehicle is itself
+        // on the ring: with it gone, the compensation would tighten every
+        // remaining vehicle with nothing holding the space open — tighter than
+        // the baseline, which is the wrong way to fail. B is capped against the
+        // live count, which moves as robots are placed or drop out.
+        bufferActive_ = bufferB > 1.f && bufferId >= 0 && has(bufferId);
+        bufferB_      = std::min(bufferB, cfMaxBuffering(M));
 
         // Pass 1: measure and snapshot. Every vehicle's gap and speed have to
         // be read before any model runs, or a vehicle would see its
@@ -260,8 +273,16 @@ public:
             // the speed it had when it was last actually driving.
             if (!c.visible) continue;
 
+            // Under CF-OVM this also evaluates V() for the predecessor with
+            // this vehicle's time gap. That approximation predates buffering —
+            // the model wants the predecessor's own V() — and buffering only
+            // makes it visible for the one pair straddling the buffering
+            // vehicle.
+            CfParams cp = bufferActive_
+                ? cfBufferedParams(p, bufferB_, M, c.id == bufferId) : p;
+
             CfInput in{c.gap, c.speedIn, pred.speedIn, pred.gap};
-            float v = cfStep(m, in, p, simDt, p.sigma > 0.f ? noise() : 0.f);
+            float v = cfStep(m, in, cp, simDt, p.sigma > 0.f ? noise() : 0.f);
 
             // The robots only ever go forwards around the ring: a model that
             // undershoots into reverse would have them driving into their
@@ -322,7 +343,16 @@ public:
     bool has(int id) const { return cars_.count(id) != 0; }
     uint64_t tick() const { return tick_; }
 
+    // What the last step() actually did with the buffering arguments it was
+    // given, for the caller's status line: whether buffering was in force, and
+    // the B it was capped to.
+    bool  bufferActive() const { return bufferActive_; }
+    float bufferB()      const { return bufferB_; }
+
 private:
+    bool  bufferActive_ = false;
+    float bufferB_      = 1.f;
+
     // Slot i of M evenly spaced slots is baseAngle + i*360/M; baseAngle is the
     // circular mean of each vehicle's own (angle - its slot), which is the
     // rotation of the whole slot pattern that minimizes total angular travel

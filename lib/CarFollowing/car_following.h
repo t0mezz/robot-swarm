@@ -169,3 +169,66 @@ inline float cfStep(CfModel m, const CfInput& in, const CfParams& p,
     }
     return v;
 }
+
+// ── Cooperative buffering ────────────────────────────────────────────────────
+//
+// Transcribed from "Stop-and-Go Mitigation via Cooperative Buffering"
+// (Korbmacher & Tordeux, Univ. Wuppertal) — the companion NetLogo page to the
+// Sugiyama one above, same authors, same ring:
+//
+//     to move
+//       ask vehicles [
+//         let T (20 - B) / 19          ; N = 20, nominal time gap 1s
+//         if color = cyan [set T B]    ; the buffering vehicle
+//         ...
+//
+// One designated vehicle — the *buffering* vehicle — enlarges its desired time
+// gap to B*T, and the other N-1 shrink theirs to T*(N-B)/(N-1), so the mean
+// desired time gap stays T for every B. That compensation is the whole point
+// on a ring: the vehicles are boxed in by one another, so enlarging one gap
+// without shrinking the rest is not a strategy, it is just a lower density.
+// B = 1 puts everyone back on T — the non-cooperative baseline. Larger B buys
+// the buffering vehicle room to decelerate gently, and the wave dies at it.
+//
+// Note this is a transformation of the *desired spacing*, not of the IDM in
+// particular. Every model here that has a desired spacing takes it the same
+// way: Reuschel, OVM, CF-OVM and FVDM through V(s) = min(vmax, s/T), ATG
+// through T0, IDM through s*. Pipes is the sole exception — dv/dt = Dv/tau
+// never reads the gap at all, so there is nothing to inflate and buffering is
+// a no-op there; cfModelHasDesiredGap() reports that, so a caller can say so
+// rather than appear to do something.
+
+// Whether the model's dynamics depend on a desired spacing — i.e. whether
+// buffering (or the time-gap parameter at all) means anything for it.
+inline bool cfModelHasDesiredGap(CfModel m) { return m != CfModel::Pipes; }
+
+// A follower's time gap can be driven to zero by B = N, and a zero timeGap is
+// not "no room wanted" but the free-flow branch of V(s) / T0 — the exact
+// opposite of a fully committed buffer. Floor it just above that instead.
+constexpr float CF_MIN_TIME_GAP = 0.01f;  // s
+
+// The desired time gap for one vehicle under buffering, out of `n` on the ring.
+// `b` is clamped to [1, n]: beyond n the followers' share goes negative.
+inline float cfBufferedTimeGap(float timeGap, float b, int n, bool isBuffer) {
+    if (n < 2) return timeGap;                    // nobody to share the gap with
+    b = std::max(1.f, std::min(b, (float)n));
+    float t = isBuffer ? timeGap * b
+                       : timeGap * ((float)n - b) / ((float)n - 1.f);
+    return std::max(CF_MIN_TIME_GAP, t);
+}
+
+// The same, as a ready-to-use parameter set for cfStep()/cfAcceleration().
+inline CfParams cfBufferedParams(const CfParams& p, float b, int n, bool isBuffer) {
+    CfParams q = p;
+    q.timeGap  = cfBufferedTimeGap(p.timeGap, b, n, isBuffer);
+    return q;
+}
+
+// The largest B worth offering for `n` vehicles: the value at which the
+// followers are down to half the nominal time gap. The reference page's slider
+// stops at 10 for its 20 vehicles, which is this bound to within its integer
+// step — and unlike a fixed 10 it stays sane for the three or four robots that
+// actually fit on the arena ring.
+inline float cfMaxBuffering(int n) {
+    return n < 2 ? 1.f : ((float)n + 1.f) / 2.f;
+}
