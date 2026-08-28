@@ -23,8 +23,7 @@
 // without anything driving off. A run starts on a cue and continues until it
 // is stopped. The cue can come from any of:
 //
-//   • the NetLogo page's "Move" button, with --bridge (its "Setup" button
-//     stops the robots and returns them to rest, like the model's own setup)
+//   • the NetLogo page's "Move" button, with --bridge
 //   • space in the --debug view, or 's' to stop
 //   • a line on stdin when headless: <enter> or "go" starts, "s"/"stop" stops,
 //     "q" quits
@@ -35,6 +34,18 @@
 // radius, and says once what it is waiting for if it cannot start yet. A stop
 // returns the models to rest, so the next run begins from standstill the way
 // the experiment's own setup does.
+//
+// A second cue, *align*, drives the robots to evenly spaced slots on the ring
+// instead — what the NetLogo page's own "Setup" button asks for, so pressing
+// it (or 'a' in --debug, or "a"/"align" on stdin) first rests the robots the
+// same way a stop does and then spaces them out, finishing on its own once
+// every visible robot is in its slot and leaving the tool back in setup, ready
+// for a clean "Move". It is a position controller, not the car-following
+// model: CfRing::computeAlignTargets() picks the rotation of an evenly spaced
+// slot pattern that minimizes total travel, and the per-robot loop below
+// steers each one's raw angular error onto that slot the same way it steers
+// the model's tangential speed during a run — same heading controller, same
+// radial pull onto the ring, only the source of the tangential term differs.
 //
 // -- The ring is a saved fixture, not something inferred per run -------------
 //
@@ -162,6 +173,17 @@ static constexpr float MOTOR_HOLD_S = 0.20f;
 // registerRobot() is one-way, so a single frame of a misread id would
 // otherwise put that id in every MSG_SWARM frame for the rest of the run.
 static constexpr float REGISTER_DEBOUNCE_S = 0.30f;
+
+// Alignment — driving to evenly spaced slots ahead of a run, rather than a
+// car-following tick. Deliberately gentler than a run's own top speed: this
+// is a setup maneuver, not the experiment.
+static constexpr float ALIGN_TOLERANCE_DEG = 5.0f;   // "in its slot" for allAligned()
+// Debounce on "aligned", the same instinct as REGISTER_DEBOUNCE_S: a vehicle
+// only has to cross the tolerance band once, e.g. mid-jitter, not settle in
+// it, so the alignment would otherwise finish on a frame it is still moving.
+static constexpr float ALIGN_HOLD_S        = 0.5f;
+static constexpr float ALIGN_SPEED_MAX_MMS = 120.f;  // world units/s, real time — no time-scale
+static constexpr float K_ALIGN             = 2.0f;   // deg of error -> mm/s of tangential command
 
 // Heading controller — carried over from circle_demo.cpp's orbit mode, where
 // these were tuned on hardware.
@@ -471,8 +493,11 @@ int main(int argc, char* argv[]) {
                    "models: Reuschel Pipes OVM CF-OVM FVDM ATG IDM\n\n"
                    "The robots are set up but held still until a run is cued: the page's\n"
                    "\"Move\" button with --bridge, space in --debug, <enter> on stdin when\n"
-                   "headless, or --start at launch. \"s\"/\"stop\" (or the page's \"Setup\")\n"
-                   "returns them to rest; \"q\" quits.\n\n"
+                   "headless, or --start at launch. \"s\"/\"stop\" returns them to rest;\n"
+                   "\"q\" quits. The page's \"Setup\" button (or 'a' in --debug, or\n"
+                   "\"a\"/\"align\" on stdin) rests them the same way and then drives them to\n"
+                   "evenly spaced slots on the ring, finishing on its own once everyone\n"
+                   "visible is in place.\n\n"
                    "--time-scale K runs the experiment in slow motion: K real seconds per\n"
                    "simulated second, same trajectories, K times slower. Start around 4-6 —\n"
                    "at K=1 the defaults ask for full throttle on a sub-metre ring.\n\n"
@@ -570,7 +595,7 @@ int main(int argc, char* argv[]) {
         cv::namedWindow(WIN, cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
         cv::resizeWindow(WIN, tracker.frameSize().width, tracker.frameSize().height);
         cv::setMouseCallback(WIN, onMouse, nullptr);
-        printf("[cf] space = run/stop  s = stop  left-click = ring centre  "
+        printf("[cf] space = run/stop  s = stop  a = align to ring  left-click = ring centre  "
                "+/- = radius %.0f\n"
                "     f = fit ring to robots  , / . = time scale  q/Esc = quit\n",
                RADIUS_STEP_MM);
@@ -607,6 +632,7 @@ int main(int argc, char* argv[]) {
     auto lastModel = now, lastControl = now, lastStatus = now,
          lastHubRetry = now, lastMotorTx = now;
     auto fitSince = now;   // when the pending fit started waiting for robots
+    auto alignHoldStart = now;   // when allAligned() last became true (ALIGN_HOLD_S debounce)
     DemoHud::LoopFps loopFps;
 
     // Zeroes the whole command vector. Used on stop, on exit, and whenever the
@@ -648,9 +674,9 @@ int main(int argc, char* argv[]) {
         printf("[cf] time-scale is %.2gx — on a ring this small the models ask for "
                "near-full throttle. Try --time-scale 4.\n", timeScale);
     printf("[cf] setup — robots held still. %s\n",
-           debug   ? "Press space in the window to run."
-         : bridge  ? "Press \"Move\" on the page to run."
-                   : "Press <enter> here to run, \"s\" to stop, \"q\" to quit.");
+           debug   ? "Press space to run, 'a' to align to the ring."
+         : bridge  ? "Press \"Move\" on the page to run, \"Setup\" to align to the ring."
+                   : "Press <enter> to run, \"a\"/\"align\" to align, \"s\" to stop, \"q\" to quit.");
 
     while (g_running) {
         // A new frame is the trigger for control, but never a precondition for
@@ -674,7 +700,7 @@ int main(int argc, char* argv[]) {
                 long wasSetup = page.setupNo;
                 applyParams(body, params, model, page);
                 if (page.setupNo != wasSetup && wasSetup >= 0)
-                    run.requestStop("page setup");
+                    run.requestAlign("page setup");
                 else if (page.run != wasRun)
                     page.run ? run.requestStart("page") : run.requestStop("page");
             }
@@ -688,7 +714,9 @@ int main(int argc, char* argv[]) {
                 else if (line == "s" || line == "stop") run.requestStop("stdin");
                 else if (line.empty() || line == "g" || line == "go" || line == "start")
                     run.requestStart("stdin");
-                else printf("[cf] <enter>/go = run, s = stop, q = quit\n");
+                else if (line == "a" || line == "align")
+                    run.requestAlign("stdin");
+                else printf("[cf] <enter>/go = run, a/align = align, s = stop, q = quit\n");
             }
         }
 
@@ -763,12 +791,20 @@ int main(int argc, char* argv[]) {
         }
 
         // ── Run state ────────────────────────────────────────────────────────
-        // Everything the run needs before a wheel turns: a link to the robots,
-        // a ring to drive round, a settled roster to scale the model with, and
-        // at least one robot actually on it.
+        // Everything either cue needs before a wheel turns: a link to the
+        // robots, a ring to drive round, a settled roster to scale the model
+        // with, and at least one robot actually on it.
         const bool ready = swarm.isConnected() && ring.radius > 0.f &&
                            cfRing.scaleReady(ring.radius) && cfRing.visibleCount() > 0;
-        switch (run.update(ready)) {
+
+        // Debounced the same way REGISTER_DEBOUNCE_S is: allAligned() crossing
+        // true for one frame (e.g. mid-jitter) should not end the maneuver
+        // while a robot is still visibly moving.
+        if (!cfRing.allAligned(ALIGN_TOLERANCE_DEG)) alignHoldStart = now;
+        const bool alignDone = cfRing.allAligned(ALIGN_TOLERANCE_DEG) &&
+                               secondsSince(alignHoldStart) >= ALIGN_HOLD_S;
+
+        switch (run.update(ready, alignDone)) {
             case CfRunEvent::Started:
                 // The model's clock restarts with the run: without this the
                 // first tick would integrate the whole setup period.
@@ -786,6 +822,23 @@ int main(int argc, char* argv[]) {
                        ring.radius > 0.f              ? "" : " a ring radius",
                        cfRing.scaleReady(ring.radius) ? "" : " the roster to settle",
                        cfRing.visibleCount() > 0      ? "" : " a robot in view");
+                break;
+            case CfRunEvent::AlignStarted:
+                alignHoldStart = now;
+                printf("[cf] aligning (%s) — %d robots to evenly spaced slots\n",
+                       run.source(), cfRing.visibleCount());
+                break;
+            case CfRunEvent::AlignWaiting:
+                printf("[cf] align cued (%s) — waiting for%s%s%s%s\n", run.source(),
+                       swarm.isConnected()            ? "" : " the hub",
+                       ring.radius > 0.f              ? "" : " a ring radius",
+                       cfRing.scaleReady(ring.radius) ? "" : " the roster to settle",
+                       cfRing.visibleCount() > 0      ? "" : " a robot in view");
+                break;
+            case CfRunEvent::Aligned:
+                allStop();
+                sendMotors(true);
+                printf("[cf] aligned — ready to run\n");
                 break;
             case CfRunEvent::None:
                 break;
@@ -809,7 +862,7 @@ int main(int argc, char* argv[]) {
             float controlDt = clampf((float)secondsSince(lastControl), 0.001f, 0.2f);
             lastControl = now;
 
-            if (!run.running()) {
+            if (!run.running() && !run.aligning()) {
                 allStop();
             } else {
                 // Robots that have gone unseen for longer than the hold window
@@ -837,13 +890,32 @@ int main(int argc, char* argv[]) {
                     // does not come back with a stale yaw rate.
                     float yawRate = updateRate(s.yawRate, pose.yaw, now, D_TERM_WINDOW_S);
 
-                    if (c && simPerMm > 0.f && distC >= 1.f) {
+                    // Aligning: raw angular error onto the assigned slot, real
+                    // time throughout, no density/time-scale conversion — this
+                    // is not a car-following tick. Running: the model's speed,
+                    // converted from simulated to world units. Both feed the
+                    // same tangential/radial mix and heading controller below;
+                    // the sign flip matches vTan to the tx/ty basis, which is
+                    // itself signed by dirSign.
+                    bool  haveCmd = false;
+                    float vTan    = 0.f;
+                    if (run.aligning()) {
+                        if (c) {
+                            vTan = dirSign * clampf(K_ALIGN * c->alignErrorDeg,
+                                                    -ALIGN_SPEED_MAX_MMS, ALIGN_SPEED_MAX_MMS);
+                            haveCmd = true;
+                        }
+                    } else if (c && simPerMm > 0.f) {
+                        // sim m/s -> world units per *real* second: undo the
+                        // density scale, then the time dilation.
+                        vTan    = c->speed / simPerMm / timeScale;      // world units/s
+                        haveCmd = true;
+                    }
+
+                    if (haveCmd && distC >= 1.f) {
                         float rx = dx / distC,          ry = dy / distC;
                         float tx = dirSign * -ry,       ty = dirSign * rx;
 
-                        // sim m/s -> world units per *real* second: undo the
-                        // density scale, then the time dilation.
-                        float vTan = c->speed / simPerMm / timeScale;      // world units/s
                         float vRad = clampf(-K_RAD * (distC - ring.radius),
                                             -robotMaxMms * 0.5f, robotMaxMms * 0.5f);
 
@@ -898,7 +970,8 @@ int main(int argc, char* argv[]) {
             if (secondsSince(lastStatus) >= 1.0) {
                 lastStatus = now;
                 printf("[cf] %-7s %-8s loop:%3.0f  robots:%d/%d  %.2gx  hub:%s",
-                       run.running() ? "RUN" : (run.pending() ? "CUED" : "SETUP"),
+                       run.running()  ? "RUN"   :
+                       run.aligning() ? "ALIGN" : (run.pending() ? "CUED" : "SETUP"),
                        cfModelName(model), loopFps.fps(),
                        cfRing.visibleCount(), cfRing.rosterCount(), timeScale,
                        swarm.isConnected() ? "ok" : "--");
@@ -942,7 +1015,7 @@ int main(int argc, char* argv[]) {
                                       ring.radius, ring.centre.x, ring.centre.y),
                          {cpx.x + 14, cpx.y - 6}, 18, {0, 200, 255});
         tracker.drawText(disp,
-                         "space = run/stop   s = stop   click = centre   +/- = radius   "
+                         "space = run/stop   s = stop   a = align   click = centre   +/- = radius   "
                          "f = fit   , / . = time scale   q = quit",
                          {12, disp.rows - 16}, 18, {0, 200, 255});
 
@@ -958,21 +1031,28 @@ int main(int argc, char* argv[]) {
         DemoHud hud;
         hud.title(DemoHud::fmt("loop_fps:%.0f  %s  %s  robots:%d/%d  ring:%.0f  %.2gx  HUB:%s%s",
                                loopFps.fps(),
-                               run.running() ? "RUNNING" : (run.pending() ? "CUED" : "SETUP"),
+                               run.running()  ? "RUNNING" :
+                               run.aligning() ? "ALIGNING" : (run.pending() ? "CUED" : "SETUP"),
                                cfModelName(model),
                                cfRing.visibleCount(), cfRing.rosterCount(),
                                ring.radius, timeScale,
                                swarm.isConnected() ? "OK" : "INACTIVE",
                                bridge ? "  BRIDGE" : ""),
-                  run.running() && swarm.isConnected() ? DemoHud::COL_OK : DemoHud::COL_BAD);
-        hud.header({"ID", "Gap m", "v m/s", "meas", "Mot-L", "Mot-R", "Battery"});
+                  run.running() && swarm.isConnected()  ? DemoHud::COL_OK :
+                  run.aligning() && swarm.isConnected() ? DemoHud::COL_WARN : DemoHud::COL_BAD);
+        // Gap/speed/measured are only meaningful mid-run — the model does not
+        // step while aligning, so they would otherwise show whatever the last
+        // run left behind. Slot error is the aligning equivalent.
+        hud.header(run.aligning()
+                   ? std::vector<std::string>{"ID", "Slot deg", "Err deg", "-", "Mot-L", "Mot-R", "Battery"}
+                   : std::vector<std::string>{"ID", "Gap m", "v m/s", "meas", "Mot-L", "Mot-R", "Battery"});
         for (int id : cfRing.order()) {
             const CfRingCar* c  = cfRing.car(id);
             const auto&      ss = swarm.robotState((uint8_t)id);
             hud.row({DemoHud::fmt("%d", id),
-                     DemoHud::fmt("%.1f", c->gap),
-                     DemoHud::fmt("%.2f", c->speed),
-                     DemoHud::fmt("%.2f", c->measured),
+                     run.aligning() ? DemoHud::fmt("%.0f", c->alignTargetDeg) : DemoHud::fmt("%.1f", c->gap),
+                     run.aligning() ? DemoHud::fmt("%+.0f", c->alignErrorDeg) : DemoHud::fmt("%.2f", c->speed),
+                     run.aligning() ? "-" : DemoHud::fmt("%.2f", c->measured),
                      DemoHud::fmt("%+d", (int)motors[id][0]),
                      DemoHud::fmt("%+d", (int)motors[id][1]),
                      ss.known ? DemoHud::formatBattery(ss.battery) : "--"},
@@ -985,6 +1065,7 @@ int main(int argc, char* argv[]) {
         if (key == 'q' || key == 27) break;
         if (key == ' ') run.toggle("key");
         if (key == 's') run.requestStop("key");
+        if (key == 'a') run.requestAlign("key");
         if (key == 'f') {
             fitPending = true; fitSince = now;
             printf("[ring] fitting to the visible robots\n");

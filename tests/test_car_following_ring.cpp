@@ -479,6 +479,88 @@ static void test_rest_returns_the_ring_to_standstill() {
     EXPECT_TRUE(ring.order().size() == 3, "but the roster survives a re-arm");
 }
 
+// ── Alignment ────────────────────────────────────────────────────────────────
+
+static void test_align_targets_are_already_correct_when_evenly_spaced() {
+    CfRingConfig cfg;
+    CfRing ring(cfg);
+    double t = 0.0;
+    // Rotated by 37 deg, so the test cannot pass by accident if the rotation
+    // that minimizes travel were hard-coded to zero.
+    placeEvenly(ring, 4, t, 37.f);
+    for (int id = 0; id < 4; ++id)
+        EXPECT_NEAR(ring.car(id)->alignErrorDeg, 0.f, 1e-2,
+                    "already on an evenly spaced slot needs no travel");
+    EXPECT_TRUE(ring.allAligned(1.f), "and allAligned agrees");
+}
+
+// The rotation computeAlignTargets() picks is the one that minimizes total
+// travel, not whichever vehicle the angle sort happens to put first. Checked
+// against a concrete alternative (pin slot 0 to vehicle 0) rather than a
+// pinned value, same instinct as the rest of this file.
+static void test_align_targets_minimize_total_travel() {
+    CfRingConfig cfg;
+    CfRing ring(cfg);
+    double t = 0.0;
+    const float angles[4] = {0.f, 5.f, 10.f, 15.f};   // bunched together
+    for (int frame = 0; frame < 3; ++frame) {
+        t += 1.0;
+        ring.beginFrame();
+        for (int i = 0; i < 4; ++i) ring.observe(i, angles[i], t);
+        ring.endFrame(t);
+    }
+
+    double sumSq = 0.0;
+    for (int id = 0; id < 4; ++id) {
+        double e = ring.car(id)->alignErrorDeg;
+        sumSq += e * e;
+    }
+
+    double naiveSumSq = 0.0;
+    for (int i = 0; i < 4; ++i) {
+        float target = cfWrap360(angles[0] + 90.f * (float)i);
+        double e = cfNormAngleDeg(target - angles[i]);
+        naiveSumSq += e * e;
+    }
+    EXPECT_TRUE(sumSq <= naiveSumSq + 1e-6,
+                "circular-mean rotation travels no more than pinning slot 0 to vehicle 0");
+}
+
+// A vehicle that blinks out keeps its place on the ring (CfRingConfig::holdS)
+// and so still shapes the target rotation, but allAligned() only requires the
+// vehicles currently visible to be in their slots — the same asymmetry
+// step()/gap already has for dropouts.
+//
+// The shove has to stay inside vehicle 0's own slot (< half of 360/N) or it
+// would cross another vehicle's angle and the angle sort would hand out
+// slots in a different order entirely — order_ is always the current angular
+// sort, not an identity pinned to who held which slot a moment ago.
+static void test_all_aligned_skips_a_vehicle_that_is_not_currently_visible() {
+    CfRingConfig cfg;
+    CfRing ring(cfg);
+    double t = 0.0;
+    const int N = 8;   // slots are 45 deg apart
+    placeEvenly(ring, N, t);
+    EXPECT_TRUE(ring.allAligned(1.f), "starts evenly spaced");
+
+    // Vehicle 0 gets shoved 20 deg out of its slot, then blinks out.
+    t += 0.1;
+    ring.beginFrame();
+    ring.observe(0, 20.f, t);
+    for (int i = 1; i < N; ++i) ring.observe(i, 360.f * (float)i / (float)N, t);
+    ring.endFrame(t);
+    EXPECT_TRUE(std::fabs(ring.car(0)->alignErrorDeg) > 10.f,
+                "the shoved vehicle is well out of its slot");
+
+    t += 0.1;
+    ring.beginFrame();
+    for (int i = 1; i < N; ++i) ring.observe(i, 360.f * (float)i / (float)N, t);   // 0 not observed
+    ring.endFrame(t);
+
+    EXPECT_TRUE(ring.allAligned(5.f),
+                "the rest are close enough even though the missing vehicle is not");
+}
+
 // ── Run state ────────────────────────────────────────────────────────────────
 
 static void test_run_state_starts_in_setup() {
@@ -534,6 +616,62 @@ static void test_stop_while_never_started_is_quiet() {
                 "stopping something that was never running says nothing");
 }
 
+// ── Run state: align cue ────────────────────────────────────────────────────
+
+static void test_an_align_cue_is_latched_until_ready() {
+    CfRunState run;
+    run.requestAlign("page");
+    EXPECT_TRUE(run.phase() == CfPhase::Setup, "not aligning yet");
+    EXPECT_TRUE(run.update(false, false) == CfRunEvent::AlignWaiting,
+                "says what it is waiting for");
+    EXPECT_TRUE(run.update(false, false) == CfRunEvent::None, "but only once");
+
+    EXPECT_TRUE(run.update(true, false) == CfRunEvent::AlignStarted,
+                "starts as soon as it can");
+    EXPECT_TRUE(run.aligning(), "aligning");
+    EXPECT_TRUE(run.update(true, false) == CfRunEvent::None,
+                "stays there quietly until the caller reports it aligned");
+
+    EXPECT_TRUE(run.update(true, true) == CfRunEvent::Aligned,
+                "finishes on its own once the rig reports every robot in its slot");
+    EXPECT_TRUE(!run.aligning() && run.phase() == CfPhase::Setup, "back in setup");
+}
+
+static void test_align_cue_rests_a_running_ring_first() {
+    CfRunState run;
+    run.requestStart("key");
+    run.update(true, false);
+    EXPECT_TRUE(run.running(), "running");
+
+    run.requestAlign("page");
+    EXPECT_TRUE(run.update(true, false) == CfRunEvent::Stopped,
+                "align interrupts a run with a stop first, like requestStop");
+    EXPECT_TRUE(run.update(true, false) == CfRunEvent::AlignStarted,
+                "then starts aligning on the next frame");
+}
+
+static void test_a_start_cue_cancels_a_pending_align() {
+    CfRunState run;
+    run.requestAlign("page");
+    EXPECT_TRUE(run.update(false, false) == CfRunEvent::AlignWaiting, "align cued");
+
+    run.requestStart("key");
+    EXPECT_TRUE(run.update(true, false) == CfRunEvent::Started,
+                "regression: a run cue supersedes a pending align rather than queuing behind it");
+}
+
+static void test_stop_cancels_alignment_in_progress() {
+    CfRunState run;
+    run.requestAlign("page");
+    run.update(true, false);
+    EXPECT_TRUE(run.aligning(), "aligning");
+
+    run.requestStop("key");
+    EXPECT_TRUE(run.update(true, false) == CfRunEvent::Stopped,
+                "stop interrupts an alignment in progress");
+    EXPECT_TRUE(!run.aligning() && run.phase() == CfPhase::Setup, "back in setup");
+}
+
 int main() {
     test_angle_helpers();
     test_order_is_sorted_by_angle();
@@ -551,11 +689,18 @@ int main() {
     test_pinned_count_and_length_override_the_roster();
     test_scale_is_not_ready_before_the_roster_settles();
     test_rest_returns_the_ring_to_standstill();
+    test_align_targets_are_already_correct_when_evenly_spaced();
+    test_align_targets_minimize_total_travel();
+    test_all_aligned_skips_a_vehicle_that_is_not_currently_visible();
     test_run_state_starts_in_setup();
     test_a_start_cue_is_latched_until_ready();
     test_stop_returns_to_setup_once();
     test_toggle_cancels_a_pending_cue();
     test_stop_while_never_started_is_quiet();
+    test_an_align_cue_is_latched_until_ready();
+    test_align_cue_rests_a_running_ring_first();
+    test_a_start_cue_cancels_a_pending_align();
+    test_stop_cancels_alignment_in_progress();
 
     std::printf("test_car_following_ring: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

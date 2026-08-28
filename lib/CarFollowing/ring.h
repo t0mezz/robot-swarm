@@ -81,6 +81,12 @@ struct CfRingCar {
     // Snapshot of `speed` taken before any model runs, so every vehicle steps
     // off the same tick rather than seeing an already-updated predecessor.
     float speedIn = 0.f;
+
+    // Where this vehicle's slot is if the current order were spaced evenly
+    // around the ring, and how far it presently is from that slot — see
+    // computeAlignTargets(). Valid once endFrame() has run, same as gap/speed.
+    float alignTargetDeg = 0.f;
+    float alignErrorDeg  = 0.f;
 };
 
 struct CfRingConfig {
@@ -150,6 +156,8 @@ public:
             rosterCount_   = live;
             rosterChanged_ = true;
         }
+
+        computeAlignTargets();
     }
 
     // ── Roster and scale ─────────────────────────────────────────────────────
@@ -262,6 +270,29 @@ public:
         }
     }
 
+    // ── Alignment ────────────────────────────────────────────────────────────
+    //
+    // What the page's "Setup" button asks for: spread the current order out
+    // into evenly spaced slots rather than driving a car-following model, so a
+    // run starts from a clean, evenly spaced ring instead of wherever the
+    // previous run (or being placed by hand) left everyone. alignTargetDeg /
+    // alignErrorDeg on each car are (re)computed by computeAlignTargets(),
+    // called from endFrame() so they are as current as gap/order.
+
+    // True once every currently visible vehicle is within `toleranceDeg` of
+    // its slot. False with nobody visible or nobody on the ring at all, so it
+    // can never fire on an empty ring.
+    bool allAligned(float toleranceDeg) const {
+        if (order_.empty()) return false;
+        bool any = false;
+        for (auto& [id, c] : cars_) {
+            if (!c.visible) continue;
+            any = true;
+            if (std::fabs(c.alignErrorDeg) > toleranceDeg) return false;
+        }
+        return any;
+    }
+
     // Back to rest, keeping the roster — what a re-arm does, so the next run
     // starts from standstill the way the experiment's setup does.
     void rest() {
@@ -292,6 +323,32 @@ public:
     uint64_t tick() const { return tick_; }
 
 private:
+    // Slot i of M evenly spaced slots is baseAngle + i*360/M; baseAngle is the
+    // circular mean of each vehicle's own (angle - its slot), which is the
+    // rotation of the whole slot pattern that minimizes total angular travel
+    // — rather than pinning slot 0 to whichever vehicle the angle sort put
+    // first, which could ask that vehicle alone to travel nearly a full lap.
+    void computeAlignTargets() {
+        const int M = (int)order_.size();
+        if (M == 0) return;
+        const float slotDeg = 360.f / (float)M;
+
+        double sumSin = 0.0, sumCos = 0.0;
+        for (int i = 0; i < M; ++i) {
+            double d = (double)cfNormAngleDeg(cars_[order_[i]].angleDeg - slotDeg * (float)i)
+                     * (3.14159265358979323846 / 180.0);
+            sumSin += std::sin(d);
+            sumCos += std::cos(d);
+        }
+        float base = (float)(std::atan2(sumSin, sumCos) * (180.0 / 3.14159265358979323846));
+
+        for (int i = 0; i < M; ++i) {
+            CfRingCar& c    = cars_[order_[i]];
+            c.alignTargetDeg = cfWrap360(base + slotDeg * (float)i);
+            c.alignErrorDeg  = cfNormAngleDeg(c.alignTargetDeg - c.angleDeg);
+        }
+    }
+
     CfRingConfig                        cfg_;
     std::unordered_map<int, CfRingCar>  cars_;
     std::vector<int>                    order_;
@@ -311,28 +368,38 @@ private:
 //
 //   Setup    — robots are tracked and the ring can be edited, motors held at
 //              zero. This is where a run starts and where a stop returns to.
+//   Aligning — the robots drive to evenly spaced slots on the ring (see
+//              CfRing::computeAlignTargets/allAligned) rather than running a
+//              car-following model. Finishes on its own once every visible
+//              robot is in its slot, back to Setup, ready for a clean run.
 //   Running  — the models step and the robots drive, until stopped.
 //
-// A start cue is *latched*, not obeyed on the spot: cues arrive from the
-// NetLogo page, a key in the debug view or a line on stdin, none of which
+// A start or align cue is *latched*, not obeyed on the spot: cues arrive from
+// the NetLogo page, a key in the debug view or a line on stdin, none of which
 // know whether the hub is up, the roster has settled or the ring is set. The
-// run begins on the first frame where it can, and says once what it is
-// waiting for.
+// phase change happens on the first frame it can, and says once what it is
+// waiting for. The two cues are mutually exclusive — requesting one drops the
+// other — and either supersedes whichever of Running/Aligning is current, the
+// same way a stop does.
 
-enum class CfPhase { Setup, Running };
+enum class CfPhase { Setup, Aligning, Running };
 
 enum class CfRunEvent {
     None,
-    Waiting,   // a start cue is latched but the rig is not ready yet
+    Waiting,       // a start cue is latched but the rig is not ready yet
     Started,
     Stopped,
+    AlignWaiting,  // an align cue is latched but the rig is not ready yet
+    AlignStarted,
+    Aligned,       // alignment finished on its own; back in Setup
 };
 
 class CfRunState {
 public:
-    CfPhase phase()   const { return phase_; }
-    bool    running() const { return phase_ == CfPhase::Running; }
-    bool    pending() const { return wantStart_; }
+    CfPhase phase()    const { return phase_; }
+    bool    running()  const { return phase_ == CfPhase::Running; }
+    bool    aligning() const { return phase_ == CfPhase::Aligning; }
+    bool    pending()  const { return wantStart_; }
 
     // Where the last cue came from ("page", "key", "stdin", "--start", ...),
     // for the log line the caller prints.
@@ -341,13 +408,24 @@ public:
     void requestStart(const char* src) {
         source_    = src;
         wantStart_ = true;
+        wantAlign_ = false;   // a run cue supersedes a pending align
         told_      = false;
+    }
+
+    void requestAlign(const char* src) {
+        source_    = src;
+        wantAlign_ = true;
+        wantStart_ = false;
+        stopping_  = phase_ != CfPhase::Setup;   // leaving Running/Aligning rests first
+        phase_     = CfPhase::Setup;
+        alignTold_ = false;
     }
 
     void requestStop(const char* src) {
         source_    = src;
         wantStart_ = false;
-        stopping_  = phase_ == CfPhase::Running;
+        wantAlign_ = false;
+        stopping_  = phase_ != CfPhase::Setup;
         phase_     = CfPhase::Setup;
     }
 
@@ -356,24 +434,49 @@ public:
         else                                          requestStart(src);
     }
 
-    // Call once per frame. `ready` is the caller's readiness test; `why` is
-    // what it is waiting for, reported once per cue.
-    CfRunEvent update(bool ready) {
+    // Call once per frame. `ready` is the caller's readiness test, shared by
+    // both cues (hub up, ring set, roster settled, someone in view). `aligned`
+    // is only consulted while Aligning: the caller's report that every visible
+    // robot is currently in its slot.
+    CfRunEvent update(bool ready, bool aligned = false) {
         if (stopping_) { stopping_ = false; return CfRunEvent::Stopped; }
-        if (!wantStart_ || phase_ == CfPhase::Running) return CfRunEvent::None;
-        if (!ready) {
-            if (told_) return CfRunEvent::None;
-            told_ = true;
-            return CfRunEvent::Waiting;
+
+        if (phase_ == CfPhase::Aligning) {
+            if (!aligned) return CfRunEvent::None;
+            phase_ = CfPhase::Setup;
+            return CfRunEvent::Aligned;
         }
-        phase_ = CfPhase::Running;
-        return CfRunEvent::Started;
+
+        if (wantStart_ && phase_ != CfPhase::Running) {
+            if (!ready) {
+                if (told_) return CfRunEvent::None;
+                told_ = true;
+                return CfRunEvent::Waiting;
+            }
+            phase_ = CfPhase::Running;
+            return CfRunEvent::Started;
+        }
+
+        if (wantAlign_ && phase_ == CfPhase::Setup) {
+            if (!ready) {
+                if (alignTold_) return CfRunEvent::None;
+                alignTold_ = true;
+                return CfRunEvent::AlignWaiting;
+            }
+            wantAlign_ = false;
+            phase_     = CfPhase::Aligning;
+            return CfRunEvent::AlignStarted;
+        }
+
+        return CfRunEvent::None;
     }
 
 private:
     CfPhase     phase_     = CfPhase::Setup;
     bool        wantStart_ = false;
+    bool        wantAlign_ = false;
     bool        stopping_  = false;
     bool        told_      = false;
+    bool        alignTold_ = false;
     const char* source_    = "";
 };
