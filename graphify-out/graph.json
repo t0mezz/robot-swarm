@@ -205,17 +205,17 @@
       "source_location": "L293"
     },
     {
-      "id": "tools_vision_circle_demo_controlscore",
-      "label": "ControlScore",
+      "id": "tools_vision_circle_demo_rateestimator",
+      "label": "RateEstimator",
       "_callable": true,
       "_callable_class": true,
       "_origin": "ast",
       "community": 13,
       "community_name": "main",
       "file_type": "code",
-      "norm_label": "controlscore",
+      "norm_label": "rateestimator",
       "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L163"
+      "source_location": "L110"
     },
     {
       "id": "src_dongle_main_pingtracker",
@@ -829,17 +829,17 @@
       "source_location": "L30"
     },
     {
-      "id": "tools_vision_circle_demo_rateestimator",
-      "label": "RateEstimator",
+      "id": "tools_vision_circle_demo_controlscore",
+      "label": "ControlScore",
       "_callable": true,
       "_callable_class": true,
       "_origin": "ast",
       "community": 55,
       "community_name": "ControlScore",
       "file_type": "code",
-      "norm_label": "rateestimator",
+      "norm_label": "controlscore",
       "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L110"
+      "source_location": "L163"
     },
     {
       "id": "src_receiver_main_rxslot",
@@ -2631,28 +2631,16 @@
       "source_location": "L304"
     },
     {
-      "id": "tools_vision_circle_demo_totalscore",
-      "label": "totalScore()",
+      "id": "tools_vision_circle_demo_updaterate",
+      "label": "updateRate()",
       "_callable": true,
       "_origin": "ast",
       "community": 13,
       "community_name": "main",
       "file_type": "code",
-      "norm_label": "totalscore()",
+      "norm_label": "updaterate()",
       "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L193"
-    },
-    {
-      "id": "tools_vision_circle_demo_updatescore",
-      "label": "updateScore()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "main",
-      "file_type": "code",
-      "norm_label": "updatescore()",
-      "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L173"
+      "source_location": "L117"
     },
     {
       "id": "tools_vision_circle_demo_worldtopixel",
@@ -6075,16 +6063,28 @@
       "source_location": "L129"
     },
     {
-      "id": "tools_vision_circle_demo_updaterate",
-      "label": "updateRate()",
+      "id": "tools_vision_circle_demo_totalscore",
+      "label": "totalScore()",
       "_callable": true,
       "_origin": "ast",
       "community": 55,
       "community_name": "ControlScore",
       "file_type": "code",
-      "norm_label": "updaterate()",
+      "norm_label": "totalscore()",
       "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L117"
+      "source_location": "L193"
+    },
+    {
+      "id": "tools_vision_circle_demo_updatescore",
+      "label": "updateScore()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 55,
+      "community_name": "ControlScore",
+      "file_type": "code",
+      "norm_label": "updatescore()",
+      "source_file": "tools/vision/circle_demo.cpp",
+      "source_location": "L173"
     },
     {
       "id": "lib_swarmprotocol_debug_protocol_registerallfields",
@@ -8524,83 +8524,6 @@
       "source_location": "L300"
     },
     {
-      "id": "tools_vision_circle_demo_controlscore_biasema",
-      "label": "biasEma",
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "main",
-      "file_type": "code",
-      "norm_label": "biasema",
-      "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L165"
-    },
-    {
-      "id": "tools_vision_circle_demo_controlscore_init",
-      "label": "init",
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "main",
-      "file_type": "code",
-      "norm_label": "init",
-      "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L164"
-    },
-    {
-      "id": "tools_vision_circle_demo_controlscore_jerkvar",
-      "label": "jerkVar",
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "main",
-      "file_type": "code",
-      "norm_label": "jerkvar",
-      "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L167"
-    },
-    {
-      "id": "tools_vision_circle_demo_controlscore_oscvar",
-      "label": "oscVar",
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "main",
-      "file_type": "code",
-      "norm_label": "oscvar",
-      "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L166"
-    },
-    {
-      "id": "tools_vision_circle_demo_controlscore_posbiasema",
-      "label": "posBiasEma",
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "main",
-      "file_type": "code",
-      "norm_label": "posbiasema",
-      "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L168"
-    },
-    {
-      "id": "tools_vision_circle_demo_controlscore_posvar",
-      "label": "posVar",
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "main",
-      "file_type": "code",
-      "norm_label": "posvar",
-      "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L169"
-    },
-    {
-      "id": "tools_vision_circle_demo_controlscore_prevturn",
-      "label": "prevTurn",
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "main",
-      "file_type": "code",
-      "norm_label": "prevturn",
-      "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L170"
-    },
-    {
       "id": "tools_vision_circle_demo_cpp_point2f",
       "label": "Point2f",
       "_origin": "ast",
@@ -8608,6 +8531,17 @@
       "community_name": "main",
       "file_type": "code",
       "norm_label": "point2f",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "tools_vision_circle_demo_cpp_time_point",
+      "label": "time_point",
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "main",
+      "file_type": "code",
+      "norm_label": "time_point",
       "source_file": "",
       "source_location": ""
     },
@@ -8621,6 +8555,50 @@
       "norm_label": "unordered_map",
       "source_file": "",
       "source_location": ""
+    },
+    {
+      "id": "tools_vision_circle_demo_rateestimator_baseangle",
+      "label": "baseAngle",
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "main",
+      "file_type": "code",
+      "norm_label": "baseangle",
+      "source_file": "tools/vision/circle_demo.cpp",
+      "source_location": "L112"
+    },
+    {
+      "id": "tools_vision_circle_demo_rateestimator_basetime",
+      "label": "baseTime",
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "main",
+      "file_type": "code",
+      "norm_label": "basetime",
+      "source_file": "tools/vision/circle_demo.cpp",
+      "source_location": "L114"
+    },
+    {
+      "id": "tools_vision_circle_demo_rateestimator_init",
+      "label": "init",
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "main",
+      "file_type": "code",
+      "norm_label": "init",
+      "source_file": "tools/vision/circle_demo.cpp",
+      "source_location": "L111"
+    },
+    {
+      "id": "tools_vision_circle_demo_rateestimator_rate",
+      "label": "rate",
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "main",
+      "file_type": "code",
+      "norm_label": "rate",
+      "source_file": "tools/vision/circle_demo.cpp",
+      "source_location": "L113"
     },
     {
       "id": "lib_swarmprotocol_hardware",
@@ -13749,40 +13727,18 @@
       "source_location": "L68"
     },
     {
-      "id": "tools_vision_circle_demo_cpp_time_point",
-      "label": "time_point",
+      "id": "tools_vision_circle_demo_controlscore_biasema",
+      "label": "biasEma",
       "_origin": "ast",
       "community": 55,
       "community_name": "ControlScore",
       "file_type": "code",
-      "norm_label": "time_point",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "tools_vision_circle_demo_rateestimator_baseangle",
-      "label": "baseAngle",
-      "_origin": "ast",
-      "community": 55,
-      "community_name": "ControlScore",
-      "file_type": "code",
-      "norm_label": "baseangle",
+      "norm_label": "biasema",
       "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L112"
+      "source_location": "L165"
     },
     {
-      "id": "tools_vision_circle_demo_rateestimator_basetime",
-      "label": "baseTime",
-      "_origin": "ast",
-      "community": 55,
-      "community_name": "ControlScore",
-      "file_type": "code",
-      "norm_label": "basetime",
-      "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L114"
-    },
-    {
-      "id": "tools_vision_circle_demo_rateestimator_init",
+      "id": "tools_vision_circle_demo_controlscore_init",
       "label": "init",
       "_origin": "ast",
       "community": 55,
@@ -13790,18 +13746,62 @@
       "file_type": "code",
       "norm_label": "init",
       "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L111"
+      "source_location": "L164"
     },
     {
-      "id": "tools_vision_circle_demo_rateestimator_rate",
-      "label": "rate",
+      "id": "tools_vision_circle_demo_controlscore_jerkvar",
+      "label": "jerkVar",
       "_origin": "ast",
       "community": 55,
       "community_name": "ControlScore",
       "file_type": "code",
-      "norm_label": "rate",
+      "norm_label": "jerkvar",
       "source_file": "tools/vision/circle_demo.cpp",
-      "source_location": "L113"
+      "source_location": "L167"
+    },
+    {
+      "id": "tools_vision_circle_demo_controlscore_oscvar",
+      "label": "oscVar",
+      "_origin": "ast",
+      "community": 55,
+      "community_name": "ControlScore",
+      "file_type": "code",
+      "norm_label": "oscvar",
+      "source_file": "tools/vision/circle_demo.cpp",
+      "source_location": "L166"
+    },
+    {
+      "id": "tools_vision_circle_demo_controlscore_posbiasema",
+      "label": "posBiasEma",
+      "_origin": "ast",
+      "community": 55,
+      "community_name": "ControlScore",
+      "file_type": "code",
+      "norm_label": "posbiasema",
+      "source_file": "tools/vision/circle_demo.cpp",
+      "source_location": "L168"
+    },
+    {
+      "id": "tools_vision_circle_demo_controlscore_posvar",
+      "label": "posVar",
+      "_origin": "ast",
+      "community": 55,
+      "community_name": "ControlScore",
+      "file_type": "code",
+      "norm_label": "posvar",
+      "source_file": "tools/vision/circle_demo.cpp",
+      "source_location": "L169"
+    },
+    {
+      "id": "tools_vision_circle_demo_controlscore_prevturn",
+      "label": "prevTurn",
+      "_origin": "ast",
+      "community": 55,
+      "community_name": "ControlScore",
+      "file_type": "code",
+      "norm_label": "prevturn",
+      "source_file": "tools/vision/circle_demo.cpp",
+      "source_location": "L170"
     },
     {
       "id": "lib_swarmprotocol_debug_protocol",
@@ -43750,5 +43750,5 @@
       "source_file": "CLAUDE.md"
     }
   ],
-  "built_at_commit": "303add7cb4440f39675390edef65dfa38251b3f9"
+  "built_at_commit": "8c6ca61070530aca7094cf7fb8e6f04648e919c9"
 }
