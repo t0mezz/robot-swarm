@@ -346,12 +346,34 @@ per second, no window); `--debug` opens the usual view and HUD.
 ./build/car_following [--model NAME] [--speed-max M/S] [--car-size M] [--time-gap S]
                       [--reaction-time S] [--sigma A] [--sim-length M] [--radius MM]
                       [--centre X Y] [--ring-file PATH] [--fit] [--dir cw|ccw]
-                      [--time-scale K] [--robot-max-speed MM_S] [--bridge]
-                      [--port N] [--debug]
+                      [--time-scale K] [--robot-max-speed MM_S] [--start]
+                      [--bridge] [--port N] [--debug] [--count N]
 ```
 
 Models: `Reuschel` `Pipes` `OVM` `CF-OVM` `FVDM` `ATG` `IDM` (default `FVDM`, the
 NetLogo page's default). Parameter defaults match that page's sliders.
+
+**Setup, cue, run.** The tool comes up in *setup*: camera, hub and ring are live
+and every motor is held at zero, so the robots can be placed and the ring dialled
+in without anything driving off. A run starts on a cue and continues until it is
+stopped; stopping returns the models to rest, so the next run begins from
+standstill the way the experiment's own setup does.
+
+| Cue | Start | Stop |
+|---|---|---|
+| NetLogo page (`--bridge`) | press **Move** | press **Move** again, or **Setup** |
+| `--debug` window | `space` | `space` or `s` |
+| headless terminal | `<enter>`, `go` | `s` or `stop` (`q` quits) |
+| launch flag | `--start` | — |
+
+A cue is latched rather than obeyed on the spot: the run begins on the first
+frame where the hub is connected, the ring has a radius, the roster has settled
+and at least one robot is in view, and it says once what it is still waiting for.
+
+`--count N` pins the number of vehicles the virtual ring is sized for. Without
+it the count is the *settled* roster (a change has to hold for a second), so a
+dropped detection cannot rescale the model mid-run; a robot that blinks out also
+keeps its place on the ring for a second, so its follower keeps braking for it.
 
 **The ring** is a saved fixture of the arena, kept in `/tmp/car_following_ring.yml`
 in the same format `circle_demo` uses for its circle — so if you have already
@@ -362,11 +384,12 @@ is the ring the next one starts on.
 
 | Key / action | Effect (in `--debug`) |
 |---|---|
+| `space` | Run / stop |
+| `s` | Stop, back to setup |
 | Left-click | Move the ring centre there |
 | `+` / `-` | Radius ±25 mm |
 | `f` | Fit the ring to the robots that are visible |
 | `,` / `.` | Time scale ÷ / × 1.25 |
-| `s` | Stop all (toggle) |
 | `q` / Esc | Quit |
 
 `--fit` does that same fit once at startup: it takes the centroid of the visible
@@ -401,18 +424,30 @@ and the models asked for motor commands the robot cannot deliver:
 100 is full throttle, so the top rows are clamped.)
 
 `--time-scale K` supplies the missing half: K real seconds become one simulated
-second. Measured speeds are scaled up by K, the model integrates a dt that is K
-times smaller, and the commanded speed is scaled back down by K — so the loop
-stays self-consistent and the trajectories and the wave are unchanged, the whole
-experiment just runs K times slower in wall clock. Divide the table above by K.
-`--time-scale 4` is a sane starting point; `,` and `.` adjust it live in
-`--debug`. The heading controller is deliberately untouched by it and keeps
-running in real time.
+second. The model integrates a dt that is K times smaller and the commanded
+speed is scaled back down by K — so the loop stays self-consistent and the
+trajectories and the wave are unchanged, the whole experiment just runs K times
+slower in wall clock. Divide the table above by K. `--time-scale 4` is a sane
+starting point; `,` and `.` adjust it live in `--debug`. The heading controller
+is deliberately untouched by it and keeps running in real time.
 
-Above roughly `K=10` a model tick's travel starts to shrink into the tracker's
-own position noise (at `K=10`, four robots on a 300 mm ring move ~3 mm per
-100 ms tick), which shows up as jitter in the measured speeds — hence the
-`--time-scale` ceiling of 50.
+Above roughly `K=10` a model tick's travel shrinks into the tracker's own
+position noise (at `K=10`, four robots on a 300 mm ring move ~3 mm per 100 ms
+tick) — hence the `--time-scale` ceiling of 50. That shows up as jitter in the
+*reported* speed only: what couples the models to the robots is the gap, which
+is a whole vehicle spacing and far above the noise floor.
+
+**Where each speed comes from.** Each vehicle's speed is the model's own state,
+integrated by `cfStep()`; vision supplies positions, and therefore gaps, which
+is what couples the models to each other and to the real ring. The status line
+and HUD show the model speed next to the one measured from the ring, so a robot
+falling behind what it was asked for is visible. Feeding the measurement *back*
+into the model is what the first version did, and it is why nothing moved: for
+the second-order models `cfStep()` returns `speed + a·dt`, so the command was
+never more than one Euler step above what the robot had already managed, and a
+robot's speed lags its command. From standstill that step is millimetres per
+second — below the tool's own floor for commanding a motor, so the wheels never
+turned and the measurement stayed at zero with them.
 
 `--robot-max-speed` is the robot's physical speed (mm/s) at motor command 100 and
 is what converts simulated m/s into motor units — measure it once for your
@@ -420,16 +455,13 @@ robots if the motion looks uniformly too fast or too slow.
 
 **Live bridge.** `--bridge` serves the vendored NetLogo page from
 `tools/car-following-models/` at `http://127.0.0.1:8770/` (loopback only) with a
-small script appended that reports the model chooser and slider values back as
-they change. The robots then follow whatever the page is set to, so the
-simulation and the real ring run the same dynamics side by side. The vendored
-HTML on disk is never modified — the script is injected at serve time.
-
-| Key (`--debug`) | Action |
-|-----|--------|
-| `r` | Re-fit the ring to current positions |
-| `s` | Stop all |
-| `q` / Esc | Quit |
+small script appended that reports the model chooser, the slider values and the
+run state back as they change. The robots then follow whatever the page is set
+to and run when the page runs — its **Move** button is the cue and **Setup**
+returns them to rest — so the simulation and the real ring run the same dynamics
+side by side. The vendored HTML on disk is never modified: the script is
+injected at serve time, and the bridge carries UI parameters only, never `MSG_*`
+frames.
 
 ---
 

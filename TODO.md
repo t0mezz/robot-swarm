@@ -15,6 +15,23 @@
   matches its published linear-stability condition; FVDM at the paper's
   defaults grows a full stop-and-go wave from a 0.1m perturbation in ~30 min
   simulated). Nothing has run on robots yet.
+- Four defects that would have shown up as "robots behaving unexpectedly" are
+  fixed and covered by `tests/test_car_following_ring.cpp`; all four still want
+  confirming on the real arena:
+  - the model re-seeded its speed from the vision measurement each tick, which
+    (cfStep returns `speed + a*dt`) capped the command at one Euler step above
+    what the robot had already done — from standstill, millimetres per second,
+    below the tool's own motor floor, so nothing moved. The model now owns its
+    speed and vision closes the loop through the gaps.
+  - a robot missing for a single frame left the ring order, so its follower
+    inherited the gap to the vehicle beyond it and accelerated into it.
+  - the virtual ring was sized from the per-frame detected count, so one
+    dropped detection rescaled every gap and speed (simPerMm divides by it).
+  - the heading error was taken against a 0.5s-EMA yaw, which on a circle lags
+    by ~tau*v/R and gave the P-term a standing ~9 deg error to steer out.
+- Confirm the setup/cue/run lifecycle on the arena: robots must sit still until
+  the page's "Move", `space` in `--debug`, `<enter>` headless or `--start`, and
+  must come to rest on a stop.
 - Measure `--robot-max-speed` for the 3pi+ (physical mm/s at motor command 100);
   the 300 default is a guess and is what converts model m/s into motor units.
 - Check the yaw/servo gains inherited from circle_demo still behave when the
@@ -24,7 +41,14 @@
   than auto-fitted at startup — set it once on the real arena and confirm the
   robots hold it.
 - `--bridge` DOM selectors were verified against the NetLogo Web widget
-  templates in the vendored HTML, but not yet in a live browser.
+  templates in the vendored HTML, but not yet in a live browser. The run cue
+  reads the "Move" forever-button's checkbox *and* its `netlogo-active` class,
+  and counts clicks on "Setup"; that click counter is the one part with no
+  fallback if the button markup changes.
+- Shared with circle_demo, not fixed in either: `forward + turn` is clamped per
+  motor, so at full throttle the turn differential is squashed. Scaling forward
+  to leave headroom for the turn would fix it, but the control law is meant to
+  stay identical in both tools — change it in both or not at all.
 
 # remove the debug frame feature from aruco tracker, it should just transfer data with a frame generator helper not bitmap
 

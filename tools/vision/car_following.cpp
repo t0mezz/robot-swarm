@@ -3,19 +3,38 @@
 //
 // Headless by default: no window, one status line per second. --debug opens
 // the usual OpenCV view + DemoHud. --bridge serves the vendored NetLogo page
-// (tools/car-following-models/) and follows its live model and slider values,
-// so the simulation and the real robots run the same dynamics side by side.
+// (tools/car-following-models/) and follows its live model, slider values and
+// run state, so the simulation and the real robots run the same dynamics side
+// by side.
 //
 // Usage:
 //   ./car_following [--model NAME] [--speed-max M/S] [--car-size M]
 //                   [--time-gap S] [--reaction-time S] [--sigma A]
 //                   [--sim-length M] [--radius MM] [--centre X Y] [--dir cw|ccw]
 //                   [--ring-file PATH] [--fit] [--robot-max-speed MM_S]
+//                   [--time-scale K] [--start]
 //                   [--bridge] [--port N] [--debug] [--serial SN] [--ip IP]
 //                   [--count N]
 //
-// Debug keys: left-click = ring centre, +/- = radius +/-25mm,
-//             f = fit the ring to the robots, s = stop, q/Esc = quit
+// ── Setup, cue, run ──────────────────────────────────────────────────────────
+//
+// The tool comes up in *setup*: the camera, the hub and the ring are live and
+// every motor is held at zero, so robots can be placed and the ring dialled in
+// without anything driving off. A run starts on a cue and continues until it
+// is stopped. The cue can come from any of:
+//
+//   • the NetLogo page's "Move" button, with --bridge (its "Setup" button
+//     stops the robots and returns them to rest, like the model's own setup)
+//   • space in the --debug view, or 's' to stop
+//   • a line on stdin when headless: <enter> or "go" starts, "s"/"stop" stops,
+//     "q" quits
+//   • --start, which latches the cue at launch for scripted runs
+//
+// A cue is latched rather than obeyed on the spot: the run begins on the first
+// frame where the hub is connected, the roster has settled and the ring has a
+// radius, and says once what it is waiting for if it cannot start yet. A stop
+// returns the models to rest, so the next run begins from standstill the way
+// the experiment's own setup does.
 //
 // -- The ring is a saved fixture, not something inferred per run -------------
 //
@@ -46,7 +65,12 @@
 // N * (230/22) simulated metres for however many robots are on it. Four
 // robots then see the same spacing 22 cars see in the paper. --sim-length
 // pins the virtual ring length instead, if you want to explore other
-// densities.
+// densities, and --count pins N.
+//
+// N is the *settled* roster, not the count of robots detected in the current
+// frame (see CfRingConfig::settleS): a single dropped detection would
+// otherwise move the virtual ring length by 1/N and rescale every gap and
+// every speed the models see for that one frame.
 //
 // That factor maps *space* only: one simulated second was one real second, so
 // a lap took as long here as it does on the paper's 230m ring — 4.6s for three
@@ -54,22 +78,34 @@
 // similar, and far too fast to watch or to trust on hardware.
 //
 // --time-scale is the missing half of the mapping. K real seconds become one
-// simulated second: measured speeds are scaled up by K, the model integrates a
-// dt that is K times smaller, and the commanded speed is scaled back down by
-// K. The loop stays self-consistent, so the trajectories and the wave are
-// unchanged — the whole experiment just runs in slow motion. The heading
-// controller is untouched by it and keeps working in real time.
+// simulated second: the model integrates a dt that is K times smaller, the
+// measured speed is reported in the same dilated units, and the commanded
+// speed is scaled back down by K. The loop stays self-consistent, so the
+// trajectories and the wave are unchanged — the whole experiment just runs in
+// slow motion. The heading controller is untouched by it and keeps working in
+// real time.
 //
 // The heading controller underneath is circle_demo.cpp's orbit controller:
 // a yaw feedforward carries the steady turn and a PD corrects the residual
 // (see the long comment there for why pure feedback oscillates on a circle).
 // The one difference is where the tangential speed comes from — per robot,
-// from the car-following model, instead of one global orbit rate.
+// from the car-following model, instead of one global orbit rate. Its inputs
+// are circle_demo's too: the *raw* pose yaw for the heading error, and a
+// sample-and-held rate for the D-term. An earlier version fed the controller a
+// half-second EMA of the yaw instead, which on a circle — where the true
+// heading rotates continuously at v/R — lags by about tau*v/R and so hands the
+// P-term a standing error (~9 deg at 100 mm/s on a 300 mm ring) that it steers
+// out of a robot that was already pointing the right way.
+//
+// The ring bookkeeping itself — order, gaps, roster, scale, the models' own
+// speed state, and the run-state machine — lives in lib/CarFollowing/ring.h,
+// free of OpenCV and unit-tested; this file is vision, control and I/O.
 
 #include "aruco_tracker.h"
 #include "SwarmClient.h"
 #include "DemoHud.h"
 #include "car_following.h"
+#include "ring.h"
 #include "http_bridge.h"
 
 #include <algorithm>
@@ -78,6 +114,7 @@
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <cctype>
 #include <cstring>
 #include <fstream>
 #include <random>
@@ -86,6 +123,9 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+
+#include <poll.h>
+#include <unistd.h>
 
 // ── Tunables ─────────────────────────────────────────────────────────────────
 
@@ -97,7 +137,12 @@ static constexpr float MODEL_DT_S       = 0.10f;   // the paper's integration st
 static constexpr float TIME_SCALE_MIN  = 0.25f;
 static constexpr float TIME_SCALE_MAX  = 50.0f;
 static constexpr float TIME_SCALE_STEP = 1.25f;   // ',' / '.' in the debug view
-static constexpr float SEND_INTERVAL_S  = 0.01f;
+static constexpr float CONTROL_INTERVAL_S = 0.01f;
+// The motor frame is only written when a command actually changed, plus this
+// keepalive so the robots' own WATCHDOG_TIMEOUT_MS (1s, lib/SwarmProtocol/
+// hardware.h) never expires. In setup — and any time the ring is coasting on
+// unchanged commands — that is 10 frames a second instead of 100.
+static constexpr float MOTOR_KEEPALIVE_S = 0.10f;
 static constexpr float DEFAULT_RADIUS_MM = 300.0f; // fallback when nothing has been saved yet
 static constexpr float RADIUS_STEP_MM   = 25.0f;   // +/- in the debug view, as in circle_demo
 // Two poses always fit a "circle" through their midpoint; three is the least
@@ -108,10 +153,15 @@ static constexpr int   FIT_MIN_ROBOTS = 3;
 static constexpr float FIT_WAIT_S     = 5.0f;
 // How long a robot's last motor command is held while it is not detected.
 // Single-frame dropouts are routine, and cutting the motors on each one would
-// both jolt the ring and corrupt the speed measurement, which is taken from
-// vision. Anything longer than this stops — the robot's own
-// WATCHDOG_TIMEOUT_MS is the backstop if the link itself dies.
+// jolt the ring. Anything longer than this stops — the robot's own
+// WATCHDOG_TIMEOUT_MS is the backstop if the link itself dies. The robot keeps
+// its *place* on the ring for longer than this (CfRingConfig::holdS), so its
+// follower still brakes for it.
 static constexpr float MOTOR_HOLD_S = 0.20f;
+// A marker id has to hold for this long before it is registered with the hub.
+// registerRobot() is one-way, so a single frame of a misread id would
+// otherwise put that id in every MSG_SWARM frame for the rest of the run.
+static constexpr float REGISTER_DEBOUNCE_S = 0.30f;
 
 // Heading controller — carried over from circle_demo.cpp's orbit mode, where
 // these were tuned on hardware.
@@ -122,7 +172,10 @@ static constexpr float K_RAD         = 0.30f;   // radial pull back onto the rin
 static constexpr float MOTOR_MAX     = 100.0f;
 static constexpr float MAX_TURN      = 20.0f;
 static constexpr float MAX_TURN_RATE = 120.0f;  // turn-units/s
-static constexpr float YAW_TAU_S     = 0.50f;   // yaw low-pass time constant
+// Window the yaw rate feeding the D-term is sampled and held over, as in
+// circle_demo: one control period, with the MAX_TURN_RATE slew limit doing the
+// smoothing rather than a filter on the measurement.
+static constexpr float D_TERM_WINDOW_S = CONTROL_INTERVAL_S;
 
 static constexpr float DEG2RAD = (float)M_PI / 180.f;
 static constexpr float RAD2DEG = 180.f / (float)M_PI;
@@ -131,8 +184,8 @@ static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
 static const char* RING_FILE       = "/tmp/car_following_ring.yml";
 static const char* CIRCLE_FILE     = "/tmp/circle_demo.yml";   // circle_demo's, read as a fallback
 
-static volatile bool g_running = true;
-static void onSignal(int) { g_running = false; }
+static volatile std::sig_atomic_t g_running = 1;
+static void onSignal(int) { g_running = 0; }
 
 // --debug only. OpenCV runs the callback on its own thread, so a click is just
 // recorded here and consumed by the main loop.
@@ -144,11 +197,6 @@ static void onMouse(int event, int x, int y, int, void*) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-static float normAngle(float a) {
-    while (a >  180.f) a -= 360.f;
-    while (a < -180.f) a += 360.f;
-    return a;
-}
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 static std::string readFile(const std::string& path) {
@@ -196,7 +244,34 @@ static std::string exeRelative(const char* rel) {
     return slash == std::string::npos ? rel : p.substr(0, slash + 1) + rel;
 }
 
-// ── The ring ─────────────────────────────────────────────────────────────────
+// Yaw rate, sampled and held over a fixed window — circle_demo's estimator.
+// Differencing the yaw over a whole window rather than per frame is what makes
+// this real angular velocity instead of frame-to-frame ArUco jitter.
+struct RateEstimator {
+    bool  init      = false;
+    float baseAngle = 0.f;
+    float rate      = 0.f;
+    std::chrono::steady_clock::time_point baseTime;
+};
+
+static float updateRate(RateEstimator& r, float angle,
+                        std::chrono::steady_clock::time_point now, float windowS) {
+    if (!r.init) {
+        r.baseAngle = angle;
+        r.baseTime  = now;
+        r.init      = true;
+        return 0.f;
+    }
+    float elapsed = std::chrono::duration<float>(now - r.baseTime).count();
+    if (elapsed >= windowS) {
+        r.rate      = cfNormAngleDeg(angle - r.baseAngle) / elapsed;
+        r.baseAngle = angle;
+        r.baseTime  = now;
+    }
+    return r.rate;
+}
+
+// ── The ring geometry ────────────────────────────────────────────────────────
 // Persisted in the same shape circle_demo.cpp saves its circle, so that file
 // can be read directly and the two tools can share one calibration.
 
@@ -265,11 +340,21 @@ static bool fitRing(const std::unordered_map<int, RobotPose>& poses, Ring& ring)
     return true;
 }
 
-// ── Live parameters from the page ────────────────────────────────────────────
-// Body is one "name=value" per line, using the page's own widget labels.
-// The page posts the full set every time, so this is idempotent — there is no
+// ── Live parameters and run state from the page ──────────────────────────────
+// Body is one "name=value" per line, using the page's own widget labels. The
+// page posts the full set every time, so this is idempotent — there is no
 // partial-update state to keep in sync.
-static void applyParams(const std::string& body, CfParams& p, CfModel& model) {
+//
+// `run` is the "Move" forever-button's state and `setup` a click counter on
+// the "Setup" button, so pressing them on the page starts and re-arms the real
+// robots the same way it starts and resets the simulation.
+struct PageState {
+    bool run     = false;
+    long setupNo = -1;   // <0 = the page has not reported yet
+};
+
+static void applyParams(const std::string& body, CfParams& p, CfModel& model,
+                        PageState& page) {
     size_t pos = 0;
     while (pos < body.size()) {
         size_t nl = body.find('\n', pos);
@@ -289,27 +374,38 @@ static void applyParams(const std::string& body, CfParams& p, CfModel& model) {
         else if (k == "time-gap")      p.timeGap      = (float)atof(v.c_str());
         else if (k == "reaction-time") p.reactionTime = (float)atof(v.c_str());
         else if (k == "sigma")         p.sigma        = (float)atof(v.c_str());
+        else if (k == "run")           page.run       = atoi(v.c_str()) != 0;
+        else if (k == "setup")         page.setupNo   = atol(v.c_str());
     }
 }
 
-// ── Per-robot state ──────────────────────────────────────────────────────────
+// ── Per-robot control state ──────────────────────────────────────────────────
+// The model's state lives in CfRing; this is only what the heading controller
+// needs between frames.
 
-struct Car {
-    // Which model tick this robot was last measured on. Speed is a difference
-    // between consecutive ticks, so a robot that missed one must re-seed
-    // rather than divide a whole dropout's worth of travel by one tick.
-    uint64_t tickSeen = 0;
-    float prevAng  = 0.f;  // deg around the ring, sampled at the last model tick
-    float prevYaw  = 0.f;  // deg, sampled at the last model tick
-    float yaw      = 0.f;  // deg, low-passed heading
-    float yawRate  = 0.f;  // deg/s, held between model ticks
-    float speed    = 0.f;  // simulated m/s, measured from the ring position
-    float vCmd     = 0.f;  // simulated m/s, the model's output
-    float gap      = 0.f;  // simulated m, clear distance to the predecessor
-    float prevTurn = 0.f;  // slew-limited turn output
-    bool  haveYaw  = false;
-    std::chrono::steady_clock::time_point lastSeen;
+struct Servo {
+    RateEstimator yawRate;
+    float         prevTurn  = 0.f;   // slew-limited turn output
+    double        firstSeen  = 0.0;   // for the registerRobot debounce
+    double        lastSeen   = 0.0;
+    bool          everSeen   = false;
+    bool          registered = false;
 };
+
+// A line typed at the terminal when headless. Non-blocking, so a run that
+// nobody is watching is never held up by it.
+static bool readStdinLine(std::string& out) {
+    struct pollfd pfd{STDIN_FILENO, POLLIN, 0};
+    if (::poll(&pfd, 1, 0) <= 0 || !(pfd.revents & POLLIN)) return false;
+    char    buf[256];
+    ssize_t n = ::read(STDIN_FILENO, buf, sizeof(buf) - 1);
+    if (n <= 0) return false;
+    buf[n] = '\0';
+    out.assign(buf);
+    while (!out.empty() && (out.back() == '\n' || out.back() == '\r' || out.back() == ' '))
+        out.pop_back();
+    return true;
+}
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
@@ -331,6 +427,7 @@ int main(int argc, char* argv[]) {
     int    robotCount  = -1;
     bool   debug       = false;
     bool   bridge      = false;
+    bool   autoStart   = false;
     int    port        = 8770;
 
     for (int i = 1; i < argc; ++i) {
@@ -364,16 +461,23 @@ int main(int argc, char* argv[]) {
         else if (strcmp(argv[i], "--fit")    == 0) fitAtStart = true;
         else if (strcmp(argv[i], "--debug")  == 0) debug  = true;
         else if (strcmp(argv[i], "--bridge") == 0) bridge = true;
+        else if (strcmp(argv[i], "--start")  == 0) autoStart = true;
         else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf("usage: %s [--model NAME] [--speed-max M/S] [--car-size M] [--time-gap S]\n"
                    "       [--reaction-time S] [--sigma A] [--sim-length M] [--radius MM]\n"
                    "       [--centre X Y] [--ring-file PATH] [--fit] [--dir cw|ccw]\n"
-                   "       [--time-scale K] [--robot-max-speed MM_S] [--bridge] [--port N]\n"
-                   "       [--debug] [--serial SN] [--ip IP] [--count N]\n\n"
+                   "       [--time-scale K] [--robot-max-speed MM_S] [--start]\n"
+                   "       [--bridge] [--port N] [--debug] [--serial SN] [--ip IP] [--count N]\n\n"
                    "models: Reuschel Pipes OVM CF-OVM FVDM ATG IDM\n\n"
+                   "The robots are set up but held still until a run is cued: the page's\n"
+                   "\"Move\" button with --bridge, space in --debug, <enter> on stdin when\n"
+                   "headless, or --start at launch. \"s\"/\"stop\" (or the page's \"Setup\")\n"
+                   "returns them to rest; \"q\" quits.\n\n"
                    "--time-scale K runs the experiment in slow motion: K real seconds per\n"
                    "simulated second, same trajectories, K times slower. Start around 4-6 —\n"
                    "at K=1 the defaults ask for full throttle on a sub-metre ring.\n\n"
+                   "--count N pins the vehicle count the virtual ring is sized for, so a\n"
+                   "dropped detection cannot rescale the model mid-run.\n\n"
                    "The ring is read from %s (falling back to circle_demo's %s) and\n"
                    "re-saved whenever --radius/--centre/--fit or a debug-view edit changes it.\n",
                    argv[0], RING_FILE, CIRCLE_FILE);
@@ -443,19 +547,20 @@ int main(int argc, char* argv[]) {
     if (ringEdited) saveRing(ring, ringFile);
 
     HttpBridge http;
+    PageState  page;
     if (bridge) {
-        std::string page = readFile(exeRelative(
+        std::string pageHtml = readFile(exeRelative(
             "../car-following-models/Experiment_by_Sugiyama_et_al.__2007_.html"));
         std::string js = readFile(exeRelative("../vision/car_following_bridge.js"));
-        if (page.empty() || js.empty()) {
+        if (pageHtml.empty() || js.empty()) {
             fprintf(stderr, "[bridge] page or script missing — bridge disabled\n");
             bridge = false;
         } else {
-            size_t at = page.rfind("</body>");
-            if (at == std::string::npos) at = page.size();
-            page.insert(at, "<script>\n" + js + "\n</script>\n");
-            bridge = http.start(port, std::move(page));
-            printf(bridge ? "[bridge] serving http://127.0.0.1:%d/\n"
+            size_t at = pageHtml.rfind("</body>");
+            if (at == std::string::npos) at = pageHtml.size();
+            pageHtml.insert(at, "<script>\n" + js + "\n</script>\n");
+            bridge = http.start(port, std::move(pageHtml));
+            printf(bridge ? "[bridge] serving http://127.0.0.1:%d/ — press \"Move\" there to run\n"
                           : "[bridge] could not bind port %d\n", port);
         }
     }
@@ -465,32 +570,75 @@ int main(int argc, char* argv[]) {
         cv::namedWindow(WIN, cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
         cv::resizeWindow(WIN, tracker.frameSize().width, tracker.frameSize().height);
         cv::setMouseCallback(WIN, onMouse, nullptr);
-        printf("[cf] left-click = ring centre  +/- = radius %.0f  f = fit ring to robots\n"
-               "     , / . = time scale  s = stop  q/Esc = quit\n", RADIUS_STEP_MM);
+        printf("[cf] space = run/stop  s = stop  left-click = ring centre  "
+               "+/- = radius %.0f\n"
+               "     f = fit ring to robots  , / . = time scale  q/Esc = quit\n",
+               RADIUS_STEP_MM);
     }
 
-    std::unordered_map<int, Car> cars;
-    int8_t motors[SC_MAX_ROBOTS][2] = {};
+    CfRingConfig ringCfg;
+    ringCfg.dirSign       = dirSign;
+    ringCfg.simLengthM    = simLengthM;
+    ringCfg.paperSpacingM = PAPER_SPACING_M;
+    ringCfg.pinnedCount   = robotCount;
+    CfRing cfRing(ringCfg);
 
-    auto sendMotors = [&]() {
+    CfRunState run;
+    if (autoStart) run.requestStart("--start");
+
+    std::unordered_map<int, Servo> servos;
+    std::unordered_map<int, RobotPose> poseById;
+    int8_t motors[SC_MAX_ROBOTS][2] = {};
+    bool   motorsDirty = true;
+
+    std::mt19937                    rng(12345);
+    std::normal_distribution<float> gauss(0.f, 1.f);
+
+    bool  fitPending = fitAtStart;
+    cv::Mat blank;   // --debug placeholder while no overlay frame exists yet
+    float lastReportedScale = -1.f;
+
+    auto t0  = std::chrono::steady_clock::now();
+    auto now = t0;
+    auto secondsSince = [&](std::chrono::steady_clock::time_point a) {
+        return std::chrono::duration<double>(now - a).count();
+    };
+
+    auto lastModel = now, lastControl = now, lastStatus = now,
+         lastHubRetry = now, lastMotorTx = now;
+    auto fitSince = now;   // when the pending fit started waiting for robots
+    DemoHud::LoopFps loopFps;
+
+    // Zeroes the whole command vector. Used on stop, on exit, and whenever the
+    // run is not active — motors[] is the single source of truth for what the
+    // robots are being told, so nothing else needs to know about the phase.
+    auto allStop = [&]() {
+        for (int id = 0; id < SC_MAX_ROBOTS; ++id) {
+            if (motors[id][0] != 0 || motors[id][1] != 0) motorsDirty = true;
+            motors[id][0] = motors[id][1] = 0;
+        }
+    };
+
+    // Writes the command vector to the hub, but only when it changed or the
+    // keepalive is due — see MOTOR_KEEPALIVE_S.
+    auto sendMotors = [&](bool force) {
+        if (!force && !motorsDirty &&
+            std::chrono::duration<float>(now - lastMotorTx).count() < MOTOR_KEEPALIVE_S)
+            return;
         for (int id = 0; id < SC_MAX_ROBOTS; ++id)
             swarm.setSpeed((uint8_t)id, motors[id][0], motors[id][1]);
         swarm.flush();
+        lastMotorTx = now;
+        motorsDirty = false;
     };
 
-    std::mt19937                     rng(12345);
-    std::normal_distribution<float>  gauss(0.f, 1.f);
-
-    float    simPerMm   = 0.f;   // simulated metres per world unit
-    bool     fitPending = fitAtStart;
-    int      lastCount = -1;
-    uint64_t tickNo    = 1;     // model ticks; 0 means "never measured"
-    bool     paused    = false; // 's' in --debug; holds every motor at zero
-
-    auto now       = std::chrono::steady_clock::now();
-    auto lastModel = now, lastSend = now, lastStatus = now, lastHubRetry = now, lastFrame = now;
-    auto fitSince  = now;   // when the pending fit started waiting for robots
-    DemoHud::LoopFps loopFps;
+    auto restToSetup = [&](const char* why) {
+        cfRing.rest();
+        for (auto& [id, s] : servos) { s.prevTurn = 0.f; s.yawRate = RateEstimator{}; }
+        allStop();
+        sendMotors(true);
+        printf("[cf] setup — robots at rest (%s)\n", why);
+    };
 
     printf("[cf] model=%s  speed-max=%.1f  car-size=%.1f  time-gap=%.2f  "
            "reaction-time=%.2f  sigma=%.2f  time-scale=%.2gx\n",
@@ -499,49 +647,87 @@ int main(int argc, char* argv[]) {
     if (timeScale <= 1.f)
         printf("[cf] time-scale is %.2gx — on a ring this small the models ask for "
                "near-full throttle. Try --time-scale 4.\n", timeScale);
+    printf("[cf] setup — robots held still. %s\n",
+           debug   ? "Press space in the window to run."
+         : bridge  ? "Press \"Move\" on the page to run."
+                   : "Press <enter> here to run, \"s\" to stop, \"q\" to quit.");
 
     while (g_running) {
-        if (!tracker.update()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            continue;
-        }
+        // A new frame is the trigger for control, but never a precondition for
+        // housekeeping: the cues, the hub retry and the stop path have to keep
+        // working even if the camera stalls, which is exactly when someone
+        // reaches for the stop.
+        bool haveFrame = tracker.update();
         now = std::chrono::steady_clock::now();
-        loopFps.tick();
+        if (haveFrame) loopFps.tick();
 
-        if (!swarm.isConnected() &&
-            std::chrono::duration<float>(now - lastHubRetry).count() >= 2.0f) {
+        if (!swarm.isConnected() && secondsSince(lastHubRetry) >= 2.0) {
             lastHubRetry = now;
             if (swarm.connect()) printf("[hub] connected\n");
         }
         swarm.poll();
 
-        if (bridge)
-            for (const auto& body : http.poll()) applyParams(body, params, model);
-
-        // ── Poses, low-passed heading ────────────────────────────────────────
-        std::unordered_map<int, RobotPose> poseById;
-        for (auto& r : tracker.robots())
-            if (r.id >= 0 && r.id < SC_MAX_ROBOTS) poseById[r.id] = r;
-
-        // The low-pass is specified as a time constant and converted with the
-        // real frame interval, so it keeps the same memory in seconds whatever
-        // rate the loop runs at (see YAW_TAU_S).
-        float frameDt  = clampf(std::chrono::duration<float>(now - lastFrame).count(), 0.001f, 0.2f);
-        lastFrame = now;
-        float yawAlpha = frameDt / (YAW_TAU_S + frameDt);
-        for (auto& [id, pose] : poseById) {
-            Car& c = cars[id];
-            c.lastSeen = now;
-            if (!c.haveYaw) { c.yaw = pose.yaw; c.prevYaw = pose.yaw; c.haveYaw = true; }
-            else            c.yaw = normAngle(c.yaw + yawAlpha * normAngle(pose.yaw - c.yaw));
+        // ── Cues ─────────────────────────────────────────────────────────────
+        if (bridge) {
+            for (const auto& body : http.poll()) {
+                bool wasRun  = page.run;
+                long wasSetup = page.setupNo;
+                applyParams(body, params, model, page);
+                if (page.setupNo != wasSetup && wasSetup >= 0)
+                    run.requestStop("page setup");
+                else if (page.run != wasRun)
+                    page.run ? run.requestStart("page") : run.requestStop("page");
+            }
         }
 
-        // Brief detection dropouts are normal, so state is held for a second
-        // rather than dropped on the first missed frame — but not forever: a
-        // stale entry would feed a phantom neighbour into someone's gap.
-        for (auto it = cars.begin(); it != cars.end(); )
-            it = std::chrono::duration<float>(now - it->second.lastSeen).count() > 1.0f
-                     ? cars.erase(it) : std::next(it);
+        if (!debug) {
+            std::string line;
+            if (readStdinLine(line)) {
+                for (auto& ch : line) ch = (char)tolower((unsigned char)ch);
+                if      (line == "q" || line == "quit") g_running = 0;
+                else if (line == "s" || line == "stop") run.requestStop("stdin");
+                else if (line.empty() || line == "g" || line == "go" || line == "start")
+                    run.requestStart("stdin");
+                else printf("[cf] <enter>/go = run, s = stop, q = quit\n");
+            }
+        }
+
+        // ── Poses ────────────────────────────────────────────────────────────
+        const double tNow = secondsSince(t0);
+        if (haveFrame) {
+            poseById.clear();
+            for (auto& r : tracker.robots())
+                if (r.id >= 0 && r.id < SC_MAX_ROBOTS) poseById[r.id] = r;
+
+            cfRing.beginFrame();
+            for (auto& [id, p] : poseById) {
+                float a = atan2f(p.y - ring.centre.y, p.x - ring.centre.x) * RAD2DEG;
+                cfRing.observe(id, a, tNow);
+
+                Servo& s = servos[id];
+                if (!s.everSeen) { s.firstSeen = tNow; s.everSeen = true; }
+                s.lastSeen = tNow;
+            }
+            cfRing.endFrame(tNow);
+
+            for (auto it = servos.begin(); it != servos.end(); )
+                it = cfRing.has(it->first) ? std::next(it) : servos.erase(it);
+        }
+
+        // A marker that has held for the debounce joins the swarm frame. This
+        // is one-way in SwarmClient, hence the wait: a single misread id would
+        // otherwise ride along in every frame for the rest of the run.
+        for (auto& [id, s] : servos) {
+            if (s.everSeen && !s.registered &&
+                tNow - s.firstSeen >= REGISTER_DEBOUNCE_S) {
+                swarm.registerRobot((uint8_t)id);
+                s.registered = true;
+            }
+        }
+
+        if (cfRing.takeRosterChange())
+            printf("[cf] roster settled at %d robot%s\n",
+                   cfRing.rosterCount(), cfRing.rosterCount() == 1 ? "" : "s");
 
         // ── Ring edits ───────────────────────────────────────────────────────
         // A pending --fit / 'f' waits for enough robots to be detected; a
@@ -552,7 +738,7 @@ int main(int argc, char* argv[]) {
             if ((int)poseById.size() >= FIT_MIN_ROBOTS) {
                 fitPending = false;
                 if (fitRing(poseById, ring)) saveRing(ring, ringFile);
-            } else if (std::chrono::duration<float>(now - fitSince).count() > FIT_WAIT_S) {
+            } else if (secondsSince(fitSince) > FIT_WAIT_S) {
                 fitPending = false;
                 printf("[ring] fit gave up: %d of %d robots visible after %.0fs — "
                        "keeping the saved ring\n",
@@ -566,172 +752,177 @@ int main(int argc, char* argv[]) {
             saveRing(ring, ringFile);
         }
 
-        // ── Ring order ───────────────────────────────────────────────────────
-        // Sorted counter-clockwise; the predecessor is the next robot in the
-        // direction of travel.
-        std::vector<std::pair<float,int>> byAngle;   // {angle deg, id}
-        for (auto& [id, p] : poseById) {
-            float a = atan2f(p.y - ring.centre.y, p.x - ring.centre.x) * RAD2DEG;
-            byAngle.push_back({a < 0 ? a + 360.f : a, id});
+        // The scale factor divides by the radius, so it is read after any ring
+        // edit this frame rather than before it.
+        const float simPerMm = cfRing.simPerMm(ring.radius);
+        if (simPerMm > 0.f && simPerMm != lastReportedScale) {
+            lastReportedScale = simPerMm;
+            printf("[cf] virtual ring %.1f m over %d vehicles (%.2f m each)\n",
+                   cfRing.simLengthM(), cfRing.rosterCount(),
+                   cfRing.simLengthM() / std::max(1, cfRing.rosterCount()));
         }
-        std::sort(byAngle.begin(), byAngle.end());
-        const int M = (int)byAngle.size();
 
-        // Density: the virtual ring grows with the number of robots so the
-        // metres-per-vehicle stay at the experiment's value (see the header).
-        if (M > 0) {
-            float lengthM = simLengthM > 0.f ? simLengthM : M * PAPER_SPACING_M;
-            simPerMm = lengthM / (2.f * (float)M_PI * ring.radius);
-            if (M != lastCount) {
-                printf("[cf] %d robots → virtual ring %.1f m (%.2f m per vehicle)\n",
-                       M, lengthM, lengthM / M);
-                lastCount = M;
-            }
+        // ── Run state ────────────────────────────────────────────────────────
+        // Everything the run needs before a wheel turns: a link to the robots,
+        // a ring to drive round, a settled roster to scale the model with, and
+        // at least one robot actually on it.
+        const bool ready = swarm.isConnected() && ring.radius > 0.f &&
+                           cfRing.scaleReady(ring.radius) && cfRing.visibleCount() > 0;
+        switch (run.update(ready)) {
+            case CfRunEvent::Started:
+                // The model's clock restarts with the run: without this the
+                // first tick would integrate the whole setup period.
+                lastModel = now;
+                cfRing.rest();
+                printf("[cf] running (%s) — %d robots, %s, %.2gx\n",
+                       run.source(), cfRing.visibleCount(), cfModelName(model), timeScale);
+                break;
+            case CfRunEvent::Stopped:
+                restToSetup(run.source());
+                break;
+            case CfRunEvent::Waiting:
+                printf("[cf] start cued (%s) — waiting for%s%s%s%s\n", run.source(),
+                       swarm.isConnected()            ? "" : " the hub",
+                       ring.radius > 0.f              ? "" : " a ring radius",
+                       cfRing.scaleReady(ring.radius) ? "" : " the roster to settle",
+                       cfRing.visibleCount() > 0      ? "" : " a robot in view");
+                break;
+            case CfRunEvent::None:
+                break;
         }
 
         // ── Model tick ───────────────────────────────────────────────────────
-        float modelDt = std::chrono::duration<float>(now - lastModel).count();
-        if (M > 0 && modelDt >= MODEL_DT_S) {
+        if (run.running() && secondsSince(lastModel) >= MODEL_DT_S) {
+            float modelDt = clampf((float)secondsSince(lastModel), 0.02f, 0.5f);
             lastModel = now;
-            modelDt   = clampf(modelDt, 0.02f, 0.5f);
-            ++tickNo;
 
             // The tick still fires on a real-time interval; only the elapsed
             // time the model is told about is dilated. cfStep is a stateless
             // explicit-Euler step, so a dt smaller than the paper's 0.1s only
             // makes the integration finer.
-            float simDt = modelDt / timeScale;
-
-            // Pass 1: measure. Every robot's speed and gap must be read before
-            // any model runs, or a robot would see its predecessor's
-            // already-updated speed instead of this tick's.
-            for (int i = 0; i < M; ++i) {
-                auto [ang, id] = byAngle[i];
-                Car& c = cars[id];
-
-                if (c.tickSeen + 1 == tickNo) {
-                    // Speed is in simulated metres per *simulated* second, so
-                    // it divides by simDt — the same K the command below is
-                    // divided by, which is what keeps the loop consistent.
-                    c.speed   = dirSign * normAngle(ang - c.prevAng) * DEG2RAD * ring.radius
-                                / simDt * simPerMm;
-                    // Yaw rate feeds the heading PD, which is a real-time
-                    // controller: real seconds, whatever the model's clock does.
-                    c.yawRate = normAngle(c.yaw - c.prevYaw) / modelDt;
-                }
-                c.prevAng  = ang;
-                c.prevYaw  = c.yaw;
-                c.tickSeen = tickNo;
-
-                // Angular gap to the predecessor, converted to a clear
-                // bumper-to-bumper distance in simulated metres.
-                float gapDeg = 360.f;
-                if (M > 1) {
-                    int j = (i + (dirSign > 0 ? 1 : M - 1)) % M;
-                    gapDeg = dirSign > 0 ? byAngle[j].first - ang
-                                         : ang - byAngle[j].first;
-                    if (gapDeg < 0.f) gapDeg += 360.f;
-                }
-                c.gap = gapDeg * DEG2RAD * ring.radius * simPerMm - params.carSize;
-            }
-
-            // Pass 2: step every model off that snapshot.
-            for (int i = 0; i < M; ++i) {
-                int  id   = byAngle[i].second;
-                int  pred = byAngle[(i + (dirSign > 0 ? 1 : M - 1)) % M].second;
-                Car& c    = cars[id];
-
-                CfInput in{c.gap, c.speed, cars[pred].speed, cars[pred].gap};
-                float v = cfStep(model, in, params, simDt,
-                                 params.sigma > 0.f ? gauss(rng) : 0.f);
-                // The robots only ever go forwards around the ring: a model
-                // that undershoots into reverse would have them driving into
-                // their follower.
-                c.vCmd = clampf(v, 0.f, params.speedMax);
-            }
+            cfRing.step(model, params, modelDt / timeScale, ring.radius,
+                        [&] { return gauss(rng); });
         }
 
         // ── Servo each robot onto its commanded speed ────────────────────────
-        if (std::chrono::duration<float>(now - lastSend).count() >= SEND_INTERVAL_S) {
-            float sendDt = clampf(std::chrono::duration<float>(now - lastSend).count(),
-                                  0.001f, 0.2f);
-            lastSend = now;
+        if (secondsSince(lastControl) >= CONTROL_INTERVAL_S) {
+            float controlDt = clampf((float)secondsSince(lastControl), 0.001f, 0.2f);
+            lastControl = now;
 
-            // Robots that have gone unseen for longer than the hold window
-            // stop; everyone visible is recomputed below.
-            for (int id = 0; id < SC_MAX_ROBOTS; ++id) {
-                auto it = cars.find(id);
-                if (paused || it == cars.end() ||
-                    std::chrono::duration<float>(now - it->second.lastSeen).count() > MOTOR_HOLD_S)
-                    motors[id][0] = motors[id][1] = 0;
+            if (!run.running()) {
+                allStop();
+            } else {
+                // Robots that have gone unseen for longer than the hold window
+                // stop; everyone visible is recomputed below. They keep their
+                // place on the ring for longer than that (CfRingConfig::holdS)
+                // so their follower still brakes for them.
+                for (int id = 0; id < SC_MAX_ROBOTS; ++id) {
+                    auto it = servos.find(id);
+                    if (it == servos.end() || tNow - it->second.lastSeen > MOTOR_HOLD_S) {
+                        if (motors[id][0] || motors[id][1]) motorsDirty = true;
+                        motors[id][0] = motors[id][1] = 0;
+                    }
+                }
+
+                for (auto& [id, pose] : poseById) {
+                    const CfRingCar* c = cfRing.car(id);
+                    Servo&           s = servos[id];
+                    int8_t l = 0, r = 0;
+
+                    float dx = pose.x - ring.centre.x, dy = pose.y - ring.centre.y;
+                    float distC = std::hypot(dx, dy);
+
+                    // The rate estimator is fed every control step whatever the
+                    // outcome below, so a robot that spends a moment stopped
+                    // does not come back with a stale yaw rate.
+                    float yawRate = updateRate(s.yawRate, pose.yaw, now, D_TERM_WINDOW_S);
+
+                    if (c && simPerMm > 0.f && distC >= 1.f) {
+                        float rx = dx / distC,          ry = dy / distC;
+                        float tx = dirSign * -ry,       ty = dirSign * rx;
+
+                        // sim m/s -> world units per *real* second: undo the
+                        // density scale, then the time dilation.
+                        float vTan = c->speed / simPerMm / timeScale;      // world units/s
+                        float vRad = clampf(-K_RAD * (distC - ring.radius),
+                                            -robotMaxMms * 0.5f, robotMaxMms * 0.5f);
+
+                        float vx = vTan * tx + vRad * rx;
+                        float vy = vTan * ty + vRad * ry;
+                        float vMag = std::hypot(vx, vy);
+
+                        if (vMag >= 0.5f) {
+                            // Raw pose yaw, not a filtered one: on a circle the
+                            // true heading rotates at v/R, so any lag in the
+                            // measurement becomes a standing heading error the
+                            // P-term steers out (see the file header).
+                            float angleErr  = cfNormAngleDeg(atan2f(vy, vx) * RAD2DEG - pose.yaw);
+                            float headingN  = clampf(fabsf(angleErr) / 90.f, 0.f, 1.f);
+                            float headingSc = 1.f - headingN * headingN;
+
+                            // Feedforward carries the steady turn (v/R);
+                            // feedback only corrects the residual. Gated by
+                            // headingSc so a robot that is still spinning to
+                            // align can't deadlock at zero output — see
+                            // circle_demo.cpp for the full derivation.
+                            float ffOmega = dirSign * (vTan / ring.radius) * RAD2DEG;
+                            float dErr    = clampf(ffOmega - yawRate, -300.f, 300.f);
+
+                            float forward = clampf(vMag / robotMaxMms * MOTOR_MAX,
+                                                   0.f, MOTOR_MAX) * headingSc;
+                            float turnTgt = clampf(K_FF_YAW * ffOmega * headingSc
+                                                   + K_ANGLE * angleErr + K_YAW_D * dErr,
+                                                   -MAX_TURN, MAX_TURN);
+                            float maxStep = MAX_TURN_RATE * controlDt;
+                            float turn    = clampf(turnTgt, s.prevTurn - maxStep,
+                                                   s.prevTurn + maxStep);
+                            s.prevTurn    = turn;
+
+                            l = (int8_t)clampf(forward + turn, -MOTOR_MAX, MOTOR_MAX);
+                            r = (int8_t)clampf(forward - turn, -MOTOR_MAX, MOTOR_MAX);
+                        } else {
+                            s.prevTurn = 0.f;
+                        }
+                    }
+
+                    if (motors[id][0] != l || motors[id][1] != r) motorsDirty = true;
+                    motors[id][0] = l;
+                    motors[id][1] = r;
+                }
             }
-
-            for (auto& [id, pose] : poseById) {
-                if (paused) break;
-                Car& c = cars[id];
-                if (simPerMm <= 0.f) { motors[id][0] = motors[id][1] = 0; continue; }
-
-                float dx = pose.x - ring.centre.x, dy = pose.y - ring.centre.y;
-                float distC = std::hypot(dx, dy);
-                if (distC < 1.f) { motors[id][0] = motors[id][1] = 0; continue; }
-
-                float rx = dx / distC,          ry = dy / distC;
-                float tx = dirSign * -ry,       ty = dirSign * rx;
-
-                // sim m/s -> world units per *real* second: undo the density
-                // scale, then the time dilation.
-                float vTan = c.vCmd / simPerMm / timeScale;           // world units/s
-                float vRad = clampf(-K_RAD * (distC - ring.radius),
-                                    -robotMaxMms * 0.5f, robotMaxMms * 0.5f);
-
-                float vx = vTan * tx + vRad * rx;
-                float vy = vTan * ty + vRad * ry;
-                float vMag = std::hypot(vx, vy);
-                if (vMag < 0.5f) { motors[id][0] = motors[id][1] = 0; continue; }
-
-                float angleErr  = normAngle(atan2f(vy, vx) * RAD2DEG - c.yaw);
-                float headingN  = clampf(fabsf(angleErr) / 90.f, 0.f, 1.f);
-                float headingSc = 1.f - headingN * headingN;
-
-                // Feedforward carries the steady turn (v/R); feedback only
-                // corrects the residual. Gated by headingSc so a robot that is
-                // still spinning to align can't deadlock at zero output — see
-                // circle_demo.cpp for the full derivation.
-                float ffOmega = dirSign * (vTan / ring.radius) * RAD2DEG;
-                float dErr    = clampf(ffOmega - c.yawRate, -300.f, 300.f);
-
-                float forward = clampf(vMag / robotMaxMms * MOTOR_MAX, 0.f, MOTOR_MAX) * headingSc;
-                float turnTgt = clampf(K_FF_YAW * ffOmega * headingSc
-                                       + K_ANGLE * angleErr + K_YAW_D * dErr,
-                                       -MAX_TURN, MAX_TURN);
-                float maxStep = MAX_TURN_RATE * sendDt;
-                float turn    = clampf(turnTgt, c.prevTurn - maxStep, c.prevTurn + maxStep);
-                c.prevTurn    = turn;
-
-                swarm.registerRobot((uint8_t)id);
-                motors[id][0] = (int8_t)clampf(forward + turn, -MOTOR_MAX, MOTOR_MAX);
-                motors[id][1] = (int8_t)clampf(forward - turn, -MOTOR_MAX, MOTOR_MAX);
-            }
-            sendMotors();
+            sendMotors(false);
         }
 
         // ── Report ───────────────────────────────────────────────────────────
         if (!debug) {
-            if (std::chrono::duration<float>(now - lastStatus).count() >= 1.0f) {
+            if (secondsSince(lastStatus) >= 1.0) {
                 lastStatus = now;
-                printf("[cf] %-8s loop:%3.0f  robots:%d  %.2gx  hub:%s",
-                       cfModelName(model), loopFps.fps(), M, timeScale,
+                printf("[cf] %-7s %-8s loop:%3.0f  robots:%d/%d  %.2gx  hub:%s",
+                       run.running() ? "RUN" : (run.pending() ? "CUED" : "SETUP"),
+                       cfModelName(model), loopFps.fps(),
+                       cfRing.visibleCount(), cfRing.rosterCount(), timeScale,
                        swarm.isConnected() ? "ok" : "--");
-                for (auto& [ang, id] : byAngle)
-                    printf("  %d:%.1fm/s@%.1fm", id, cars[id].vCmd, cars[id].gap);
+                for (int id : cfRing.order()) {
+                    const CfRingCar* c = cfRing.car(id);
+                    printf("  %d:%.2f/%.2fm/s@%.1fm", id, c->speed, c->measured, c->gap);
+                }
                 printf("\n");
                 fflush(stdout);
             }
+            if (!haveFrame) std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
 
+        // ── Debug view ───────────────────────────────────────────────────────
         cv::Mat disp = tracker.debugFrame().clone();
-        if (disp.empty()) continue;   // no overlay frame yet; nothing to show or key off
+        if (disp.empty()) {
+            // No overlay frame yet — but the window still has to take keys, or
+            // there is no way to stop the robots from it. Reused rather than
+            // reallocated: at 2048 square that is 12 MB a frame.
+            if (blank.empty()) blank.create(tracker.frameSize(), CV_8UC3);
+            blank.setTo(cv::Scalar::all(0));
+            disp = blank;
+        }
 
         // The ring is defined in world units; project it back through the
         // homography by transforming points on it rather than assuming pixels
@@ -751,29 +942,37 @@ int main(int argc, char* argv[]) {
                                       ring.radius, ring.centre.x, ring.centre.y),
                          {cpx.x + 14, cpx.y - 6}, 18, {0, 200, 255});
         tracker.drawText(disp,
-                         "click = centre   +/- = radius   f = fit   , / . = time scale   "
-                         "s = stop   q = quit",
+                         "space = run/stop   s = stop   click = centre   +/- = radius   "
+                         "f = fit   , / . = time scale   q = quit",
                          {12, disp.rows - 16}, 18, {0, 200, 255});
 
-        for (auto& [ang, id] : byAngle) {
-            const Car& c = cars[id];
-            tracker.drawText(disp, DemoHud::fmt("%.1fm/s  gap %.1fm", c.vCmd, c.gap),
-                             {(int)poseById[id].px + 12, (int)poseById[id].py - 12},
+        for (int id : cfRing.order()) {
+            const CfRingCar* c = cfRing.car(id);
+            auto it = poseById.find(id);
+            if (it == poseById.end()) continue;
+            tracker.drawText(disp, DemoHud::fmt("%.2fm/s  gap %.1fm", c->speed, c->gap),
+                             {(int)it->second.px + 12, (int)it->second.py - 12},
                              18, {0, 255, 128});
         }
 
         DemoHud hud;
-        hud.title(DemoHud::fmt("loop_fps:%.0f  %s  robots:%d  ring:%.0f  %.2gx  HUB:%s%s",
-                               loopFps.fps(), cfModelName(model), M, ring.radius, timeScale,
+        hud.title(DemoHud::fmt("loop_fps:%.0f  %s  %s  robots:%d/%d  ring:%.0f  %.2gx  HUB:%s%s",
+                               loopFps.fps(),
+                               run.running() ? "RUNNING" : (run.pending() ? "CUED" : "SETUP"),
+                               cfModelName(model),
+                               cfRing.visibleCount(), cfRing.rosterCount(),
+                               ring.radius, timeScale,
                                swarm.isConnected() ? "OK" : "INACTIVE",
                                bridge ? "  BRIDGE" : ""),
-                  swarm.isConnected() ? DemoHud::COL_OK : DemoHud::COL_BAD);
-        hud.header({"ID", "Gap m", "v m/s", "Mot-L", "Mot-R", "Battery"});
-        for (auto& [ang, id] : byAngle) {
-            const auto& ss = swarm.robotState((uint8_t)id);
+                  run.running() && swarm.isConnected() ? DemoHud::COL_OK : DemoHud::COL_BAD);
+        hud.header({"ID", "Gap m", "v m/s", "meas", "Mot-L", "Mot-R", "Battery"});
+        for (int id : cfRing.order()) {
+            const CfRingCar* c  = cfRing.car(id);
+            const auto&      ss = swarm.robotState((uint8_t)id);
             hud.row({DemoHud::fmt("%d", id),
-                     DemoHud::fmt("%.1f", cars[id].gap),
-                     DemoHud::fmt("%.2f", cars[id].vCmd),
+                     DemoHud::fmt("%.1f", c->gap),
+                     DemoHud::fmt("%.2f", c->speed),
+                     DemoHud::fmt("%.2f", c->measured),
                      DemoHud::fmt("%+d", (int)motors[id][0]),
                      DemoHud::fmt("%+d", (int)motors[id][1]),
                      ss.known ? DemoHud::formatBattery(ss.battery) : "--"},
@@ -784,6 +983,8 @@ int main(int argc, char* argv[]) {
 
         int key = cv::waitKey(1) & 0xFF;
         if (key == 'q' || key == 27) break;
+        if (key == ' ') run.toggle("key");
+        if (key == 's') run.requestStop("key");
         if (key == 'f') {
             fitPending = true; fitSince = now;
             printf("[ring] fitting to the visible robots\n");
@@ -804,14 +1005,17 @@ int main(int argc, char* argv[]) {
             timeScale = clampf(timeScale / TIME_SCALE_STEP, TIME_SCALE_MIN, TIME_SCALE_MAX);
             printf("[cf] time scale %.2gx\n", timeScale);
         }
-        if (key == 's') {
-            paused = !paused;
-            printf("[cf] %s\n", paused ? "paused" : "running");
-        }
     }
 
-    memset(motors, 0, sizeof(motors));
-    sendMotors();
+    // Stopping is the one thing that must not be best-effort: a single frame
+    // can be lost to a reconnect, so the zero command is repeated. The robots'
+    // own watchdog is the backstop if none of them lands.
+    allStop();
+    for (int i = 0; i < 3; ++i) {
+        now = std::chrono::steady_clock::now();
+        sendMotors(true);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
     if (debug) cv::destroyAllWindows();
     printf("[cf] stopped\n");
     return 0;
