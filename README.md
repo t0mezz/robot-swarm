@@ -39,6 +39,7 @@ robot-swarm/
 │       ├── vision_controller.cpp  # Main vision-based swarm controller
 │       ├── wingman.cpp            # V-formation follower controller
 │       ├── circle_demo.cpp        # Circle orbit formation
+│       ├── car_following.cpp      # Sugiyama ring experiment (headless; optional NetLogo page bridge)
 │       ├── shape_demo.cpp         # Freehand path drawing controller
 │       ├── marker_eval.cpp        # Camera + detection benchmarking tool
 │       ├── frame_inspector.cpp    # Record N seconds, step through frames, inspect detections
@@ -329,6 +330,173 @@ Robots orbit a point you click. Speed, radius, and orbit direction are adjustabl
 | `t` | Toggle orbit tracking |
 | `s` | Stop all |
 | `q` / Esc | Quit |
+
+---
+
+### `car_following`
+Runs the [Sugiyama et al. (2007)](https://iopscience.iop.org/article/10.1088/1367-2630/10/3/033001/meta)
+ring-road experiment on real robots: each robot follows the one ahead using one
+of seven car-following models, and — at a tight enough time gap — the ring
+spontaneously develops the phantom traffic jam the experiment is famous for.
+
+Unlike the other vision tools this is **headless by default** (one status line
+per second, no window); `--debug` opens the usual view and HUD.
+
+```bash
+./build/car_following [--model NAME] [--speed-max M/S] [--car-size M] [--time-gap S]
+                      [--reaction-time S] [--sigma A] [--sim-length M] [--radius MM]
+                      [--centre X Y] [--ring-file PATH] [--fit] [--dir cw|ccw]
+                      [--time-scale K] [--robot-max-speed MM_S] [--start]
+                      [--buffer-b B] [--buffer-id ID]
+                      [--bridge] [--port N] [--debug] [--count N]
+```
+
+Models: `Reuschel` `Pipes` `OVM` `CF-OVM` `FVDM` `ATG` `IDM` (default `FVDM`, the
+NetLogo page's default). Parameter defaults match that page's sliders.
+
+**Setup, cue, run.** The tool comes up in *setup*: camera, hub and ring are live
+and every motor is held at zero, so the robots can be placed and the ring dialled
+in without anything driving off. A run starts on a cue and continues until it is
+stopped; stopping returns the models to rest, so the next run begins from
+standstill the way the experiment's own setup does.
+
+| Cue | Start | Stop |
+|---|---|---|
+| NetLogo page (`--bridge`) | press **Move** | press **Move** again, or **Setup** |
+| `--debug` window | `space` | `space` or `s` |
+| headless terminal | `<enter>`, `go` | `s` or `stop` (`q` quits) |
+| launch flag | `--start` | — |
+
+A cue is latched rather than obeyed on the spot: the run begins on the first
+frame where the hub is connected, the ring has a radius, the roster has settled
+and at least one robot is in view, and it says once what it is still waiting for.
+
+`--count N` pins the number of vehicles the virtual ring is sized for. Without
+it the count is the *settled* roster (a change has to hold for a second), so a
+dropped detection cannot rescale the model mid-run; a robot that blinks out also
+keeps its place on the ring for a second, so its follower keeps braking for it.
+
+**The ring** is a saved fixture of the arena, kept in `/tmp/car_following_ring.yml`
+in the same format `circle_demo` uses for its circle — so if you have already
+calibrated a circle there, `/tmp/circle_demo.yml` is read as a fallback and no
+setup is needed. Set it with `--centre X Y` / `--radius MM`, or interactively in
+`--debug`; every change is written straight back, so the ring one run ends with
+is the ring the next one starts on.
+
+| Key / action | Effect (in `--debug`) |
+|---|---|
+| `space` | Run / stop |
+| `s` | Stop, back to setup |
+| Left-click | Move the ring centre there |
+| `+` / `-` | Radius ±25 mm |
+| `f` | Fit the ring to the robots that are visible |
+| `,` / `.` | Time scale ÷ / × 1.25 |
+| `q` / Esc | Quit |
+
+`--fit` does that same fit once at startup: it takes the centroid of the visible
+robots and their mean distance from it, waiting up to 5 s for at least three to
+be detected. That is only a ring if the robots are already standing on one — it
+used to be the automatic startup behaviour, and a scatter that was slightly off,
+or a robot not yet detected, produced an off-centre ring the controller then
+fought for the whole run (and which silently rescaled the model, since the
+simulated-metres-per-mm factor divides by the radius). Hence: opt-in, and saved
+like any other edit.
+
+**Scale.** The models are written in the paper's units (a 230 m ring, 5 m cars,
+15 m/s) and the arena is under a metre across, so positions and speeds are
+converted through one factor. What that factor preserves is *density* — the wave
+depends on metres per vehicle, not on the ring's absolute size — so by default
+the physical ring maps to `N × (230/22)` simulated metres for however many robots
+are on it, and four robots see the spacing 22 cars see in the paper.
+`--sim-length` pins the virtual ring length instead.
+
+**`--time-scale` — start here.** That factor maps *space* only. Time was mapped
+1:1, so a lap took as long on a 300 mm ring as it does on the paper's 230 m one,
+and the models asked for motor commands the robot cannot deliver:
+
+| Robots | Ring 250 mm | 300 mm | 350 mm |
+|---|---|---|---|
+| 3 | 114 | 137 | 159 |
+| 4 | 85 | 102 | 120 |
+| 5 | 68 | 82 | 96 |
+| 6 | 57 | 68 | 80 |
+
+(steady-state motor command at `K=1`, FVDM defaults, `--robot-max-speed 300`;
+100 is full throttle, so the top rows are clamped.)
+
+`--time-scale K` supplies the missing half: K real seconds become one simulated
+second. The model integrates a dt that is K times smaller and the commanded
+speed is scaled back down by K — so the loop stays self-consistent and the
+trajectories and the wave are unchanged, the whole experiment just runs K times
+slower in wall clock. Divide the table above by K. `--time-scale 4` is a sane
+starting point; `,` and `.` adjust it live in `--debug`. The heading controller
+is deliberately untouched by it and keeps running in real time.
+
+Above roughly `K=10` a model tick's travel shrinks into the tracker's own
+position noise (at `K=10`, four robots on a 300 mm ring move ~3 mm per 100 ms
+tick) — hence the `--time-scale` ceiling of 50. That shows up as jitter in the
+*reported* speed only: what couples the models to the robots is the gap, which
+is a whole vehicle spacing and far above the noise floor.
+
+**Where each speed comes from.** Each vehicle's speed is the model's own state,
+integrated by `cfStep()`; vision supplies positions, and therefore gaps, which
+is what couples the models to each other and to the real ring. The status line
+and HUD show the model speed next to the one measured from the ring, so a robot
+falling behind what it was asked for is visible. Feeding the measurement *back*
+into the model is what the first version did, and it is why nothing moved: for
+the second-order models `cfStep()` returns `speed + a·dt`, so the command was
+never more than one Euler step above what the robot had already managed, and a
+robot's speed lags its command. From standstill that step is millimetres per
+second — below the tool's own floor for commanding a motor, so the wheels never
+turned and the measurement stayed at zero with them.
+
+`--robot-max-speed` is the robot's physical speed (mm/s) at motor command 100 and
+is what converts simulated m/s into motor units — measure it once for your
+robots if the motion looks uniformly too fast or too slow.
+
+**Cooperative buffering.** `--buffer-id ID` nominates one robot as the
+*buffering vehicle*, after
+[Korbmacher & Tordeux](https://vzu.uni-wuppertal.de/fileadmin/site/vzu/Stop-and-Go_Mitigation_via_Cooperative_Buffering.html):
+it keeps `B` times the nominal time gap (`--buffer-b B`), while the other `N-1`
+keep `(N-B)/(N-1)` of theirs. The mean time gap — and so the density — is
+unchanged, which is what makes it a strategy rather than a disguised reduction
+in traffic; the one enlarged gap gives that robot room to decelerate gently, and
+the wave dies at it instead of being reflected back. `B = 1` is the
+non-cooperative baseline.
+
+This is a change to the *desired spacing*, so it is not IDM-specific: every
+model here that has one takes it — `Reuschel`, `OVM`, `CF-OVM` and `FVDM`
+through `V(s)`, `ATG` through `T0`, `IDM` through `s*`. **`Pipes` is the
+exception**: its `dv/dt = Δv/τ` never reads the gap, so it has no desired
+spacing to enlarge and buffering does nothing under it (the tool says so at
+startup rather than appearing to act).
+
+More buffering is not always better, though — the compensation is simultaneously
+tightening the other `N-1`. Under `IDM`, the model the strategy was published
+for, damping is monotone; under `FVDM` and `CF-OVM` a large `B` destabilises the
+followers before the buffer can absorb anything, so sweep `B` rather than
+assuming. Two guards apply on hardware that the reference page does not need:
+`B` is capped where the followers reach half the nominal gap (the page can
+afford a fixed slider max of 10 because it always has 20 vehicles; three robots
+cannot), and buffering is suspended whenever the buffering robot is not
+currently on the ring, since otherwise every remaining robot would tighten up
+with nothing holding the space open.
+
+**Live bridge.** `--bridge` serves the vendored NetLogo page from
+`tools/car-following-models/` at `http://127.0.0.1:8770/` (loopback only) with a
+small script appended that reports the model chooser, the slider values and the
+run state back as they change. The robots then follow whatever the page is set
+to and run when the page runs — its **Move** button is the cue and **Setup**
+returns them to rest — so the simulation and the real ring run the same dynamics
+side by side. The vendored HTML on disk is never modified: the script is
+injected at serve time, and the bridge carries UI parameters only, never `MSG_*`
+frames.
+
+That script also injects a small **Cooperative buffering** panel of its own
+(bottom right) with fields for `B` and the buffering robot's id, which ride out
+on the same POST as the NetLogo widgets. They are not NetLogo widgets because
+the vendored page is a fixed artefact, and because a robot id has no meaning
+inside the simulation.
 
 ---
 
