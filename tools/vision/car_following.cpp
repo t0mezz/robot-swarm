@@ -163,6 +163,7 @@
 #include <cstdlib>
 #include <cctype>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <random>
 #include <sstream>
@@ -185,6 +186,10 @@ static constexpr float TIME_SCALE_MIN  = 0.25f;
 static constexpr float TIME_SCALE_MAX  = 50.0f;
 static constexpr float TIME_SCALE_STEP = 1.25f;   // ',' / '.' in the debug view
 static constexpr float CONTROL_INTERVAL_S = 0.01f;
+// Rolling window kept for the --bridge page's camera-trajectories graph,
+// matching the vendored NetLogo plots' own 2500-tick/250s rescale cycle so
+// the three graphs read on comparable timescales.
+static constexpr float TRAJ_WINDOW_S = 250.0f;
 // The motor frame is only written when a command actually changed, plus this
 // keepalive so the robots' own WATCHDOG_TIMEOUT_MS (1s, lib/SwarmProtocol/
 // hardware.h) never expires. In setup — and any time the ring is coasting on
@@ -420,6 +425,38 @@ struct Buffering {
     int   id = -1;     // robot id of the buffering vehicle; -1 = nobody
     bool on() const { return id >= 0 && b > 1.f; }
 };
+
+// One camera-measured (space, time) sample for the --bridge page's third
+// graph. `t` is seconds since the run started, in the model's own dilated
+// clock (runElapsedS below) so it lines up with the "Simulation" plot's
+// ticks*0.1 axis rather than wall-clock time; `s` is the vehicle's arc-length
+// position, derived from CfRingCar::angleDeg the same way the NetLogo plots
+// use xcor — see the CLAUDE.md note on car_following for why the model
+// itself never gets a position state.
+struct TrajSample {
+    float t, s;
+    int   id;
+};
+
+// Hand-rolled the way swarm_telemetry_json.cpp builds its NDJSON: no fields
+// here need escaping (ids and floats only), so a full jsonEscape isn't
+// worth pulling in for this one array.
+static std::string trajectoriesJson(const std::deque<TrajSample>& buf, float roadM) {
+    std::string out;
+    out.reserve(buf.size() * 24 + 32);
+    char line[64];
+    snprintf(line, sizeof(line), "{\"road\":%.3f,\"pts\":[", roadM);
+    out += line;
+    bool first = true;
+    for (const auto& s : buf) {
+        if (!first) out += ',';
+        first = false;
+        snprintf(line, sizeof(line), "[%d,%.3f,%.3f]", s.id, s.t, s.s);
+        out += line;
+    }
+    out += "]}";
+    return out;
+}
 
 static void applyParams(const std::string& body, CfParams& p, CfModel& model,
                         PageState& page, Buffering& buf) {
@@ -686,6 +723,11 @@ int main(int argc, char* argv[]) {
     CfRunState run;
     if (autoStart) run.requestStart("--start");
 
+    // Camera-measured trajectories for the --bridge page's third graph, kept
+    // only while a bridge client might poll for them.
+    std::deque<TrajSample> trajBuf;
+    float                  runElapsedS = 0.f;
+
     std::unordered_map<int, Servo> servos;
     std::unordered_map<int, RobotPose> poseById;
     int8_t motors[SC_MAX_ROBOTS][2] = {};
@@ -887,8 +929,12 @@ int main(int argc, char* argv[]) {
         switch (run.update(ready, alignDone)) {
             case CfRunEvent::Started:
                 // The model's clock restarts with the run: without this the
-                // first tick would integrate the whole setup period.
-                lastModel = now;
+                // first tick would integrate the whole setup period. The
+                // trajectory graph's clock restarts with it too, so a new
+                // run starts its trace at t=0 like the NetLogo plots do.
+                lastModel   = now;
+                runElapsedS = 0.f;
+                trajBuf.clear();
                 cfRing.rest();
                 printf("[cf] running (%s) — %d robots, %s, %.2gx\n",
                        run.source(), cfRing.visibleCount(), cfModelName(model), timeScale);
@@ -935,6 +981,22 @@ int main(int argc, char* argv[]) {
             // makes the integration finer.
             cfRing.step(model, params, modelDt / timeScale, ring.radius,
                         [&] { return gauss(rng); }, buf.id, buf.b);
+
+            if (bridge) {
+                // Same dilation as the model's own clock: this is what makes
+                // the camera trace and the "Simulation" plot's ticks*0.1
+                // axis comparable.
+                runElapsedS += modelDt / timeScale;
+                for (int id : cfRing.order()) {
+                    const CfRingCar* c = cfRing.car(id);
+                    if (c && c->visible)
+                        trajBuf.push_back({runElapsedS,
+                                           c->angleDeg / 360.f * cfRing.simLengthM(), id});
+                }
+                while (!trajBuf.empty() && trajBuf.front().t < runElapsedS - TRAJ_WINDOW_S)
+                    trajBuf.pop_front();
+                http.publishTrajectories(trajectoriesJson(trajBuf, cfRing.simLengthM()));
+            }
         }
 
         // ── Servo each robot onto its commanded speed ────────────────────────

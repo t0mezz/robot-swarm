@@ -65,6 +65,12 @@ public:
 
     bool isRunning() const { return listen_ >= 0; }
 
+    // Latest snapshot for GET /trajectories (the --bridge page's camera-
+    // trajectories graph, polled independently of the page's own POST
+    // /params traffic). Overwrite-in-place like `page_`: the caller
+    // publishes a full snapshot each model tick, not a diff.
+    void publishTrajectories(std::string json) { trajJson_ = std::move(json); }
+
     // Accepts new connections, answers any complete requests, and returns the
     // bodies of the POSTs received since the last call. Never blocks.
     std::vector<std::string> poll() {
@@ -135,10 +141,24 @@ private:
         if (c.rx.compare(0, 5, "POST ") == 0) {
             posts.push_back(c.rx.substr(bodyAt, want));
             c.tx = response("204 No Content", nullptr, "");
+        } else if (requestPath(c.rx) == "/trajectories") {
+            c.tx = response("200 OK", "application/json", trajJson_);
         } else {
             c.tx = response("200 OK", "text/html; charset=utf-8", page_);
         }
         c.answered = true;
+    }
+
+    // The second whitespace-delimited token of the request line, e.g. "/" or
+    // "/trajectories" out of "GET /trajectories HTTP/1.1". Everything else
+    // this server answers ignores the path entirely (any non-POST request
+    // gets the page), so this is the one place a path is read at all.
+    static std::string requestPath(const std::string& rx) {
+        size_t sp1 = rx.find(' ');
+        if (sp1 == std::string::npos) return "";
+        size_t sp2 = rx.find(' ', sp1 + 1);
+        if (sp2 == std::string::npos) return "";
+        return rx.substr(sp1 + 1, sp2 - sp1 - 1);
     }
 
     static std::string response(const char* status, const char* type,
@@ -152,5 +172,6 @@ private:
 
     int               listen_ = -1;
     std::string       page_;
+    std::string       trajJson_ = "{\"road\":0,\"pts\":[]}";
     std::vector<Conn> conns_;
 };

@@ -16,6 +16,12 @@
 // are not NetLogo widgets: the vendored page is a fixed artefact and is never
 // edited on disk, and a robot id has no meaning inside the simulation anyway.
 // They ride out on the same POST as everything else, as buffer-b / buffer-id.
+//
+// And a third graph: the page's own "Simulation" and "Real trajectories"
+// plots are NetLogo widgets (the live model, and a hardcoded historical
+// dataset from the 2007 paper) — neither is what the camera actually saw. A
+// canvas panel here polls GET /trajectories, which the tool republishes once
+// per model tick, and draws it the same shape (space vs. time) as those two.
 
 (function () {
   var last = "";
@@ -143,4 +149,149 @@
     // resyncs by itself after a restart.
     fetch("/params", { method: "POST", body: s }).catch(function () { last = ""; });
   }, 200);
+
+  // ── Camera trajectories ─────────────────────────────────────────────────
+  // Fixed panel, positioned independently of the NetLogo interface's own
+  // layout — that DOM comes from NetLogo Web's compiled JS and isn't
+  // something this script can rely on structurally (the same reasoning as
+  // the buffering panel above).
+  var TRAJ_W = 320, TRAJ_H = 380;
+  var trajCanvas, trajCtx;
+
+  function buildTrajPanel() {
+    var wrap = document.createElement("div");
+    wrap.style.cssText =
+      "position:fixed;top:12px;right:12px;z-index:9998;background:#fff;" +
+      "border:1px solid #999;border-radius:4px;padding:6px;" +
+      "box-shadow:0 1px 6px rgba(0,0,0,.25)";
+
+    var title = document.createElement("div");
+    title.textContent = "Camera trajectories";
+    title.style.cssText = "font:bold 12px sans-serif;margin-bottom:4px";
+    wrap.appendChild(title);
+
+    trajCanvas = document.createElement("canvas");
+    trajCanvas.width = TRAJ_W;
+    trajCanvas.height = TRAJ_H;
+    trajCanvas.style.cssText = "display:block";
+    wrap.appendChild(trajCanvas);
+
+    document.body.appendChild(wrap);
+    trajCtx = trajCanvas.getContext("2d");
+  }
+
+  // A small deterministic per-id color, since — unlike the NetLogo plots'
+  // single pen — the robot count here is small enough (a handful) that
+  // telling vehicles apart by color is real signal, not clutter.
+  function colorForId(id) {
+    var hue = ((id * 67) % 360 + 360) % 360;
+    return "hsl(" + hue + ",70%,45%)";
+  }
+
+  // Margins around the plot area, matching the NetLogo plots' look: axis
+  // lines plus "Space [m]" / "Time [s]" labels.
+  var PAD_L = 34, PAD_R = 8, PAD_T = 8, PAD_B = 24;
+
+  function drawTrajectories(data) {
+    var ctx = trajCtx;
+    ctx.clearRect(0, 0, TRAJ_W, TRAJ_H);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, TRAJ_W, TRAJ_H);
+
+    var plotW = TRAJ_W - PAD_L - PAD_R;
+    var plotH = TRAJ_H - PAD_T - PAD_B;
+
+    var road = data.road > 0 ? data.road : 1;
+    var pts = data.pts || [];
+
+    var tMin = 0, tMax = 1;
+    if (pts.length) {
+      tMin = pts[0][1]; tMax = pts[0][1];
+      for (var i = 1; i < pts.length; i++) {
+        var t = pts[i][1];
+        if (t < tMin) tMin = t;
+        if (t > tMax) tMax = t;
+      }
+      if (tMax <= tMin) tMax = tMin + 1;
+    }
+
+    function x(s) { return PAD_L + (s / road) * plotW; }
+    function y(t) { return PAD_T + (1 - (t - tMin) / (tMax - tMin)) * plotH; }
+
+    // Axes.
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PAD_L, PAD_T);
+    ctx.lineTo(PAD_L, PAD_T + plotH);
+    ctx.lineTo(PAD_L + plotW, PAD_T + plotH);
+    ctx.stroke();
+
+    ctx.fillStyle = "#333";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Space [m]", PAD_L + plotW / 2, TRAJ_H - 6);
+    ctx.save();
+    ctx.translate(10, PAD_T + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText("Time [s]", 0, 0);
+    ctx.restore();
+
+    if (!pts.length) {
+      ctx.textAlign = "center";
+      ctx.fillText("waiting for a run…", PAD_L + plotW / 2, PAD_T + plotH / 2);
+      return;
+    }
+
+    // Bucket by id — pts already arrive time-ordered per id, since the tool
+    // appends one sample per visible vehicle each model tick.
+    var byId = {};
+    for (var j = 0; j < pts.length; j++) {
+      var id = pts[j][0];
+      (byId[id] = byId[id] || []).push({ t: pts[j][1], s: pts[j][2] });
+    }
+
+    // A rough "one tick" duration, taken as the smallest positive gap
+    // between consecutive samples anywhere in the buffer. A within-id gap
+    // much larger than this means the vehicle dropped out and reappeared,
+    // not that it kept moving — break the line there rather than drawing a
+    // spurious diagonal across the whole plot. The same threshold catches a
+    // ring wrap-around in space.
+    var tickDt = Infinity;
+    for (var id2 in byId) {
+      var arr = byId[id2];
+      for (var k = 1; k < arr.length; k++) {
+        var d = arr[k].t - arr[k - 1].t;
+        if (d > 0 && d < tickDt) tickDt = d;
+      }
+    }
+    if (!isFinite(tickDt) || tickDt <= 0) tickDt = 0.1;
+
+    for (var id3 in byId) {
+      var pts2 = byId[id3];
+      ctx.strokeStyle = colorForId(id3);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      var started = false;
+      for (var m = 0; m < pts2.length; m++) {
+        var p = pts2[m];
+        if (m > 0) {
+          var prev = pts2[m - 1];
+          var dropout = (p.t - prev.t) > tickDt * 4;
+          var wrapped = Math.abs(p.s - prev.s) > road / 2;
+          if (dropout || wrapped) started = false;
+        }
+        if (!started) { ctx.moveTo(x(p.s), y(p.t)); started = true; }
+        else ctx.lineTo(x(p.s), y(p.t));
+      }
+      ctx.stroke();
+    }
+  }
+
+  buildTrajPanel();
+
+  setInterval(function () {
+    fetch("/trajectories").then(function (r) { return r.json(); })
+      .then(drawTrajectories).catch(function () { /* transient — next poll retries */ });
+  }, 500);
 })();
