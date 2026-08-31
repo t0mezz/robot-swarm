@@ -163,6 +163,85 @@ static void test_noise_is_off_by_default() {
     EXPECT_TRUE(kicked > 0.f, "noise gated off near zero speed");
 }
 
+// The loop tools/vision/car_following.cpp closes: the model is stepped from its
+// own speed state, and a measurement that carries a gain error k (on the ring,
+// ring.radius / the robot's actual orbit radius) corrects that state slowly.
+//
+// Run to convergence and report the settled commanded speed as a fraction of
+// the equilibrium V(gap). tau <= 0 selects the unstable shape — state replaced
+// by the measurement outright — so the two can be compared directly.
+static float settled_speed_ratio(float k, float tauS) {
+    CfParams p = defaults();
+    const float simDt = 0.025f;              // 0.1s model tick at --time-scale 4
+    const float gap   = 5.454545f;           // the paper's density, N * 230/22
+    const float veq   = cfOptimalVelocity(gap, p);
+    const float alpha = cfSyncAlpha(simDt, tauS);
+
+    float v = veq;                           // start at equilibrium
+    for (int i = 0; i < 40000; ++i) {
+        float measured = v * k;              // what vision reports for that command
+        v += alpha * (measured - v);
+        CfInput in{gap, v, v, gap};          // uniform ring: every car alike
+        v = std::min(std::max(cfStep(CfModel::FVDM, in, p, simDt), 0.f), p.speedMax);
+    }
+    return v / veq;
+}
+
+// Re-seeding the model from the measurement every step is what made the ring
+// tool pin every robot at speed-max: the gain error only has to beat the
+// per-step decay (1 - dt/reactionTime), which is 3.6% at the tool's defaults.
+// Divergence proper starts at k > 1/(1 - dt/reactionTime) = 1.037, but the
+// approach is just as useless: speedMax / V(gap) is 2.2 at this density, and
+// re-seeding is already at 2.17 by k = 1.02.
+static void test_measurement_reseed_diverges() {
+    EXPECT_NEAR(settled_speed_ratio(1.00f, -1.f), 1.0, 1e-3,
+                "an exact measurement is a fixed point either way");
+    EXPECT_TRUE(settled_speed_ratio(1.02f, -1.f) > 2.0f,
+                "re-seeding more than doubles the command on a 2% error");
+    EXPECT_TRUE(settled_speed_ratio(1.05f, -1.f) > 2.19f,
+                "and pins at speed-max past the 1.037 divergence threshold");
+    EXPECT_TRUE(settled_speed_ratio(0.90f, -1.f) < 0.30f,
+                "and collapses to a third of V(gap) on a 10% error the other way");
+}
+
+// Blending it into the state instead keeps the loop contractive. The settled
+// speed stays close to V(gap) across the range the ring geometry can actually
+// produce, and stays bounded well away from speed-max even far outside it.
+static void test_slow_sync_is_stable_under_measurement_error() {
+    // +/-5% covers the residual radius error once the heading controller holds
+    // the ring (it settles within ~4% of ring.radius across the speed range).
+    EXPECT_TRUE(settled_speed_ratio(1.05f, CF_SYNC_TAU_S) < 1.02f,
+                "within 2% of V(gap) at a 5% over-read");
+    EXPECT_TRUE(settled_speed_ratio(0.95f, CF_SYNC_TAU_S) > 0.98f,
+                "within 2% of V(gap) at a 5% under-read");
+    for (float k : {0.9f, 0.95f, 1.05f, 1.1f}) {
+        float ratio = settled_speed_ratio(k, CF_SYNC_TAU_S);
+        EXPECT_TRUE(ratio > 0.96f && ratio < 1.04f,
+                    "within 4% of V(gap) across +/-10% measurement error");
+    }
+    // Far outside that range the loop must still converge rather than run away:
+    // a robot orbiting at half the ring radius reads 2x fast, and the command
+    // has to stay well short of the speed-max pin that re-seeding produces.
+    EXPECT_TRUE(settled_speed_ratio(2.0f, CF_SYNC_TAU_S) < 1.6f,
+                "a 2x over-read stays bounded instead of pinning at speed-max");
+    EXPECT_TRUE(settled_speed_ratio(0.5f, CF_SYNC_TAU_S) > 0.8f,
+                "and a 2x under-read does not collapse");
+    // The correction still has to bite, or a robot that cannot keep up would be
+    // driven by a model that never notices: the settled state moves toward the
+    // measurement, monotonically in the direction of the error.
+    EXPECT_TRUE(settled_speed_ratio(0.9f, CF_SYNC_TAU_S) < 1.f &&
+                settled_speed_ratio(1.1f, CF_SYNC_TAU_S) > 1.f,
+                "the state tracks the measurement's direction");
+}
+
+static void test_sync_alpha() {
+    EXPECT_NEAR(cfSyncAlpha(0.025f, 2.0f), 0.025 / 2.025, 1e-6, "EMA from a time constant");
+    EXPECT_NEAR(cfSyncAlpha(0.025f, 0.f), 1.0, 1e-6, "tau 0 replaces the state");
+    // Frame-rate independent: half the step, half the correction, near enough.
+    EXPECT_NEAR(cfSyncAlpha(0.0125f, 2.0f) * 2.f, cfSyncAlpha(0.025f, 2.0f), 1e-4,
+                "alpha tracks dt for a fixed tau");
+}
+
 int main() {
     test_model_names_round_trip();
     test_optimal_velocity();
@@ -173,6 +252,9 @@ int main() {
     test_atg_time_gap_is_bounded();
     test_first_order_models_set_speed_directly();
     test_noise_is_off_by_default();
+    test_sync_alpha();
+    test_measurement_reseed_diverges();
+    test_slow_sync_is_stable_under_measurement_error();
 
     std::printf("test_car_following: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

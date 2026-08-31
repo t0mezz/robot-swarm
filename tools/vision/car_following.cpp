@@ -11,6 +11,7 @@
 //                   [--time-gap S] [--reaction-time S] [--sigma A]
 //                   [--sim-length M] [--radius MM] [--centre X Y] [--dir cw|ccw]
 //                   [--ring-file PATH] [--fit] [--robot-max-speed MM_S]
+//                   [--time-scale K]
 //                   [--bridge] [--port N] [--debug] [--serial SN] [--ip IP]
 //                   [--count N]
 //
@@ -65,6 +66,21 @@
 // (see the long comment there for why pure feedback oscillates on a circle).
 // The one difference is where the tangential speed comes from — per robot,
 // from the car-following model, instead of one global orbit rate.
+//
+// That controller's velocity field is in *motor units*, not mm/s: circle_demo
+// never converts, and K_FF_YAW / K_RAD were tuned on hardware against that
+// scale. So the model's metres per second are converted all the way down to
+// motor units (via --robot-max-speed) *before* the heading law sees them.
+// Leaving the field in mm/s scales the feedforward up and the radial pull down
+// by robotMaxMms/MOTOR_MAX, and since the feedforward is proportional to speed
+// the robots then orbit at a radius that depends on how fast they are going —
+// a fast one settles into a lane inside a slow one instead of catching it up.
+//
+// The other thing the model needs from the loop is that its speed stays a
+// *state*. cfStep returns `in.speed + a*dt`, so feeding it the vision-measured
+// speed each tick would hand the drive command that measurement back nearly
+// unchanged — noise and all — and diverge on any bias. Vision corrects the
+// state slowly instead; cfSyncAlpha() in car_following.h has the algebra.
 
 #include "aruco_tracker.h"
 #include "SwarmClient.h"
@@ -304,10 +320,16 @@ struct Car {
     float yaw      = 0.f;  // deg, low-passed heading
     float yawRate  = 0.f;  // deg/s, held between model ticks
     float speed    = 0.f;  // simulated m/s, measured from the ring position
-    float vCmd     = 0.f;  // simulated m/s, the model's output
+    // The vehicle's speed *state* — what the paper's v_n is, and what cfStep
+    // integrates. Measured speed corrects it slowly rather than replacing it;
+    // see cfSyncAlpha() in car_following.h for why replacing it diverges.
+    float vModel   = 0.f;  // simulated m/s
+    float vCmd     = 0.f;  // simulated m/s, the model's output (vModel, clamped)
     float gap      = 0.f;  // simulated m, clear distance to the predecessor
     float prevTurn = 0.f;  // slew-limited turn output
     bool  haveYaw  = false;
+    bool  haveSpeed = false;  // a measurement has been taken, so vModel is seeded
+    bool  known     = false;  // registered with the hub
     std::chrono::steady_clock::time_point lastSeen;
 };
 
@@ -355,7 +377,12 @@ int main(int argc, char* argv[]) {
         else if (arg("--robot-max-speed")) robotMaxMms = (float)atof(argv[++i]);
         else if (arg("--time-scale"))      timeScale   = (float)atof(argv[++i]);
         else if (arg("--port"))            port        = atoi(argv[++i]);
-        else if (arg("--dir"))             dirSign     = strcmp(argv[++i], "cw") == 0 ? -1.f : 1.f;
+        else if (arg("--dir")) {
+            const char* d = argv[++i];
+            if      (strcmp(d, "cw")  == 0) dirSign = -1.f;
+            else if (strcmp(d, "ccw") == 0) dirSign =  1.f;
+            else { fprintf(stderr, "--dir must be cw or ccw, got: %s\n", d); return 2; }
+        }
         else if (strcmp(argv[i], "--centre") == 0 && i + 2 < argc) {
             argCentreX = (float)atof(argv[++i]);
             argCentreY = (float)atof(argv[++i]);
@@ -382,6 +409,11 @@ int main(int argc, char* argv[]) {
         else { fprintf(stderr, "unknown argument: %s\n", argv[i]); return 2; }
     }
 
+    // Divides the model's speed on the way to the motors, so it cannot be zero.
+    if (robotMaxMms <= 0.f) {
+        fprintf(stderr, "--robot-max-speed must be positive\n");
+        return 2;
+    }
     if (timeScale < TIME_SCALE_MIN || timeScale > TIME_SCALE_MAX) {
         fprintf(stderr, "--time-scale must be between %.2f and %.0f\n",
                 TIME_SCALE_MIN, TIME_SCALE_MAX);
@@ -532,6 +564,7 @@ int main(int argc, char* argv[]) {
         for (auto& [id, pose] : poseById) {
             Car& c = cars[id];
             c.lastSeen = now;
+            if (!c.known) { swarm.registerRobot((uint8_t)id); c.known = true; }
             if (!c.haveYaw) { c.yaw = pose.yaw; c.prevYaw = pose.yaw; c.haveYaw = true; }
             else            c.yaw = normAngle(c.yaw + yawAlpha * normAngle(pose.yaw - c.yaw));
         }
@@ -579,13 +612,23 @@ int main(int argc, char* argv[]) {
 
         // Density: the virtual ring grows with the number of robots so the
         // metres-per-vehicle stay at the experiment's value (see the header).
-        if (M > 0) {
-            float lengthM = simLengthM > 0.f ? simLengthM : M * PAPER_SPACING_M;
+        //
+        // Counted over `cars` — the robots seen within the last second — and not
+        // over this frame's detections. The road length divides into every gap
+        // and every measured speed, so taking it from M would rescale the whole
+        // experiment for as long as one marker is missed: four robots dropping
+        // to three shortens the road by 25%, and every car sees its gap and its
+        // own speed jump with it. Single-frame dropouts are routine (that is
+        // what MOTOR_HOLD_S is for), so the population has to outlive them.
+        // --count pins it outright when the arena's robot count is known.
+        int roadCount = robotCount > 0 ? robotCount : (int)cars.size();
+        if (roadCount > 0) {
+            float lengthM = simLengthM > 0.f ? simLengthM : roadCount * PAPER_SPACING_M;
             simPerMm = lengthM / (2.f * (float)M_PI * ring.radius);
-            if (M != lastCount) {
+            if (roadCount != lastCount) {
                 printf("[cf] %d robots → virtual ring %.1f m (%.2f m per vehicle)\n",
-                       M, lengthM, lengthM / M);
-                lastCount = M;
+                       roadCount, lengthM, lengthM / roadCount);
+                lastCount = roadCount;
             }
         }
 
@@ -615,6 +658,9 @@ int main(int argc, char* argv[]) {
                     // divided by, which is what keeps the loop consistent.
                     c.speed   = dirSign * normAngle(ang - c.prevAng) * DEG2RAD * ring.radius
                                 / simDt * simPerMm;
+                    // First measurement seeds the model state; after that the
+                    // measurement only corrects it (see pass 2).
+                    if (!c.haveSpeed) { c.vModel = c.speed; c.haveSpeed = true; }
                     // Yaw rate feeds the heading PD, which is a real-time
                     // controller: real seconds, whatever the model's clock does.
                     c.yawRate = normAngle(c.yaw - c.prevYaw) / modelDt;
@@ -636,18 +682,32 @@ int main(int argc, char* argv[]) {
             }
 
             // Pass 2: step every model off that snapshot.
+            //
+            // The model is stepped from its own speed state, with the measured
+            // speed blended in slowly. Stepping straight from the measurement
+            // instead — which is what cfStep's `in.speed + a*dt` shape invites —
+            // closes a unity-gain loop around vision: it hands the drive command
+            // the robot's own last-100ms speed back almost unchanged (the model
+            // contributes only a*simDt, ~4% of it), so vision noise goes to the
+            // motors unfiltered, and any bias at all makes the command run away
+            // to speedMax. See cfSyncAlpha() in car_following.h for the algebra.
+            float syncAlpha = cfSyncAlpha(simDt);
             for (int i = 0; i < M; ++i) {
                 int  id   = byAngle[i].second;
                 int  pred = byAngle[(i + (dirSign > 0 ? 1 : M - 1)) % M].second;
                 Car& c    = cars[id];
 
-                CfInput in{c.gap, c.speed, cars[pred].speed, cars[pred].gap};
+                if (c.haveSpeed) c.vModel += syncAlpha * (c.speed - c.vModel);
+
+                CfInput in{c.gap, c.vModel, cars[pred].vModel, cars[pred].gap};
                 float v = cfStep(model, in, params, simDt,
                                  params.sigma > 0.f ? gauss(rng) : 0.f);
                 // The robots only ever go forwards around the ring: a model
                 // that undershoots into reverse would have them driving into
-                // their follower.
-                c.vCmd = clampf(v, 0.f, params.speedMax);
+                // their follower. Clamped before it is stored, so the state
+                // cannot wind up outside the range the robots can be asked for.
+                c.vModel = clampf(v, 0.f, params.speedMax);
+                c.vCmd   = c.vModel;
             }
         }
 
@@ -678,11 +738,25 @@ int main(int argc, char* argv[]) {
                 float rx = dx / distC,          ry = dy / distC;
                 float tx = dirSign * -ry,       ty = dirSign * rx;
 
-                // sim m/s -> world units per *real* second: undo the density
-                // scale, then the time dilation.
-                float vTan = c.vCmd / simPerMm / timeScale;           // world units/s
+                // sim m/s -> world units per *real* second (undo the density
+                // scale, then the time dilation), then -> motor units.
+                //
+                // That last conversion is the one that matters. circle_demo's
+                // velocity field is in *motor units* — it never converts, it
+                // feeds vTan straight to the motors as `forward` — and K_FF_YAW
+                // and K_RAD were tuned on hardware against that scale. Carrying
+                // the gains over while expressing the field in mm/s scales both
+                // by robotMaxMms/MOTOR_MAX: the yaw feedforward over-commands by
+                // that factor and the radial pull is weaker by it. The
+                // feedforward is proportional to speed, so the error is too, and
+                // robots settle onto a smaller circle the faster they are going
+                // — a fast robot cutting inside a slow one on its own lane
+                // rather than closing on it. Keep the field in motor units.
+                float mmPerUnit = robotMaxMms / MOTOR_MAX;
+                float vTan = std::min(c.vCmd / simPerMm / timeScale / mmPerUnit,
+                                      MOTOR_MAX);
                 float vRad = clampf(-K_RAD * (distC - ring.radius),
-                                    -robotMaxMms * 0.5f, robotMaxMms * 0.5f);
+                                    -MOTOR_MAX * 0.5f, MOTOR_MAX * 0.5f);
 
                 float vx = vTan * tx + vRad * rx;
                 float vy = vTan * ty + vRad * ry;
@@ -696,11 +770,14 @@ int main(int argc, char* argv[]) {
                 // Feedforward carries the steady turn (v/R); feedback only
                 // corrects the residual. Gated by headingSc so a robot that is
                 // still spinning to align can't deadlock at zero output — see
-                // circle_demo.cpp for the full derivation.
+                // circle_demo.cpp for the full derivation. vTan is capped at
+                // MOTOR_MAX above before it gets here, for the reason given
+                // there: feeding forward a speed the robot cannot reach
+                // overdrives the turn and brings the oscillation back.
                 float ffOmega = dirSign * (vTan / ring.radius) * RAD2DEG;
                 float dErr    = clampf(ffOmega - c.yawRate, -300.f, 300.f);
 
-                float forward = clampf(vMag / robotMaxMms * MOTOR_MAX, 0.f, MOTOR_MAX) * headingSc;
+                float forward = clampf(vMag, 0.f, MOTOR_MAX) * headingSc;
                 float turnTgt = clampf(K_FF_YAW * ffOmega * headingSc
                                        + K_ANGLE * angleErr + K_YAW_D * dErr,
                                        -MAX_TURN, MAX_TURN);
@@ -708,7 +785,6 @@ int main(int argc, char* argv[]) {
                 float turn    = clampf(turnTgt, c.prevTurn - maxStep, c.prevTurn + maxStep);
                 c.prevTurn    = turn;
 
-                swarm.registerRobot((uint8_t)id);
                 motors[id][0] = (int8_t)clampf(forward + turn, -MOTOR_MAX, MOTOR_MAX);
                 motors[id][1] = (int8_t)clampf(forward - turn, -MOTOR_MAX, MOTOR_MAX);
             }

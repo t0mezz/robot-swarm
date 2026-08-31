@@ -17,8 +17,31 @@
   simulated). Nothing has run on robots yet.
 - Measure `--robot-max-speed` for the 3pi+ (physical mm/s at motor command 100);
   the 300 default is a guess and is what converts model m/s into motor units.
+  It matters more than it looks: it now sets the scale of the whole velocity
+  field the heading controller sees, so a wrong value detunes K_FF_YAW/K_RAD
+  proportionally.
 - Check the yaw/servo gains inherited from circle_demo still behave when the
   commanded speed varies per robot instead of being one global orbit rate.
+  ADDRESSED IN SOFTWARE (2026-08-31), still to be confirmed on hardware — two
+  bugs found by simulating both controllers against a unicycle plant:
+  * The velocity field was in mm/s while circle_demo's gains are tuned against
+    motor units, so the yaw feedforward over-commanded by robotMaxMms/MOTOR_MAX
+    (3x at the defaults) and the radial pull was weaker by the same factor.
+    Being speed-proportional, it made the settled orbit radius a function of
+    speed: 255mm at 45mm/s vs 107mm at 120mm/s on a 300mm ring, against
+    297/281mm for circle_demo — i.e. visible lanes with the faster robots
+    inside, which is exactly what was reported from the first hardware runs.
+  * The model was stepped from the vision-measured speed rather than its own
+    state, closing a unity-gain loop around vision. Combined with the radius
+    error above (road position is an angle, so a robot orbiting inside the ring
+    reads as travelling proportionally faster) the loop gain exceeded 1 and the
+    command pinned at speedMax — the car-following model was not running.
+  * Also: the virtual road length was taken from the robots detected in the
+    current frame, so one missed marker rescaled every gap and every measured
+    speed by 25% with four robots on the ring.
+  On hardware, confirm: robots hold one lane at mixed speeds; a stop-and-go
+  wave forms rather than everyone running flat out; the status line's per-robot
+  m/s sits near V(gap) for the density rather than at --speed-max.
 - The ring is now a saved fixture (`/tmp/car_following_ring.yml`, circle_demo's
   format, `--centre`/`--radius`/`--fit` or click and +/- in `--debug`) rather
   than auto-fitted at startup — set it once on the real arena and confirm the
