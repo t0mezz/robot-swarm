@@ -957,6 +957,17 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
+                // circle_demo's heading gains (K_FF_YAW, K_RAD) are tuned
+                // against motor units, since it never converts — it feeds its
+                // orbit rate straight to the motors as `forward`. So the
+                // model's world-units/s field is converted down to motor
+                // units before the heading law below ever sees it; leaving it
+                // in mm/s scales the feedforward up and the radial pull down
+                // by robotMaxMms/MOTOR_MAX, and since the feedforward is
+                // proportional to speed the robots then orbit at a
+                // speed-dependent radius (see the file header).
+                float mmPerUnit = robotMaxMms / MOTOR_MAX;
+
                 for (auto& [id, pose] : poseById) {
                     const CfRingCar* c = cfRing.car(id);
                     Servo&           s = servos[id];
@@ -976,19 +987,22 @@ int main(int argc, char* argv[]) {
                     // converted from simulated to world units. Both feed the
                     // same tangential/radial mix and heading controller below;
                     // the sign flip matches vTan to the tx/ty basis, which is
-                    // itself signed by dirSign.
+                    // itself signed by dirSign. Both are then converted from
+                    // world units (mm/s) to motor units, per the comment above.
                     bool  haveCmd = false;
-                    float vTan    = 0.f;
+                    float vTan    = 0.f;   // motor units
                     if (run.aligning()) {
                         if (c) {
-                            vTan = dirSign * clampf(K_ALIGN * c->alignErrorDeg,
-                                                    -ALIGN_SPEED_MAX_MMS, ALIGN_SPEED_MAX_MMS);
+                            float vTanMms = dirSign * clampf(K_ALIGN * c->alignErrorDeg,
+                                                             -ALIGN_SPEED_MAX_MMS, ALIGN_SPEED_MAX_MMS);
+                            vTan    = clampf(vTanMms / mmPerUnit, -MOTOR_MAX, MOTOR_MAX);
                             haveCmd = true;
                         }
                     } else if (c && simPerMm > 0.f) {
                         // sim m/s -> world units per *real* second: undo the
                         // density scale, then the time dilation.
-                        vTan    = c->speed / simPerMm / timeScale;      // world units/s
+                        float vTanMms = c->speed / simPerMm / timeScale;    // world units/s
+                        vTan    = clampf(vTanMms / mmPerUnit, -MOTOR_MAX, MOTOR_MAX);
                         haveCmd = true;
                     }
 
@@ -997,7 +1011,7 @@ int main(int argc, char* argv[]) {
                         float tx = dirSign * -ry,       ty = dirSign * rx;
 
                         float vRad = clampf(-K_RAD * (distC - ring.radius),
-                                            -robotMaxMms * 0.5f, robotMaxMms * 0.5f);
+                                            -MOTOR_MAX * 0.5f, MOTOR_MAX * 0.5f);
 
                         float vx = vTan * tx + vRad * rx;
                         float vy = vTan * ty + vRad * ry;
@@ -1020,8 +1034,7 @@ int main(int argc, char* argv[]) {
                             float ffOmega = dirSign * (vTan / ring.radius) * RAD2DEG;
                             float dErr    = clampf(ffOmega - yawRate, -300.f, 300.f);
 
-                            float forward = clampf(vMag / robotMaxMms * MOTOR_MAX,
-                                                   0.f, MOTOR_MAX) * headingSc;
+                            float forward = clampf(vMag, 0.f, MOTOR_MAX) * headingSc;
                             float turnTgt = clampf(K_FF_YAW * ffOmega * headingSc
                                                    + K_ANGLE * angleErr + K_YAW_D * dErr,
                                                    -MAX_TURN, MAX_TURN);
