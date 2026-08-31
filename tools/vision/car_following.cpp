@@ -135,6 +135,15 @@
 // P-term a standing error (~9 deg at 100 mm/s on a 300 mm ring) that it steers
 // out of a robot that was already pointing the right way.
 //
+// That controller's velocity field is in *motor units*, not mm/s: circle_demo
+// never converts, and K_FF_YAW / K_RAD were tuned on hardware against that
+// scale. So the model's metres per second are converted all the way down to
+// motor units (via --robot-max-speed) *before* the heading law sees them.
+// Leaving the field in mm/s scales the feedforward up and the radial pull down
+// by robotMaxMms/MOTOR_MAX, and since the feedforward is proportional to speed
+// the robots then orbit at a radius that depends on how fast they are going —
+// a fast one settles into a lane inside a slow one instead of catching it up.
+//
 // The ring bookkeeping itself — order, gaps, roster, scale, the models' own
 // speed state, and the run-state machine — lives in lib/CarFollowing/ring.h,
 // free of OpenCV and unit-tested; this file is vision, control and I/O.
@@ -516,7 +525,12 @@ int main(int argc, char* argv[]) {
         else if (arg("--robot-max-speed")) robotMaxMms = (float)atof(argv[++i]);
         else if (arg("--time-scale"))      timeScale   = (float)atof(argv[++i]);
         else if (arg("--port"))            port        = atoi(argv[++i]);
-        else if (arg("--dir"))             dirSign     = strcmp(argv[++i], "cw") == 0 ? -1.f : 1.f;
+        else if (arg("--dir")) {
+            const char* d = argv[++i];
+            if      (strcmp(d, "cw")  == 0) dirSign = -1.f;
+            else if (strcmp(d, "ccw") == 0) dirSign =  1.f;
+            else { fprintf(stderr, "--dir must be cw or ccw, got: %s\n", d); return 2; }
+        }
         else if (strcmp(argv[i], "--centre") == 0 && i + 2 < argc) {
             argCentreX = (float)atof(argv[++i]);
             argCentreY = (float)atof(argv[++i]);
@@ -567,7 +581,11 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "--buffer-id must be below %d\n", SC_MAX_ROBOTS);
         return 2;
     }
-
+    // Divides the model's speed on the way to the motors, so it cannot be zero.
+    if (robotMaxMms <= 0.f) {
+        fprintf(stderr, "--robot-max-speed must be positive\n");
+        return 2;
+    }
     if (timeScale < TIME_SCALE_MIN || timeScale > TIME_SCALE_MAX) {
         fprintf(stderr, "--time-scale must be between %.2f and %.0f\n",
                 TIME_SCALE_MIN, TIME_SCALE_MAX);
