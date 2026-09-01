@@ -909,8 +909,22 @@ int main(int argc, char* argv[]) {
                 applyParams(body, params, model, page, buf, initLayout);
                 if (page.setupNo != wasSetup && wasSetup >= 0)
                     run.requestAlign("page setup");
-                else if (page.run != wasRun)
-                    page.run ? run.requestStart("page") : run.requestStop("page");
+                else if (page.run != wasRun && page.run)
+                    run.requestStart("page");
+                else if (page.run != wasRun) {
+                    // "Move" going off is not always a stop: running "Setup"
+                    // ends the page's own forever button, and that lands here
+                    // as a separate snapshot a poll or two after the click
+                    // that cued the align. Obeying it cancelled the align
+                    // almost as soon as it started — which is why an align
+                    // cued from the page only ever completed while "Move" had
+                    // never been pressed, i.e. the first one after launch.
+                    if (run.aligning() || run.alignPending())
+                        printf("[cf] page \"Move\" went off while aligning — that is the "
+                               "page resetting its own button, not a stop\n");
+                    else
+                        run.requestStop("page");
+                }
             }
         }
 

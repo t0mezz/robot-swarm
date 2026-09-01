@@ -528,6 +528,12 @@ public:
     bool    aligning() const { return phase_ == CfPhase::Aligning; }
     bool    pending()  const { return wantStart_; }
 
+    // A latched align cue that has not started yet. Together with aligning()
+    // this is "the align maneuver is under way", which a caller needs to tell
+    // a real stop from the noise a UI makes while the robots are being placed
+    // — see the note on the page's "Move" button in car_following.cpp.
+    bool    alignPending() const { return wantAlign_; }
+
     // Where the last cue came from ("page", "key", "stdin", "--start", ...),
     // for the log line the caller prints.
     const char* source() const { return source_; }

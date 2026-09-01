@@ -761,6 +761,34 @@ static void test_an_align_cue_is_latched_until_ready() {
     EXPECT_TRUE(!run.aligning() && run.phase() == CfPhase::Setup, "back in setup");
 }
 
+// The caller needs to know an align is under way from the moment the cue is
+// latched, not from the moment it starts: the page turns its own "Move" button
+// off when "Setup" runs, and that arrives as a stop cue a poll or two later —
+// while the maneuver is still latched, waiting for the rig. Taking it at face
+// value cancelled the align (see the note in car_following.cpp).
+static void test_a_latched_align_cue_is_visible_before_it_starts() {
+    CfRunState run;
+    EXPECT_TRUE(!run.alignPending(), "nothing latched to begin with");
+
+    run.requestAlign("page setup");
+    EXPECT_TRUE(run.alignPending() && !run.aligning(),
+                "latched, but not started — the window a stray stop arrives in");
+    run.update(false, false);
+    EXPECT_TRUE(run.alignPending(), "still latched while the rig is not ready");
+
+    run.update(true, false);
+    EXPECT_TRUE(!run.alignPending() && run.aligning(),
+                "handed over to the phase once it starts");
+
+    // Either flavour of stop drops it, so a real one still gets through.
+    run.requestAlign("page setup");
+    run.requestStop("page");
+    EXPECT_TRUE(!run.alignPending(), "a stop drops a latched align");
+    run.requestAlign("page setup");
+    run.requestStart("page");
+    EXPECT_TRUE(!run.alignPending(), "and so does a start");
+}
+
 static void test_align_cue_rests_a_running_ring_first() {
     CfRunState run;
     run.requestStart("key");
@@ -884,6 +912,7 @@ int main() {
     test_toggle_cancels_a_pending_cue();
     test_stop_while_never_started_is_quiet();
     test_an_align_cue_is_latched_until_ready();
+    test_a_latched_align_cue_is_visible_before_it_starts();
     test_align_cue_rests_a_running_ring_first();
     test_a_start_cue_cancels_a_pending_align();
     test_stop_cancels_alignment_in_progress();
