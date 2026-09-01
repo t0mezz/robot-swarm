@@ -153,12 +153,16 @@
 // (see the long comment there for why pure feedback oscillates on a circle).
 // The one difference is where the tangential speed comes from — per robot,
 // from the car-following model, instead of one global orbit rate. Its inputs
-// are circle_demo's too: the *raw* pose yaw for the heading error, and a
-// sample-and-held rate for the D-term. An earlier version fed the controller a
-// half-second EMA of the yaw instead, which on a circle — where the true
-// heading rotates continuously at v/R — lags by about tau*v/R and so hands the
-// P-term a standing error (~9 deg at 100 mm/s on a 300 mm ring) that it steers
-// out of a robot that was already pointing the right way.
+// are circle_demo's too, and its constants are circle_demo's values: the
+// half-second yaw low-pass (YAW_TAU_S), the one-control-period D-term window
+// on top of it, and the single MAX_TURN cap over feedforward and feedback
+// together. Two departures from that were tried on hardware and both made the
+// ring worse, so they are recorded at their constants rather than repeated
+// here: dropping the yaw filter (YAW_TAU_S) and splitting MAX_TURN into a
+// per-half budget (MAX_TURN). The rule they add up to is that this controller
+// is a port, not a variant — the one thing that legitimately differs is where
+// the tangential speed comes from, and changes to the control law itself
+// should land in both files.
 //
 // That controller's velocity field is in *motor units*, not mm/s: circle_demo
 // never converts, and K_FF_YAW / K_RAD were tuned on hardware against that
@@ -210,7 +214,14 @@ static constexpr float MODEL_DT_S       = 0.10f;   // the paper's integration st
 static constexpr float TIME_SCALE_MIN  = 0.25f;
 static constexpr float TIME_SCALE_MAX  = 50.0f;
 static constexpr float TIME_SCALE_STEP = 1.25f;   // ',' / '.' in the debug view
-static constexpr float CONTROL_INTERVAL_S = 0.01f;
+// A new camera frame is what drives the control law; this is only the floor
+// that keeps it ticking if the camera stalls, so the stop path and the motor
+// keepalive still run. It used to be a plain 100Hz timer, which meant the law
+// re-ran on poses that had not changed: at ~116fps the two rates alias, so the
+// yaw-rate estimator below differenced some samples against themselves (rate
+// -> 0) and others across two frames (rate -> 2x), and the D-term alternated
+// between the two every few ticks.
+static constexpr float CONTROL_STALL_S = 0.05f;
 // Time span of the --bridge page's camera-trajectories graph, in *simulated*
 // seconds. It is the fixed extent of that graph's time axis, not a rolling
 // window: the vendored NetLogo plots both draw an absolute 0..250s axis and
@@ -275,12 +286,33 @@ static constexpr float K_YAW_D       = 0.15f;
 static constexpr float K_FF_YAW      = 1.00f;
 static constexpr float K_RAD         = 0.30f;   // radial pull back onto the ring
 static constexpr float MOTOR_MAX     = 100.0f;
+// Caps the turn differential as a whole -- feedforward and feedback together,
+// exactly as circle_demo does. Splitting it into a per-half budget so the PD
+// kept +/-20 at every speed was tried and made the ring oscillate harder the
+// faster it ran: because the feedforward grows with speed, the shared cap is
+// also a gain limit that tightens as the loop speeds up, and the loop needs
+// it. Its bandwidth already rises with speed (a heading error turns into
+// lateral offset at a rate proportional to v), so the margin is thinnest
+// exactly where the split handed the PD the most authority.
 static constexpr float MAX_TURN      = 20.0f;
 static constexpr float MAX_TURN_RATE = 120.0f;  // turn-units/s
-// Window the yaw rate feeding the D-term is sampled and held over, as in
-// circle_demo: one control period, with the MAX_TURN_RATE slew limit doing the
-// smoothing rather than a filter on the measurement.
-static constexpr float D_TERM_WINDOW_S = CONTROL_INTERVAL_S;
+// Yaw low-pass, as a time constant rather than a fixed per-frame EMA
+// coefficient, so the smoothing is frame-rate independent: alpha is rebuilt
+// each frame as dt/(YAW_TAU_S+dt) from the real frame dt. circle_demo's value
+// and circle_demo's reasoning -- see the long comment there. This tool ran
+// without it for a while, on the argument that a lagged heading becomes a
+// standing P-term error on a circle (tau*v/R, ~9 deg at 100mm/s on a 300mm
+// ring). That argument is still true, but a standing bias is a fixed radius
+// offset, whereas the raw yaw it left in the D-term -- a degree of ArUco noise
+// over a ~10ms window reads as 100 deg/s -- is oscillation, and oscillation is
+// the worse failure. Filter the heading, and keep the D-term window at one
+// control period so the derivative is taken of an already-smooth signal.
+static constexpr float YAW_TAU_S = 0.50f;
+
+// D-term rate window: sample-and-hold rather than per-frame, as in
+// circle_demo. It is short on purpose -- YAW_TAU_S upstream is what removes
+// the measurement noise, and the slew limit is what shapes the output.
+static constexpr float D_TERM_WINDOW_S = 0.01f;
 
 static constexpr float DEG2RAD = (float)M_PI / 180.f;
 static constexpr float RAD2DEG = 180.f / (float)M_PI;
@@ -562,6 +594,11 @@ static void applyParams(const std::string& body, CfParams& p, CfModel& model,
 struct Servo {
     RateEstimator yawRate;
     float         prevTurn  = 0.f;   // slew-limited turn output
+    // Low-passed pose yaw (see YAW_TAU_S). Seeded from the first sighting so a
+    // robot does not spend a time constant steering out of a filter that
+    // started at zero; `yawInit` is what distinguishes seeding from blending.
+    float         yaw       = 0.f;
+    bool          yawInit   = false;
     double        firstSeen  = 0.0;   // for the registerRobot debounce
     double        lastSeen   = 0.0;
     bool          everSeen   = false;
@@ -836,7 +873,7 @@ int main(int argc, char* argv[]) {
     };
 
     auto lastModel = now, lastControl = now, lastStatus = now,
-         lastHubRetry = now, lastMotorTx = now;
+         lastHubRetry = now, lastMotorTx = now, lastFrame = now;
     auto fitSince = now;   // when the pending fit started waiting for robots
     auto alignHoldStart = now;   // when allAligned() last became true (ALIGN_HOLD_S debounce)
     DemoHud::LoopFps loopFps;
@@ -956,6 +993,17 @@ int main(int argc, char* argv[]) {
             for (auto& r : tracker.robots())
                 if (r.id >= 0 && r.id < SC_MAX_ROBOTS) poseById[r.id] = r;
 
+            // Yaw low-pass, applied here rather than in the control block so
+            // it advances once per *frame*: the control block can also run on
+            // the CONTROL_STALL_S floor, and re-blending a pose that has not
+            // changed would walk the filter toward that stale yaw at a rate
+            // set by the stall timer instead of the camera. alpha is rebuilt
+            // from the real frame dt, so the time constant holds whatever the
+            // frame rate does (see YAW_TAU_S).
+            float frameDt   = clampf((float)secondsSince(lastFrame), 0.001f, 0.2f);
+            lastFrame       = now;
+            float yawAlpha  = frameDt / (YAW_TAU_S + frameDt);
+
             cfRing.beginFrame();
             for (auto& [id, p] : poseById) {
                 float a = atan2f(p.y - ring.centre.y, p.x - ring.centre.x) * RAD2DEG;
@@ -964,6 +1012,11 @@ int main(int argc, char* argv[]) {
                 Servo& s = servos[id];
                 if (!s.everSeen) { s.firstSeen = tNow; s.everSeen = true; }
                 s.lastSeen = tNow;
+
+                // normAngle on the delta so the blend crosses +/-180 correctly.
+                if (!s.yawInit) { s.yaw = p.yaw; s.yawInit = true; }
+                else s.yaw = cfNormAngleDeg(s.yaw + yawAlpha * cfNormAngleDeg(p.yaw - s.yaw));
+                p.yaw = s.yaw;
             }
             cfRing.endFrame(tNow);
 
@@ -1150,7 +1203,11 @@ int main(int argc, char* argv[]) {
         }
 
         // ── Servo each robot onto its commanded speed ────────────────────────
-        if (secondsSince(lastControl) >= CONTROL_INTERVAL_S) {
+        // A fresh pose is the input to the law, so a fresh pose is what runs it;
+        // CONTROL_STALL_S only keeps the stop path and the keepalive alive if
+        // the camera goes quiet. See the constant for what the old free-running
+        // 100Hz timer did to the yaw-rate estimator.
+        if (haveFrame || secondsSince(lastControl) >= CONTROL_STALL_S) {
             float controlDt = clampf((float)secondsSince(lastControl), 0.001f, 0.2f);
             lastControl = now;
 
@@ -1230,10 +1287,10 @@ int main(int argc, char* argv[]) {
                         float vMag = std::hypot(vx, vy);
 
                         if (vMag >= 0.5f) {
-                            // Raw pose yaw, not a filtered one: on a circle the
-                            // true heading rotates at v/R, so any lag in the
-                            // measurement becomes a standing heading error the
-                            // P-term steers out (see the file header).
+                            // pose.yaw is the low-passed one — the pose block
+                            // above replaced it in place, so the heading error
+                            // and the D-term's rate are taken of the same
+                            // smoothed signal, as in circle_demo (YAW_TAU_S).
                             float angleErr  = cfNormAngleDeg(atan2f(vy, vx) * RAD2DEG - pose.yaw);
                             float headingN  = clampf(fabsf(angleErr) / 90.f, 0.f, 1.f);
                             float headingSc = 1.f - headingN * headingN;
