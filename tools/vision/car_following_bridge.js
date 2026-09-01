@@ -31,20 +31,28 @@
 
 (function () {
   var last = "";
-  var setupClicks = 0;
 
   // The page's one-shot buttons (here: "Setup") render as <button>, so a click
   // leaves no state in the DOM to poll for. Count them instead, in the capture
   // phase so a NetLogo handler that stops propagation cannot hide it, and
   // report a monotone counter — the tool reacts to the counter *changing*,
-  // which keeps every POST idempotent like the rest of the snapshot.
+  // which keeps every POST idempotent like the rest of the snapshot. Seeded
+  // from localStorage and re-stored on every increment like the three fields
+  // below: an in-memory-only counter resets to 0 on a page reload, which the
+  // tool cannot tell apart from a real click (both are just "the number
+  // changed") — that replayed a stale align/run cue mid-maneuver and aborted
+  // it (see the note on CfRunState::requestAlign in ring.h).
+  var setupClicks = parseInt(stored("cf-setup-clicks", "0"), 10) || 0;
   document.addEventListener("click", function (ev) {
     var el = ev.target && ev.target.closest
              ? ev.target.closest(".netlogo-button")
              : null;
     if (!el || el.classList.contains("netlogo-forever-button")) return;
     var label = el.querySelector(".netlogo-label");
-    if (label && label.textContent.trim().toLowerCase() === "setup") setupClicks++;
+    if (label && label.textContent.trim().toLowerCase() === "setup") {
+      setupClicks++;
+      store("cf-setup-clicks", setupClicks);
+    }
   }, true);
 
   // Survives a reload of the page; the tool holds its own copy either way.

@@ -812,6 +812,21 @@ static void test_a_start_cue_cancels_a_pending_align() {
                 "regression: a run cue supersedes a pending align rather than queuing behind it");
 }
 
+static void test_a_start_cue_interrupts_an_alignment_already_in_progress() {
+    CfRunState run;
+    run.requestAlign("page");
+    run.update(true, false);
+    EXPECT_TRUE(run.aligning(), "aligning");
+
+    // Not yet aligned — allAligned() needs every visible robot within
+    // tolerance at once, which a start cue should not have to wait out.
+    run.requestStart("page");
+    EXPECT_TRUE(run.update(true, false) == CfRunEvent::Started,
+                "a start cue interrupts an in-progress align rather than "
+                "waiting for it to finish on its own");
+    EXPECT_TRUE(run.running(), "running, not stuck in Aligning");
+}
+
 static void test_stop_cancels_alignment_in_progress() {
     CfRunState run;
     run.requestAlign("page");
@@ -915,6 +930,7 @@ int main() {
     test_a_latched_align_cue_is_visible_before_it_starts();
     test_align_cue_rests_a_running_ring_first();
     test_a_start_cue_cancels_a_pending_align();
+    test_a_start_cue_interrupts_an_alignment_already_in_progress();
     test_stop_cancels_alignment_in_progress();
     test_buffering_is_off_unless_the_buffering_vehicle_is_on_the_ring();
     test_the_buffering_vehicle_hangs_back();

@@ -574,7 +574,13 @@ public:
     CfRunEvent update(bool ready, bool aligned = false) {
         if (stopping_) { stopping_ = false; return CfRunEvent::Stopped; }
 
-        if (phase_ == CfPhase::Aligning) {
+        // A start cue interrupts an alignment in progress the same way a stop
+        // already does (via stopping_ above) rather than waiting for it to
+        // finish on its own — allAligned() needs every visible car within
+        // tolerance at once, which on a full ring one jittering robot can
+        // stall indefinitely, and a start cue is the operator saying they'd
+        // rather run from wherever the robots currently are.
+        if (phase_ == CfPhase::Aligning && !wantStart_) {
             if (!aligned) return CfRunEvent::None;
             phase_ = CfPhase::Setup;
             return CfRunEvent::Aligned;

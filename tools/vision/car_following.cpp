@@ -248,7 +248,14 @@ static constexpr float REGISTER_DEBOUNCE_S = 0.30f;
 // Alignment — driving to evenly spaced slots ahead of a run, rather than a
 // car-following tick. Deliberately gentler than a run's own top speed: this
 // is a setup maneuver, not the experiment.
-static constexpr float ALIGN_TOLERANCE_DEG = 5.0f;   // "in its slot" for allAligned()
+// K_ALIGN is proportional-only, so the commanded speed shrinks with the
+// error and has no integral term to close out whatever is left once that
+// command drops below the robots' own floor for a motor command to move
+// them at all — the error asymptotes rather than reaching zero. 5deg sat
+// right where that residual lands on real hardware, so allAligned() could
+// need every one of a full ring of robots to cross a line none of them
+// individually could ever quite reach, stalling the maneuver forever.
+static constexpr float ALIGN_TOLERANCE_DEG = 20.0f;  // "in its slot" for allAligned()
 // Debounce on "aligned", the same instinct as REGISTER_DEBOUNCE_S: a vehicle
 // only has to cross the tolerance band once, e.g. mid-jitter, not settle in
 // it, so the alignment would otherwise finish on a frame it is still moving.
