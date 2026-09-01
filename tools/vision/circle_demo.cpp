@@ -202,8 +202,12 @@ static float totalScore(const ControlScore& sc) {
 
 static cv::Mat  g_H;
 static bool     g_hasH = false;
-static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
-static const char* CIRCLE_FILE     = "/tmp/circle_demo.yml";
+// Exe-relative, alongside aruco_tracker_config.json, so calibration and the
+// saved circle survive a reboot — /tmp is typically tmpfs and gets wiped.
+static const std::string HOMOGRAPHY_FILE_S = arucoVisionDataPath("aruco_homography.yml");
+static const std::string CIRCLE_FILE_S     = arucoVisionDataPath("circle_demo.yml");
+static const char* HOMOGRAPHY_FILE = HOMOGRAPHY_FILE_S.c_str();
+static const char* CIRCLE_FILE     = CIRCLE_FILE_S.c_str();
 
 static cv::Point2f pixelToWorld(cv::Point2f px) {
     if (!g_hasH) return px;

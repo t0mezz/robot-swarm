@@ -26,6 +26,9 @@ __pycache__/
 *.bck
 *.stl
 tools/vision/markers/*.pdf
+tools/vision/aruco_homography.yml
+tools/vision/car_following_ring.yml
+tools/vision/circle_demo.yml
 
 # macOS
 .DS_Store

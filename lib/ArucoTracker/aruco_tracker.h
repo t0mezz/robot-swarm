@@ -145,6 +145,29 @@ inline std::string ArucoConfig::defaultConfigPath() {
     return path;
 }
 
+// <exe_dir>/../vision/<filename> — the same demo-binaries-land-in-tools/build/
+// convention defaultConfigPath() resolves aruco_tracker_config.json with,
+// reused here for other data that must survive a reboot rather than living in
+// /tmp (which most Linux systems mount as tmpfs and wipe on restart): saved
+// camera calibration and ring/circle geometry. Unlike defaultConfigPath(),
+// this has no access()-gated fallback — callers use it as a write target that
+// may not exist yet on first run.
+inline std::string arucoVisionDataPath(const char* filename) {
+    char buf[4096];
+#ifdef __APPLE__
+    uint32_t size = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &size) != 0) return std::string("../vision/") + filename;
+#else
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n <= 0) return std::string("../vision/") + filename;
+    buf[n] = '\0';
+#endif
+    std::string path(buf);
+    size_t slash = path.rfind('/');
+    if (slash == std::string::npos) return std::string("../vision/") + filename;
+    return path.substr(0, slash + 1) + "../vision/" + filename;
+}
+
 inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
     ArucoConfig c;
     cv::FileStorage fs(path, cv::FileStorage::READ);

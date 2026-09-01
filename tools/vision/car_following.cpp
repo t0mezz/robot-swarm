@@ -248,9 +248,14 @@ static constexpr float D_TERM_WINDOW_S = CONTROL_INTERVAL_S;
 static constexpr float DEG2RAD = (float)M_PI / 180.f;
 static constexpr float RAD2DEG = 180.f / (float)M_PI;
 
-static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
-static const char* RING_FILE       = "/tmp/car_following_ring.yml";
-static const char* CIRCLE_FILE     = "/tmp/circle_demo.yml";   // circle_demo's, read as a fallback
+// Exe-relative, alongside aruco_tracker_config.json, so calibration and the
+// saved ring survive a reboot — /tmp is typically tmpfs and gets wiped.
+static const std::string HOMOGRAPHY_FILE_S = arucoVisionDataPath("aruco_homography.yml");
+static const std::string RING_FILE_S       = arucoVisionDataPath("car_following_ring.yml");
+static const std::string CIRCLE_FILE_S     = arucoVisionDataPath("circle_demo.yml");   // circle_demo's, read as a fallback
+static const char* HOMOGRAPHY_FILE = HOMOGRAPHY_FILE_S.c_str();
+static const char* RING_FILE       = RING_FILE_S.c_str();
+static const char* CIRCLE_FILE     = CIRCLE_FILE_S.c_str();
 
 static volatile std::sig_atomic_t g_running = 1;
 static void onSignal(int) { g_running = 0; }
