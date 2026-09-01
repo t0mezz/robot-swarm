@@ -186,9 +186,14 @@ static constexpr float TIME_SCALE_MIN  = 0.25f;
 static constexpr float TIME_SCALE_MAX  = 50.0f;
 static constexpr float TIME_SCALE_STEP = 1.25f;   // ',' / '.' in the debug view
 static constexpr float CONTROL_INTERVAL_S = 0.01f;
-// Rolling window kept for the --bridge page's camera-trajectories graph,
-// matching the vendored NetLogo plots' own 2500-tick/250s rescale cycle so
-// the three graphs read on comparable timescales.
+// Time span of the --bridge page's camera-trajectories graph, in *simulated*
+// seconds. It is the fixed extent of that graph's time axis, not a rolling
+// window: the vendored NetLogo plots both draw an absolute 0..250s axis and
+// clear themselves every 2500 ticks, so this graph does the same — the trace
+// sweeps the plot once, then the buffer and its clock reset to zero and the
+// next sweep starts from the bottom. That keeps all three graphs on one
+// shared, non-scrolling timescale, which a rolling window did not: it slid
+// under the trace, so the same wave never sat at the same height twice.
 static constexpr float TRAJ_WINDOW_S = 250.0f;
 // The motor frame is only written when a command actually changed, plus this
 // keepalive so the robots' own WATCHDOG_TIMEOUT_MS (1s, lib/SwarmProtocol/
@@ -441,11 +446,15 @@ struct TrajSample {
 // Hand-rolled the way swarm_telemetry_json.cpp builds its NDJSON: no fields
 // here need escaping (ids and floats only), so a full jsonEscape isn't
 // worth pulling in for this one array.
-static std::string trajectoriesJson(const std::deque<TrajSample>& buf, float roadM) {
+static std::string trajectoriesJson(const std::deque<TrajSample>& buf, float roadM,
+                                    float windowS) {
     std::string out;
-    out.reserve(buf.size() * 24 + 32);
-    char line[64];
-    snprintf(line, sizeof(line), "{\"road\":%.3f,\"pts\":[", roadM);
+    out.reserve(buf.size() * 24 + 48);
+    char line[80];
+    // "window" is the axis extent, so the page scales time against it rather
+    // than against whatever range the samples happen to span.
+    snprintf(line, sizeof(line), "{\"road\":%.3f,\"window\":%.3f,\"pts\":[",
+             roadM, windowS);
     out += line;
     bool first = true;
     for (const auto& s : buf) {
@@ -987,15 +996,22 @@ int main(int argc, char* argv[]) {
                 // the camera trace and the "Simulation" plot's ticks*0.1
                 // axis comparable.
                 runElapsedS += modelDt / timeScale;
+                // Full plot: clear it and start the next sweep at the bottom,
+                // the way the page's own plots do at 2500 ticks. The overshoot
+                // is carried rather than dropped so the sweeps stay a whole
+                // TRAJ_WINDOW_S apart.
+                if (runElapsedS >= TRAJ_WINDOW_S) {
+                    runElapsedS -= TRAJ_WINDOW_S;
+                    trajBuf.clear();
+                }
                 for (int id : cfRing.order()) {
                     const CfRingCar* c = cfRing.car(id);
                     if (c && c->visible)
                         trajBuf.push_back({runElapsedS,
                                            c->angleDeg / 360.f * cfRing.simLengthM(), id});
                 }
-                while (!trajBuf.empty() && trajBuf.front().t < runElapsedS - TRAJ_WINDOW_S)
-                    trajBuf.pop_front();
-                http.publishTrajectories(trajectoriesJson(trajBuf, cfRing.simLengthM()));
+                http.publishTrajectories(
+                    trajectoriesJson(trajBuf, cfRing.simLengthM(), TRAJ_WINDOW_S));
             }
         }
 

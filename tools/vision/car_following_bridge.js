@@ -21,7 +21,10 @@
 // plots are NetLogo widgets (the live model, and a hardcoded historical
 // dataset from the 2007 paper) — neither is what the camera actually saw. A
 // canvas panel here polls GET /trajectories, which the tool republishes once
-// per model tick, and draws it the same shape (space vs. time) as those two.
+// per model tick, and draws it the same shape (space vs. time) as those two:
+// the same absolute 0..250s time axis that clears and restarts when it fills,
+// the same single black pen, and the same size, anchored to the right edge of
+// the "Simulation" plot so the three read as one row.
 
 (function () {
   var last = "";
@@ -151,72 +154,111 @@
   }, 200);
 
   // ── Camera trajectories ─────────────────────────────────────────────────
-  // Fixed panel, positioned independently of the NetLogo interface's own
-  // layout — that DOM comes from NetLogo Web's compiled JS and isn't
-  // something this script can rely on structurally (the same reasoning as
-  // the buffering panel above).
-  var TRAJ_W = 320, TRAJ_H = 380;
-  var trajCanvas, trajCtx;
+  // The panel is anchored to the page's own "Simulation" plot rather than to
+  // the viewport, so the three space-time graphs sit in a row. NetLogo Web
+  // positions its widgets from the model's own coordinates and re-lays them
+  // out on resize and on tab switches, so the anchor is re-measured on the
+  // same poll that redraws the trace — the same reason the parameter snapshot
+  // above polls the DOM instead of listening for events.
+  var TRAJ_W = 330, TRAJ_H = 442;   // the page's own plot size, until measured
+  var TRAJ_GAP = 36;                // and the gap it leaves between them
+  var trajWrap, trajCanvas, trajCtx;
 
   function buildTrajPanel() {
-    var wrap = document.createElement("div");
-    wrap.style.cssText =
-      "position:fixed;top:12px;right:12px;z-index:9998;background:#fff;" +
-      "border:1px solid #999;border-radius:4px;padding:6px;" +
-      "box-shadow:0 1px 6px rgba(0,0,0,.25)";
-
-    var title = document.createElement("div");
-    title.textContent = "Camera trajectories";
-    title.style.cssText = "font:bold 12px sans-serif;margin-bottom:4px";
-    wrap.appendChild(title);
+    trajWrap = document.createElement("div");
+    // content-box + a 1px black border is exactly how .netlogo-plot is
+    // styled, so the canvas inside lines up with the plots beside it.
+    trajWrap.style.cssText =
+      "position:absolute;left:-9999px;top:0;z-index:9998;background:#fff;" +
+      "box-sizing:content-box;border:1px solid #000";
 
     trajCanvas = document.createElement("canvas");
     trajCanvas.width = TRAJ_W;
     trajCanvas.height = TRAJ_H;
     trajCanvas.style.cssText = "display:block";
-    wrap.appendChild(trajCanvas);
+    trajWrap.appendChild(trajCanvas);
 
-    document.body.appendChild(wrap);
+    document.body.appendChild(trajWrap);
     trajCtx = trajCanvas.getContext("2d");
   }
 
-  // A small deterministic per-id color, since — unlike the NetLogo plots'
-  // single pen — the robot count here is small enough (a handful) that
-  // telling vehicles apart by color is real signal, not clutter.
-  function colorForId(id) {
-    var hue = ((id * 67) % 360 + 360) % 360;
-    return "hsl(" + hue + ",70%,45%)";
+  // The "Simulation" plot, by its rendered title, with the rightmost plot as
+  // the fallback — the row is built left to right, so the panel belongs after
+  // the last of them either way.
+  function simulationPlot() {
+    var plots = document.querySelectorAll(".netlogo-plot");
+    var right = null;
+    for (var i = 0; i < plots.length; i++) {
+      if (/simulation/i.test(plots[i].textContent || "")) return plots[i];
+      if (!right ||
+          plots[i].getBoundingClientRect().right > right.getBoundingClientRect().right)
+        right = plots[i];
+    }
+    return right;
   }
 
-  // Margins around the plot area, matching the NetLogo plots' look: axis
-  // lines plus "Space [m]" / "Time [s]" labels.
-  var PAD_L = 34, PAD_R = 8, PAD_T = 8, PAD_B = 24;
+  // Moves and sizes the panel to sit against the right edge of that plot.
+  // Returns false while the interface has not been laid out yet, which is the
+  // state the page is in for the first few hundred milliseconds.
+  function anchorTrajPanel() {
+    var sim = simulationPlot();
+    if (!sim) return false;
+    var r = sim.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return false;
+
+    // Take the page's own plot-to-plot spacing where there is one to measure,
+    // so the row keeps its rhythm if the page is ever zoomed.
+    var gap = TRAJ_GAP;
+    var plots = document.querySelectorAll(".netlogo-plot");
+    for (var i = 0; i < plots.length; i++) {
+      var o = plots[i].getBoundingClientRect();
+      if (plots[i] !== sim && o.right <= r.left + 1 && r.left - o.right < gap)
+        gap = r.left - o.right;
+    }
+
+    trajWrap.style.left = (r.right + window.pageXOffset + gap) + "px";
+    trajWrap.style.top  = (r.top + window.pageYOffset) + "px";
+
+    // clientWidth/Height is the plot's content box — the canvas matches that,
+    // and our own 1px border stands in for the plot's.
+    var w = sim.clientWidth || TRAJ_W, h = sim.clientHeight || TRAJ_H;
+    if (trajCanvas.width !== w || trajCanvas.height !== h) {
+      trajCanvas.width = w;
+      trajCanvas.height = h;
+    }
+    return true;
+  }
+
+  // Margins around the plot area: axis lines, end-of-axis tick labels and
+  // "Space [m]" / "Time [s]" titles, plus room for the panel's own title at
+  // the top — drawn inside the canvas, as Highcharts draws the plots' titles.
+  var PAD_L = 40, PAD_R = 10, PAD_T = 20, PAD_B = 30;
 
   function drawTrajectories(data) {
     var ctx = trajCtx;
-    ctx.clearRect(0, 0, TRAJ_W, TRAJ_H);
+    var W = trajCanvas.width, H = trajCanvas.height;
+    ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, TRAJ_W, TRAJ_H);
+    ctx.fillRect(0, 0, W, H);
 
-    var plotW = TRAJ_W - PAD_L - PAD_R;
-    var plotH = TRAJ_H - PAD_T - PAD_B;
+    var plotW = W - PAD_L - PAD_R;
+    var plotH = H - PAD_T - PAD_B;
 
     var road = data.road > 0 ? data.road : 1;
+    // The time axis is absolute: 0 to the window the tool publishes, whatever
+    // the samples currently span. The tool clears its buffer and restarts its
+    // clock when that fills, so the trace sweeps the plot and starts over
+    // rather than the axis sliding under it.
+    var span = data.window > 0 ? data.window : 250;
     var pts = data.pts || [];
 
-    var tMin = 0, tMax = 1;
-    if (pts.length) {
-      tMin = pts[0][1]; tMax = pts[0][1];
-      for (var i = 1; i < pts.length; i++) {
-        var t = pts[i][1];
-        if (t < tMin) tMin = t;
-        if (t > tMax) tMax = t;
-      }
-      if (tMax <= tMin) tMax = tMin + 1;
-    }
-
     function x(s) { return PAD_L + (s / road) * plotW; }
-    function y(t) { return PAD_T + (1 - (t - tMin) / (tMax - tMin)) * plotH; }
+    function y(t) { return PAD_T + (1 - t / span) * plotH; }
+
+    ctx.fillStyle = "#000";
+    ctx.font = "bold 11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Camera trajectories", W / 2, 13);
 
     // Axes.
     ctx.strokeStyle = "#000";
@@ -230,16 +272,25 @@
     ctx.fillStyle = "#333";
     ctx.font = "10px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("Space [m]", PAD_L + plotW / 2, TRAJ_H - 6);
+    ctx.fillText("Space [m]", PAD_L + plotW / 2, H - 4);
     ctx.save();
     ctx.translate(10, PAD_T + plotH / 2);
     ctx.rotate(-Math.PI / 2);
     ctx.fillText("Time [s]", 0, 0);
     ctx.restore();
 
+    // End-of-axis values, so the fixed extents are readable rather than
+    // implied — the whole point of an absolute axis.
+    ctx.textAlign = "left";
+    ctx.fillText("0", PAD_L, PAD_T + plotH + 12);
+    ctx.textAlign = "right";
+    ctx.fillText(road.toFixed(road < 10 ? 1 : 0), PAD_L + plotW, PAD_T + plotH + 12);
+    ctx.fillText("0", PAD_L - 4, PAD_T + plotH);
+    ctx.fillText(span.toFixed(0), PAD_L - 4, PAD_T + 8);
+
     if (!pts.length) {
       ctx.textAlign = "center";
-      ctx.fillText("waiting for a run…", PAD_L + plotW / 2, PAD_T + plotH / 2);
+      ctx.fillText("waiting for a run\u2026", PAD_L + plotW / 2, PAD_T + plotH / 2);
       return;
     }
 
@@ -267,10 +318,13 @@
     }
     if (!isFinite(tickDt) || tickDt <= 0) tickDt = 0.1;
 
+    // One black pen for every vehicle, as both NetLogo plots use: the wave is
+    // the thing being read off these graphs, and it reads across the three of
+    // them only if they are drawn the same way.
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1.5;
     for (var id3 in byId) {
       var pts2 = byId[id3];
-      ctx.strokeStyle = colorForId(id3);
-      ctx.lineWidth = 1.5;
       ctx.beginPath();
       var started = false;
       for (var m = 0; m < pts2.length; m++) {
@@ -291,6 +345,7 @@
   buildTrajPanel();
 
   setInterval(function () {
+    if (!anchorTrajPanel()) return;   // interface not laid out yet
     fetch("/trajectories").then(function (r) { return r.json(); })
       .then(drawTrajectories).catch(function () { /* transient — next poll retries */ });
   }, 500);
