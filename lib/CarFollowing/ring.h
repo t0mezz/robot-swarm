@@ -60,6 +60,16 @@ inline float cfWrap360(float a) {
 
 constexpr float CF_DEG2RAD = 3.14159265358979323846f / 180.f;
 
+// ── Where the setup maneuver parks the robots ────────────────────────────────
+//
+// The initial condition the experiment starts from. The paper's own is
+// Uniform — evenly spaced, which is the state the stop-and-go wave has to grow
+// out of on its own. Jam is the other classic one: everyone bunched up behind a
+// single leader with the rest of the road empty ahead of it, so the run starts
+// mid-wave and what is being watched is whether it dissolves rather than
+// whether it forms.
+enum class CfLayout { Uniform, Jam };
+
 // ── One vehicle on the ring ──────────────────────────────────────────────────
 
 struct CfRingCar {
@@ -293,12 +303,49 @@ public:
 
     // ── Alignment ────────────────────────────────────────────────────────────
     //
-    // What the page's "Setup" button asks for: spread the current order out
-    // into evenly spaced slots rather than driving a car-following model, so a
-    // run starts from a clean, evenly spaced ring instead of wherever the
-    // previous run (or being placed by hand) left everyone. alignTargetDeg /
-    // alignErrorDeg on each car are (re)computed by computeAlignTargets(),
-    // called from endFrame() so they are as current as gap/order.
+    // What the page's "Setup" button asks for: drive the current order onto a
+    // slot pattern rather than a car-following model, so a run starts from a
+    // clean, known initial condition instead of wherever the previous run (or
+    // being placed by hand) left everyone. alignTargetDeg / alignErrorDeg on
+    // each car are (re)computed by computeAlignTargets(), called from
+    // endFrame() so they are as current as gap/order.
+    //
+    // Which pattern is CfLayout (see setLayout): evenly spaced, or jammed up
+    // behind one leader. The caller drives the jam as two maneuvers — spread
+    // out evenly, then close up — because the two share this one target
+    // mechanism, and compressing a scattered ring straight into a queue is the
+    // case where two robots would have to swap places to get there.
+
+    // Which pattern the align targets describe, and — for Jam — who leads it
+    // and how tightly the queue behind them is packed. Passed in rather than
+    // held in CfRingConfig because all three move while the tool is running:
+    // the page can change the layout or the buffering robot mid-session, and
+    // the spacing follows the ring's radius and the model's car size.
+    //
+    // `leaderId` is a *request*: the vehicle heading the jam is that robot
+    // while it is on the ring, and otherwise the lowest id on it (see
+    // jamLeader()), so a leader that is lifted off cannot strand the queue
+    // waiting for a slot nobody occupies.
+    //
+    // `jamSpacingDeg` is centre-to-centre along the ring. It is capped at the
+    // evenly spaced slot width, since a queue longer than the ring is just an
+    // evenly spaced ring, and <= 0 means the same.
+    void setLayout(CfLayout layout, int leaderId, float jamSpacingDeg) {
+        layout_        = layout;
+        leaderId_      = leaderId;
+        jamSpacingDeg_ = jamSpacingDeg;
+        computeAlignTargets();
+    }
+
+    CfLayout layout() const { return layout_; }
+
+    // The vehicle at the head of the jam: the requested leader while it is on
+    // the ring, else the lowest id on it. -1 with nobody on the ring at all.
+    int jamLeader() const {
+        if (order_.empty()) return -1;
+        if (leaderId_ >= 0 && cars_.count(leaderId_)) return leaderId_;
+        return *std::min_element(order_.begin(), order_.end());
+    }
 
     // True once every currently visible vehicle is within `toleranceDeg` of
     // its slot. False with nobody visible or nobody on the ring at all, so it
@@ -353,19 +400,19 @@ private:
     bool  bufferActive_ = false;
     float bufferB_      = 1.f;
 
-    // Slot i of M evenly spaced slots is baseAngle + i*360/M; baseAngle is the
-    // circular mean of each vehicle's own (angle - its slot), which is the
-    // rotation of the whole slot pattern that minimizes total angular travel
-    // — rather than pinning slot 0 to whichever vehicle the angle sort put
-    // first, which could ask that vehicle alone to travel nearly a full lap.
-    void computeAlignTargets() {
+    // The slot pattern is described as one offset per vehicle, in order_ index
+    // order, and then rotated as a whole onto the ring. Both layouts below
+    // build offsets and hand them here.
+    //
+    // The rotation is the circular mean of each vehicle's own
+    // (angle - its offset), which is the rotation that minimizes total angular
+    // travel — rather than pinning offset 0 to whichever vehicle the angle sort
+    // put first, which could ask that vehicle alone to travel nearly a full lap.
+    void applySlotOffsets(const std::vector<float>& offsetDeg) {
         const int M = (int)order_.size();
-        if (M == 0) return;
-        const float slotDeg = 360.f / (float)M;
-
         double sumSin = 0.0, sumCos = 0.0;
         for (int i = 0; i < M; ++i) {
-            double d = (double)cfNormAngleDeg(cars_[order_[i]].angleDeg - slotDeg * (float)i)
+            double d = (double)cfNormAngleDeg(cars_[order_[i]].angleDeg - offsetDeg[i])
                      * (3.14159265358979323846 / 180.0);
             sumSin += std::sin(d);
             sumCos += std::cos(d);
@@ -373,11 +420,61 @@ private:
         float base = (float)(std::atan2(sumSin, sumCos) * (180.0 / 3.14159265358979323846));
 
         for (int i = 0; i < M; ++i) {
-            CfRingCar& c    = cars_[order_[i]];
-            c.alignTargetDeg = cfWrap360(base + slotDeg * (float)i);
+            CfRingCar& c     = cars_[order_[i]];
+            c.alignTargetDeg = cfWrap360(base + offsetDeg[i]);
             c.alignErrorDeg  = cfNormAngleDeg(c.alignTargetDeg - c.angleDeg);
         }
     }
+
+    void computeAlignTargets() {
+        const int M = (int)order_.size();
+        if (M == 0) return;
+
+        std::vector<float> offs((size_t)M);
+
+        // Evenly spaced: slot i is i*360/M. order_ is the angular sort, so
+        // this hands out the slots in the order the vehicles already sit in and
+        // nobody has to drive past anybody.
+        const float slotDeg = 360.f / (float)M;
+        if (layout_ == CfLayout::Uniform || jamSpacingDeg_ <= 0.f ||
+            jamSpacingDeg_ >= slotDeg) {
+            for (int i = 0; i < M; ++i) offs[(size_t)i] = slotDeg * (float)i;
+            applySlotOffsets(offs);
+            return;
+        }
+
+        // Jammed: the leader keeps the offset 0 slot and everyone else queues
+        // up *behind* it — against the direction of travel, so the empty road
+        // is ahead of the leader, which is what makes this a jam rather than a
+        // tight platoon with the leader boxed in.
+        //
+        // The queue follows order_ rather than robot id: it is the vehicles'
+        // own angular order, so closing up never asks two of them to swap
+        // places around the ring.
+        const int L = leaderIndex();
+        for (int i = 0; i < M; ++i) {
+            // How many places behind the leader vehicle i is, counted the way
+            // it travels — increasing angle when dirSign is +1, decreasing
+            // when it is -1.
+            const int k = cfg_.dirSign > 0.f ? (L - i + M) % M : (i - L + M) % M;
+            offs[(size_t)i] = -cfg_.dirSign * jamSpacingDeg_ * (float)k;
+        }
+        applySlotOffsets(offs);
+    }
+
+    // jamLeader() as an index into order_. Falls back to the lowest id, which
+    // is always on the ring, so this always resolves.
+    int leaderIndex() const {
+        const int M = (int)order_.size();
+        int best = 0;
+        const int leader = jamLeader();
+        for (int i = 0; i < M; ++i) if (order_[(size_t)i] == leader) best = i;
+        return best;
+    }
+
+    CfLayout layout_        = CfLayout::Uniform;
+    int      leaderId_      = -1;
+    float    jamSpacingDeg_ = 0.f;
 
     CfRingConfig                        cfg_;
     std::unordered_map<int, CfRingCar>  cars_;

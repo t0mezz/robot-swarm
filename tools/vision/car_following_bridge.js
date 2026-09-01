@@ -11,11 +11,14 @@
 // a poll catches every one of those paths without knowing any of them. At a
 // few dozen elements every 200ms the cost is irrelevant.
 //
-// It also injects two controls of its own — the cooperative-buffering
-// parameter B and the id of the robot that plays the buffering vehicle. They
-// are not NetLogo widgets: the vendored page is a fixed artefact and is never
-// edited on disk, and a robot id has no meaning inside the simulation anyway.
-// They ride out on the same POST as everything else, as buffer-b / buffer-id.
+// It also injects three controls of its own — the cooperative-buffering
+// parameter B, the id of the robot that plays the buffering vehicle, and the
+// initial position the page's "Setup" button parks the robots in. They are not
+// NetLogo widgets: the vendored page is a fixed artefact and is never edited on
+// disk, a robot id has no meaning inside the simulation anyway, and the
+// simulation seeds its own vehicles rather than driving real ones onto a
+// starting grid. They ride out on the same POST as everything else, as
+// buffer-b / buffer-id / init-layout.
 //
 // And a third graph: the page's own "Simulation" and "Real trajectories"
 // plots are NetLogo widgets (the live model, and a hardcoded historical
@@ -55,6 +58,16 @@
 
   var panel = null;
 
+  // A group title inside the panel. `spaced` rules a line above it, so the
+  // panel reads as two groups rather than one list of unrelated knobs.
+  function heading(text, spaced) {
+    var h = document.createElement("div");
+    h.textContent = text;
+    h.style.cssText = "font:bold 12px sans-serif;margin-bottom:4px" +
+      (spaced ? ";margin-top:10px;padding-top:8px;border-top:1px solid #ddd" : "");
+    panel.appendChild(h);
+  }
+
   // One labelled number input, appended to the panel.
   function field(labelText, key, attrs, hint) {
     var wrap = document.createElement("label");
@@ -78,7 +91,38 @@
     return input;
   }
 
-  var bInput, idInput;
+  // One labelled <select>, appended to the panel. `options` is a list of
+  // [value, label] pairs; the first is the default.
+  function choice(labelText, key, options, hint) {
+    var wrap = document.createElement("label");
+    wrap.style.cssText = "display:block;margin:6px 0;font:12px sans-serif";
+    wrap.appendChild(document.createTextNode(labelText));
+
+    var sel = document.createElement("select");
+    options.forEach(function (o) {
+      var opt = document.createElement("option");
+      opt.value = o[0];
+      opt.textContent = o[1];
+      sel.appendChild(opt);
+    });
+    // An option that no longer exists (a stale localStorage value from an
+    // older build) leaves value === "", so fall back to the first.
+    sel.value = stored(key, options[0][0]);
+    if (!sel.value) sel.value = options[0][0];
+    sel.style.cssText = "margin-left:8px";
+    sel.addEventListener("change", function () { store(key, sel.value); });
+    wrap.appendChild(sel);
+
+    var note = document.createElement("div");
+    note.textContent = hint;
+    note.style.cssText = "color:#555;font:10px sans-serif;margin-top:2px";
+    wrap.appendChild(note);
+
+    panel.appendChild(wrap);
+    return sel;
+  }
+
+  var bInput, idInput, layoutSelect;
 
   function buildPanel() {
     panel = document.createElement("div");
@@ -87,10 +131,7 @@
       "border:1px solid #999;border-radius:4px;padding:8px 10px;" +
       "box-shadow:0 1px 6px rgba(0,0,0,.25)";
 
-    var title = document.createElement("div");
-    title.textContent = "Cooperative buffering";
-    title.style.cssText = "font:bold 12px sans-serif;margin-bottom:4px";
-    panel.appendChild(title);
+    heading("Cooperative buffering", false);
 
     // B = 1 is the non-cooperative baseline, so it is the default. The tool
     // caps B against the live robot count (see cfMaxBuffering) rather than at
@@ -99,6 +140,17 @@
                     "buffering vehicle keeps B x the time gap");
     idInput = field("Robot id", "cf-buffer-id", { min: "-1", step: "1", value: "-1" },
                     "which robot buffers; -1 = none");
+
+    // The initial condition the robots are driven to, not a model parameter:
+    // it is read when "Setup" is pressed and does nothing on its own, since
+    // "Setup" is what moves the robots. Uniform is the paper's own starting
+    // state and stays the default.
+    heading("Initial position", true);
+    layoutSelect = choice("Layout", "cf-init-layout",
+                          [["uniform", "Uniform"], ["jam", "Jam"]],
+                          "applied by \"Setup\"; jam queues everyone behind " +
+                          "the buffering robot (else the lowest id)");
+
     document.body.appendChild(panel);
   }
 
@@ -135,10 +187,11 @@
     out.push("run=" + (running ? 1 : 0));
     out.push("setup=" + setupClicks);
 
-    // Our own two fields, on the same POST. The tool reads them per key, so
+    // Our own three fields, on the same POST. The tool reads them per key, so
     // they can ride along from the first snapshot like everything else.
     out.push("buffer-b=" + (bInput.value || "1"));
     out.push("buffer-id=" + (idInput.value || "-1"));
+    out.push("init-layout=" + (layoutSelect.value || "uniform"));
     return out.join("\n");
   }
 

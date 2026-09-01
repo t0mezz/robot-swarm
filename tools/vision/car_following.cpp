@@ -13,6 +13,7 @@
 //                   [--sim-length M] [--radius MM] [--centre X Y] [--dir cw|ccw]
 //                   [--ring-file PATH] [--fit] [--robot-max-speed MM_S]
 //                   [--time-scale K] [--start] [--buffer-b B] [--buffer-id ID]
+//                   [--init-layout uniform|jam]
 //                   [--bridge] [--port N] [--debug] [--serial SN] [--ip IP]
 //                   [--count N]
 //
@@ -35,17 +36,41 @@
 // returns the models to rest, so the next run begins from standstill the way
 // the experiment's own setup does.
 //
-// A second cue, *align*, drives the robots to evenly spaced slots on the ring
-// instead — what the NetLogo page's own "Setup" button asks for, so pressing
-// it (or 'a' in --debug, or "a"/"align" on stdin) first rests the robots the
-// same way a stop does and then spaces them out, finishing on its own once
-// every visible robot is in its slot and leaving the tool back in setup, ready
-// for a clean "Move". It is a position controller, not the car-following
-// model: CfRing::computeAlignTargets() picks the rotation of an evenly spaced
-// slot pattern that minimizes total travel, and the per-robot loop below
-// steers each one's raw angular error onto that slot the same way it steers
-// the model's tangential speed during a run — same heading controller, same
-// radial pull onto the ring, only the source of the tangential term differs.
+// A second cue, *align*, drives the robots to their starting positions on the
+// ring instead — what the NetLogo page's own "Setup" button asks for, so
+// pressing it (or 'a' in --debug, or "a"/"align" on stdin) first rests the
+// robots the same way a stop does and then places them, finishing on its own
+// once every visible robot is in its slot and leaving the tool back in setup,
+// ready for a clean "Move". It is a position controller, not the car-following
+// model: CfRing::computeAlignTargets() picks the rotation of a slot pattern
+// that minimizes total travel, and the per-robot loop below steers each one's
+// raw angular error onto that slot the same way it steers the model's
+// tangential speed during a run — same heading controller, same radial pull
+// onto the ring, only the source of the tangential term differs.
+//
+// ── Initial position ────────────────────────────────────────────────────────
+//
+// Which slot pattern that is, is the experiment's initial condition, chosen by
+// --init-layout or the "Initial position" selector the bridge page injects:
+//
+//   uniform — evenly spaced, the paper's own starting state and the default.
+//             The run is then the question the paper asks: does a wave form
+//             out of an evenly spaced ring on its own?
+//   jam     — everyone queued up behind one leader with the rest of the road
+//             empty ahead of it, so a run starts mid-wave and the question is
+//             instead whether the model (or a buffering vehicle) dissolves it.
+//             The leader is the buffering robot if --buffer-id names one, and
+//             otherwise the lowest id on the ring — the same robot every run,
+//             so two runs are comparable.
+//
+// A jam is driven as *two* maneuvers, evenly spaced first and then closed up,
+// which is also how it reads on the page ("first uniform, then jammed"). That
+// is not just presentation: the queue is built out of the ring order the
+// vehicles already sit in, so going through the even spread first is what
+// guarantees no two of them have to swap places around the ring to reach their
+// slots. Its spacing is the model's own bumper-to-bumper distance — one car
+// length — mapped back through the density scale, floored at what the chassis
+// physically need (JAM_MIN_SPACING_MM).
 //
 // -- The ring is a saved fixture, not something inferred per run -------------
 //
@@ -230,6 +255,11 @@ static constexpr float ALIGN_TOLERANCE_DEG = 5.0f;   // "in its slot" for allAli
 static constexpr float ALIGN_HOLD_S        = 0.5f;
 static constexpr float ALIGN_SPEED_MAX_MMS = 120.f;  // world units/s, real time — no time-scale
 static constexpr float K_ALIGN             = 2.0f;   // deg of error -> mm/s of tangential command
+// Closest the jam layout parks two robots, centre to centre. The spacing it
+// asks for is the model's own bumper-to-bumper one (see jamSpacingDeg below),
+// which shrinks with the density scale and would eventually ask two 98mm
+// chassis to occupy the same patch of floor.
+static constexpr float JAM_MIN_SPACING_MM  = 150.f;
 
 // Heading controller — carried over from circle_demo.cpp's orbit mode, where
 // these were tuned on hardware.
@@ -436,6 +466,18 @@ struct Buffering {
     bool on() const { return id >= 0 && b > 1.f; }
 };
 
+// The initial position the align maneuver parks the robots in, by the names
+// the page's own selector and --init-layout use.
+static const char* layoutName(CfLayout l) {
+    return l == CfLayout::Jam ? "jam" : "uniform";
+}
+
+static bool layoutFromName(const char* s, CfLayout& out) {
+    if (strcasecmp(s, "uniform") == 0) { out = CfLayout::Uniform; return true; }
+    if (strcasecmp(s, "jam")     == 0) { out = CfLayout::Jam;     return true; }
+    return false;
+}
+
 // One camera-measured (space, time) sample for the --bridge page's third
 // graph. `t` is seconds since the run started, in the model's own dilated
 // clock (runElapsedS below) so it lines up with the "Simulation" plot's
@@ -473,7 +515,7 @@ static std::string trajectoriesJson(const std::deque<TrajSample>& buf, float roa
 }
 
 static void applyParams(const std::string& body, CfParams& p, CfModel& model,
-                        PageState& page, Buffering& buf) {
+                        PageState& page, Buffering& buf, CfLayout& layout) {
     size_t pos = 0;
     while (pos < body.size()) {
         size_t nl = body.find('\n', pos);
@@ -497,6 +539,12 @@ static void applyParams(const std::string& body, CfParams& p, CfModel& model,
         else if (k == "setup")         page.setupNo   = atol(v.c_str());
         else if (k == "buffer-b")      buf.b          = (float)atof(v.c_str());
         else if (k == "buffer-id")     buf.id         = atoi(v.c_str());
+        // Read when "Setup" is pressed, not acted on here — the layout only
+        // describes where that maneuver parks everyone. The page posts the
+        // whole snapshot in one body, so a layout changed in the same breath
+        // as the Setup click is already in force by the time the caller sees
+        // the click counter move.
+        else if (k == "init-layout")   layoutFromName(v.c_str(), layout);
     }
 }
 
@@ -537,6 +585,7 @@ int main(int argc, char* argv[]) {
     CfParams    params;
     CfModel     model = CfModel::FVDM;   // the page's default chooser entry
     Buffering   buf;
+    CfLayout    initLayout = CfLayout::Uniform;   // the paper's own initial condition
     float  simLengthM  = -1.f;           // <0 = derive from the robot count
     float  argRadiusMm = -1.f;           // <0 = keep whatever the ring file holds
     float  argCentreX = 0.f, argCentreY = 0.f;
@@ -570,6 +619,12 @@ int main(int argc, char* argv[]) {
         else if (arg("--sigma"))           params.sigma        = (float)atof(argv[++i]);
         else if (arg("--buffer-b"))        buf.b       = (float)atof(argv[++i]);
         else if (arg("--buffer-id"))       buf.id      = atoi(argv[++i]);
+        else if (arg("--init-layout")) {
+            if (!layoutFromName(argv[++i], initLayout)) {
+                fprintf(stderr, "--init-layout must be uniform or jam, got: %s\n", argv[i]);
+                return 2;
+            }
+        }
         else if (arg("--sim-length"))      simLengthM  = (float)atof(argv[++i]);
         else if (arg("--radius"))          argRadiusMm = (float)atof(argv[++i]);
         else if (arg("--ring-file"))       ringFile    = argv[++i];
@@ -596,7 +651,7 @@ int main(int argc, char* argv[]) {
                    "       [--reaction-time S] [--sigma A] [--sim-length M] [--radius MM]\n"
                    "       [--centre X Y] [--ring-file PATH] [--fit] [--dir cw|ccw]\n"
                    "       [--time-scale K] [--robot-max-speed MM_S] [--start]\n"
-                   "       [--buffer-b B] [--buffer-id ID]\n"
+                   "       [--buffer-b B] [--buffer-id ID] [--init-layout uniform|jam]\n"
                    "       [--bridge] [--port N] [--debug] [--serial SN] [--ip IP] [--count N]\n\n"
                    "models: Reuschel Pipes OVM CF-OVM FVDM ATG IDM\n\n"
                    "The robots are set up but held still until a run is cued: the page's\n"
@@ -604,8 +659,14 @@ int main(int argc, char* argv[]) {
                    "headless, or --start at launch. \"s\"/\"stop\" returns them to rest;\n"
                    "\"q\" quits. The page's \"Setup\" button (or 'a' in --debug, or\n"
                    "\"a\"/\"align\" on stdin) rests them the same way and then drives them to\n"
-                   "evenly spaced slots on the ring, finishing on its own once everyone\n"
+                   "their starting positions on the ring, finishing on its own once everyone\n"
                    "visible is in place.\n\n"
+                   "--init-layout picks those positions, as does the page's own \"Initial\n"
+                   "position\" selector. uniform (the default) spreads everyone evenly, the\n"
+                   "paper's own initial condition. jam spreads them evenly first and then\n"
+                   "closes them up into a queue behind one leader — the buffering robot if\n"
+                   "--buffer-id names one, else the lowest id on the ring — leaving the rest\n"
+                   "of the road empty ahead of it, so a run starts mid-wave.\n\n"
                    "--buffer-id ID makes robot ID the buffering vehicle: it keeps B times the\n"
                    "nominal time gap while the other N-1 keep (N-B)/(N-1) of theirs, so the\n"
                    "mean gap — and the density — is unchanged. B = 1 is the non-cooperative\n"
@@ -737,6 +798,13 @@ int main(int argc, char* argv[]) {
     CfRunState run;
     if (autoStart) run.requestStart("--start");
 
+    // Which half of the maneuver is running. A jam is driven as two: spread out
+    // evenly, then close up behind the leader. Compressing a scattered ring
+    // straight into a queue is the case where two robots can be asked to swap
+    // places to reach their slots — going through the even spread first means
+    // the queue is built out of the order they already sit in.
+    CfLayout alignStage = CfLayout::Uniform;
+
     // Camera-measured trajectories for the --bridge page's third graph, kept
     // only while a bridge client might poll for them.
     std::deque<TrajSample> trajBuf;
@@ -802,6 +870,10 @@ int main(int argc, char* argv[]) {
                cfModelName(model));
     if (buf.on())
         printf("[cf] buffering: robot %d at B=%.2g\n", buf.id, buf.b);
+    if (initLayout == CfLayout::Jam)
+        printf("[cf] initial position: jam, led by %s\n",
+               buf.id >= 0 ? DemoHud::fmt("robot %d", buf.id).c_str()
+                           : "the lowest id on the ring");
     printf("[cf] model=%s  speed-max=%.1f  car-size=%.1f  time-gap=%.2f  "
            "reaction-time=%.2f  sigma=%.2f  time-scale=%.2gx\n",
            cfModelName(model), params.speedMax, params.carSize,
@@ -834,7 +906,7 @@ int main(int argc, char* argv[]) {
             for (const auto& body : http.poll()) {
                 bool wasRun  = page.run;
                 long wasSetup = page.setupNo;
-                applyParams(body, params, model, page, buf);
+                applyParams(body, params, model, page, buf, initLayout);
                 if (page.setupNo != wasSetup && wasSetup >= 0)
                     run.requestAlign("page setup");
                 else if (page.run != wasRun)
@@ -926,6 +998,21 @@ int main(int argc, char* argv[]) {
                    cfRing.simLengthM() / std::max(1, cfRing.rosterCount()));
         }
 
+        // ── Where the align maneuver parks everyone ──────────────────────────
+        // Recomputed per frame, since all three inputs move: the page can
+        // change the layout or the buffering robot mid-session, and the jam's
+        // spacing follows the ring's radius and the model's car size.
+        //
+        // That spacing is the model's own bumper-to-bumper one — one car length
+        // — mapped back through the same density scale the models see, so the
+        // queue is as tight relative to the ring as 22 five-metre cars are on
+        // the paper's 230m one. Floored at what the chassis physically need.
+        const float jamMm       = simPerMm > 0.f ? params.carSize / simPerMm : 0.f;
+        const float jamSpaceDeg = ring.radius > 0.f
+            ? std::max(jamMm, JAM_MIN_SPACING_MM) / ring.radius * RAD2DEG
+            : 0.f;
+        cfRing.setLayout(alignStage, buf.id, jamSpaceDeg);
+
         // ── Run state ────────────────────────────────────────────────────────
         // Everything either cue needs before a wheel turns: a link to the
         // robots, a ring to drive round, a settled roster to scale the model
@@ -937,8 +1024,24 @@ int main(int argc, char* argv[]) {
         // true for one frame (e.g. mid-jitter) should not end the maneuver
         // while a robot is still visibly moving.
         if (!cfRing.allAligned(ALIGN_TOLERANCE_DEG)) alignHoldStart = now;
-        const bool alignDone = cfRing.allAligned(ALIGN_TOLERANCE_DEG) &&
-                               secondsSince(alignHoldStart) >= ALIGN_HOLD_S;
+        bool alignDone = cfRing.allAligned(ALIGN_TOLERANCE_DEG) &&
+                         secondsSince(alignHoldStart) >= ALIGN_HOLD_S;
+
+        // Half-way through a jam: everyone is evenly spaced, so the ring order
+        // is settled and the queue can be built out of it. Re-target onto the
+        // jam and keep aligning rather than reporting the maneuver finished —
+        // CfRunState only ever sees the end of the second stage.
+        if (run.aligning() && alignDone &&
+            initLayout == CfLayout::Jam && alignStage == CfLayout::Uniform) {
+            alignStage     = CfLayout::Jam;
+            alignHoldStart = now;
+            alignDone      = false;
+            cfRing.setLayout(alignStage, buf.id, jamSpaceDeg);
+            printf("[cf] spread out — closing up into a jam behind robot %d "
+                   "(%.0f%s apart)\n",
+                   cfRing.jamLeader(), std::max(jamMm, JAM_MIN_SPACING_MM),
+                   g_H.empty() ? "px" : "mm");
+        }
 
         switch (run.update(ready, alignDone)) {
             case CfRunEvent::Started:
@@ -965,8 +1068,13 @@ int main(int argc, char* argv[]) {
                 break;
             case CfRunEvent::AlignStarted:
                 alignHoldStart = now;
-                printf("[cf] aligning (%s) — %d robots to evenly spaced slots\n",
-                       run.source(), cfRing.visibleCount());
+                // Every maneuver starts with the even spread, whichever layout
+                // it is heading for.
+                alignStage = CfLayout::Uniform;
+                cfRing.setLayout(alignStage, buf.id, jamSpaceDeg);
+                printf("[cf] aligning (%s) — %d robots to evenly spaced slots%s\n",
+                       run.source(), cfRing.visibleCount(),
+                       initLayout == CfLayout::Jam ? ", then into a jam" : "");
                 break;
             case CfRunEvent::AlignWaiting:
                 printf("[cf] align cued (%s) — waiting for%s%s%s%s\n", run.source(),
@@ -978,7 +1086,7 @@ int main(int argc, char* argv[]) {
             case CfRunEvent::Aligned:
                 allStop();
                 sendMotors(true);
-                printf("[cf] aligned — ready to run\n");
+                printf("[cf] aligned (%s) — ready to run\n", layoutName(alignStage));
                 break;
             case CfRunEvent::None:
                 break;
@@ -1147,7 +1255,8 @@ int main(int argc, char* argv[]) {
                 lastStatus = now;
                 printf("[cf] %-7s %-8s loop:%3.0f  robots:%d/%d  %.2gx  hub:%s",
                        run.running()  ? "RUN"   :
-                       run.aligning() ? "ALIGN" : (run.pending() ? "CUED" : "SETUP"),
+                       run.aligning() ? (alignStage == CfLayout::Jam ? "JAM" : "ALIGN")
+                                      : (run.pending() ? "CUED" : "SETUP"),
                        cfModelName(model), loopFps.fps(),
                        cfRing.visibleCount(), cfRing.rosterCount(), timeScale,
                        swarm.isConnected() ? "ok" : "--");
@@ -1218,7 +1327,9 @@ int main(int argc, char* argv[]) {
         hud.title(DemoHud::fmt("loop_fps:%.0f  %s  %s  robots:%d/%d  ring:%.0f  %.2gx%s  HUB:%s%s",
                                loopFps.fps(),
                                run.running()  ? "RUNNING" :
-                               run.aligning() ? "ALIGNING" : (run.pending() ? "CUED" : "SETUP"),
+                               run.aligning() ? (alignStage == CfLayout::Jam ? "JAMMING"
+                                                                             : "ALIGNING")
+                                              : (run.pending() ? "CUED" : "SETUP"),
                                cfModelName(model),
                                cfRing.visibleCount(), cfRing.rosterCount(),
                                ring.radius, timeScale,
