@@ -47,11 +47,6 @@ static constexpr float MAX_TURN  = 20.0f;
 static constexpr float MAX_TURN_RATE = 120.0f;  // turn-units/s
 static constexpr float ARRIVAL_MM       = 40.0f;   // stop when within this distance of slot
 static constexpr float SEND_INTERVAL_S  = 0.01f; // Send intervall in s
-// Caps the clone-frame + overlay-draw + imshow work below, independent of
-// control/sendMotors, which keep running once per tracker.update() regardless
-// (see --render-fps). waitKey still runs every iteration too, so the window
-// stays responsive to keys/clicks even on skipped render frames.
-static constexpr float DEFAULT_RENDER_FPS = 30.0f;
 
 // Yaw low-pass: smooths the raw per-frame ArUco corner-angle before it reaches
 // any controller. Raw yaw jitters by ~1deg frame-to-frame from corner-detection
@@ -462,7 +457,6 @@ int main(int argc, char* argv[]) {
     bool  doCalibrate = false;
     bool  logPerf     = false;
     bool  logScore    = false;
-    float renderFps   = DEFAULT_RENDER_FPS;
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--serial")       && i+1<argc) serial     = argv[++i];
@@ -472,17 +466,11 @@ int main(int argc, char* argv[]) {
         if (!strcmp(argv[i], "--orbit-speed")  && i+1<argc) orbitSpeed = atof(argv[++i]);
         if (!strcmp(argv[i], "--speed")        && i+1<argc) speedPct   = atof(argv[++i]);
         if (!strcmp(argv[i], "--count")        && i+1<argc) robotCount = atoi(argv[++i]);
-        if (!strcmp(argv[i], "--render-fps")   && i+1<argc) renderFps  = atof(argv[++i]);
         if (!strcmp(argv[i], "--calibrate"))                doCalibrate = true;
         if (!strcmp(argv[i], "--log-perf"))                 logPerf     = true;
         if (!strcmp(argv[i], "--log-score"))                logScore    = true;
     }
     g_defaultSpeedMult = clampf(speedPct / 100.f, 0.05f, 2.0f);
-    if (renderFps <= 0.f) {
-        fprintf(stderr, "--render-fps must be > 0\n");
-        return 2;
-    }
-    const float renderIntervalS = 1.f / renderFps;
 
     SwarmClient swarm;
     if (swarm.connect()) printf("[hub] Connected.\n");
@@ -493,6 +481,16 @@ int main(int argc, char* argv[]) {
     if (!ip.empty())     cfg.baslerIp     = ip;
     if (robotCount > 0)  cfg.robotCount   = robotCount;
     cfg.debugOverlay = true;
+    if (cfg.renderFps <= 0.f) {
+        fprintf(stderr, "render_fps in aruco_tracker_config.json must be > 0\n");
+        return 2;
+    }
+    const float renderIntervalS = 1.f / cfg.renderFps;
+    // Clamped once here so every consumer (window size, final imshow resize,
+    // click-coordinate scaling) agrees on the same factor even if the config
+    // has a stray 0/negative/>1 value.
+    const float dbgScale = (cfg.debugFrameScale > 0.f && cfg.debugFrameScale <= 1.0f)
+                                ? cfg.debugFrameScale : 1.0f;
     ArucoTracker tracker(cfg);
     if (!tracker.open()) { fprintf(stderr, "Could not open Basler camera.\n"); return 1; }
     //auto undist = std::make_unique<FisheyeUndistortPreprocessor>();
@@ -508,7 +506,11 @@ int main(int argc, char* argv[]) {
 
     const char* WIN = "Circle Demo";
     cv::namedWindow(WIN, cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
-    cv::resizeWindow(WIN, tracker.frameSize().width, tracker.frameSize().height);
+    // Match the window to what actually gets shown (debug_frame_scale-scaled),
+    // not the raw camera resolution, so the window doesn't sit mostly empty
+    // (or stretch the image) — the click handler below undoes the same scale.
+    cv::resizeWindow(WIN, (int)(tracker.frameSize().width  * dbgScale),
+                          (int)(tracker.frameSize().height * dbgScale));
     cv::setMouseCallback(WIN, onMouse, nullptr);
 
     CircleState circle;
@@ -632,7 +634,10 @@ int main(int argc, char* argv[]) {
 
         // ── Handle click: set new circle centre ───────────────────────────────
         if (g_leftClick) {
-            cv::Point2f w = pixelToWorld({(float)g_clickPt.x, (float)g_clickPt.y});
+            // g_clickPt is in the (possibly debug_frame_scale-shrunk) window's
+            // own pixel space; undo the scale to get back to the full-res
+            // pixel coordinates pixelToWorld()/the homography expect.
+            cv::Point2f w = pixelToWorld({(float)g_clickPt.x / dbgScale, (float)g_clickPt.y / dbgScale});
             circle.centre    = w;
             circle.centreSet = true;
             slotsDirty       = true;   // robot angles changed → reassign slots
@@ -964,9 +969,10 @@ int main(int argc, char* argv[]) {
         accControl += std::chrono::duration<double>(tControlEnd - now).count();
 
         // ── Draw HUD ──────────────────────────────────────────────────────────
-        // Throttled to --render-fps: the clone of a full debug frame plus imshow
-        // are the expensive part of the loop (see DEFAULT_RENDER_FPS above),
-        // while control/sendMotors above run every tracker.update() regardless.
+        // Throttled to cfg.renderFps (render_fps in aruco_tracker_config.json):
+        // the clone of a full debug frame plus imshow are the expensive part of
+        // the loop, while control/sendMotors above run every tracker.update()
+        // regardless.
         // waitKey below still runs every iteration so the window stays
         // responsive even on skipped render frames.
         bool doRender = std::chrono::duration<float>(tControlEnd - lastRenderT).count() >= renderIntervalS;
@@ -1105,6 +1111,17 @@ int main(int argc, char* argv[]) {
 
         auto tDrawEnd = std::chrono::steady_clock::now();
         accDraw += std::chrono::duration<double>(tDrawEnd - tControlEnd).count();
+
+        // debug_frame_scale: shrink the fully-composited frame for display
+        // only now that every overlay (tracker's + this loop's own ring/HUD
+        // draws, all in native-resolution coordinates) has already landed on
+        // it — scaling earlier would misalign those draws against a
+        // now-smaller image. This still cuts imshow()'s cost, just not draw's.
+        if (dbgScale < 1.0f) {
+            cv::Mat small;
+            cv::resize(disp, small, {}, dbgScale, dbgScale, cv::INTER_AREA);
+            disp = std::move(small);
+        }
 
         cv::imshow(WIN, disp);
 

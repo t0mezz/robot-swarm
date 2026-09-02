@@ -14,7 +14,7 @@
 //                   [--ring-file PATH] [--fit] [--robot-max-speed MM_S]
 //                   [--time-scale K] [--start] [--buffer-b B] [--buffer-id ID]
 //                   [--bridge] [--port N] [--debug] [--serial SN] [--ip IP]
-//                   [--count N] [--render-fps N] [--log-perf]
+//                   [--count N] [--log-perf]
 //
 // ── Setup, cue, run ──────────────────────────────────────────────────────────
 //
@@ -200,14 +200,6 @@ static constexpr float MOTOR_HOLD_S = 0.20f;
 // registerRobot() is one-way, so a single frame of a misread id would
 // otherwise put that id in every MSG_SWARM frame for the rest of the run.
 static constexpr float REGISTER_DEBOUNCE_S = 0.30f;
-// Caps the clone-frame + overlay-draw + imshow work in --debug (see
-// DEFAULT_RENDER_FPS in circle_demo.cpp — same idea, same default). Control,
-// the model step and sendMotors above all run once per tracker.update()
-// regardless; only the drawing/display work below the "Debug view" comment is
-// throttled. waitKey still runs every iteration so the window stays
-// responsive to keys/clicks on skipped render frames.
-static constexpr float DEFAULT_RENDER_FPS = 30.0f;
-
 // Alignment — driving to evenly spaced slots ahead of a run, rather than a
 // car-following tick. Deliberately gentler than a run's own top speed: this
 // is a setup maneuver, not the experiment.
@@ -498,7 +490,6 @@ int main(int argc, char* argv[]) {
     bool   bridge      = false;
     bool   autoStart   = false;
     int    port        = 8770;
-    float  renderFps   = DEFAULT_RENDER_FPS;
     bool   logPerf     = false;
 
     for (int i = 1; i < argc; ++i) {
@@ -525,7 +516,6 @@ int main(int argc, char* argv[]) {
         else if (arg("--robot-max-speed")) robotMaxMms = (float)atof(argv[++i]);
         else if (arg("--time-scale"))      timeScale   = (float)atof(argv[++i]);
         else if (arg("--port"))            port        = atoi(argv[++i]);
-        else if (arg("--render-fps"))      renderFps   = (float)atof(argv[++i]);
         else if (arg("--dir"))             dirSign     = strcmp(argv[++i], "cw") == 0 ? -1.f : 1.f;
         else if (strcmp(argv[i], "--centre") == 0 && i + 2 < argc) {
             argCentreX = (float)atof(argv[++i]);
@@ -544,7 +534,7 @@ int main(int argc, char* argv[]) {
                    "       [--time-scale K] [--robot-max-speed MM_S] [--start]\n"
                    "       [--buffer-b B] [--buffer-id ID]\n"
                    "       [--bridge] [--port N] [--debug] [--serial SN] [--ip IP] [--count N]\n"
-                   "       [--render-fps N] [--log-perf]\n\n"
+                   "       [--log-perf]\n\n"
                    "models: Reuschel Pipes OVM CF-OVM FVDM ATG IDM\n\n"
                    "The robots are set up but held still until a run is cued: the page's\n"
                    "\"Move\" button with --bridge, space in --debug, <enter> on stdin when\n"
@@ -565,7 +555,8 @@ int main(int argc, char* argv[]) {
                    "dropped detection cannot rescale the model mid-run.\n\n"
                    "The ring is read from %s (falling back to circle_demo's %s) and\n"
                    "re-saved whenever --radius/--centre/--fit or a debug-view edit changes it.\n\n"
-                   "--render-fps N (default %.0f) caps the --debug clone+draw+imshow work;\n"
+                   "render_fps and debug_frame_scale in aruco_tracker_config.json cap the\n"
+                   "--debug clone+draw+imshow work and the size of the published debug frame;\n"
                    "control and sendMotors keep running at the full detection rate regardless.\n\n"
                    "--log-perf prints one [perf] line per second: loop_fps (frames actually\n"
                    "processed), det_fps (the ArUco detection thread's own rate), spin_fps\n"
@@ -573,7 +564,7 @@ int main(int argc, char* argv[]) {
                    "iteration went (control/draw/imshow/waitKey/other), the same breakdown\n"
                    "circle_demo.cpp's --log-perf prints (see TODO.md \"Performance: loop_fps\n"
                    "vs cam_fps\").\n",
-                   argv[0], RING_FILE, CIRCLE_FILE, DEFAULT_RENDER_FPS);
+                   argv[0], RING_FILE, CIRCLE_FILE);
             return 0;
         }
         else { fprintf(stderr, "unknown argument: %s\n", argv[i]); return 2; }
@@ -593,12 +584,6 @@ int main(int argc, char* argv[]) {
                 TIME_SCALE_MIN, TIME_SCALE_MAX);
         return 2;
     }
-    if (renderFps <= 0.f) {
-        fprintf(stderr, "--render-fps must be > 0\n");
-        return 2;
-    }
-    const float renderIntervalS = 1.f / renderFps;
-
     SwarmClient swarm;
     printf(swarm.connect() ? "[hub] connected\n" : "[hub] not available — will retry\n");
 
@@ -607,6 +592,17 @@ int main(int argc, char* argv[]) {
     if (!ip.empty())     cfg.baslerIp     = ip;
     if (robotCount > 0)  cfg.robotCount   = robotCount;
     cfg.debugOverlay = debug;
+
+    if (cfg.renderFps <= 0.f) {
+        fprintf(stderr, "render_fps in aruco_tracker_config.json must be > 0\n");
+        return 2;
+    }
+    const float renderIntervalS = 1.f / cfg.renderFps;
+    // Clamped once here so every consumer (window size, final imshow resize,
+    // click-coordinate scaling) agrees on the same factor even if the config
+    // has a stray 0/negative/>1 value.
+    const float dbgScale = (cfg.debugFrameScale > 0.f && cfg.debugFrameScale <= 1.0f)
+                                ? cfg.debugFrameScale : 1.0f;
 
     ArucoTracker tracker(cfg);
     if (!tracker.open()) { fprintf(stderr, "Could not open Basler camera.\n"); return 1; }
@@ -675,7 +671,11 @@ int main(int argc, char* argv[]) {
     const char* WIN = "Car Following";
     if (debug) {
         cv::namedWindow(WIN, cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
-        cv::resizeWindow(WIN, tracker.frameSize().width, tracker.frameSize().height);
+        // Match the window to what actually gets shown (debug_frame_scale-
+        // shrunk), not the raw camera resolution — the click handler below
+        // undoes the same scale.
+        cv::resizeWindow(WIN, (int)(tracker.frameSize().width  * dbgScale),
+                              (int)(tracker.frameSize().height * dbgScale));
         cv::setMouseCallback(WIN, onMouse, nullptr);
         printf("[cf] space = run/stop  s = stop  a = align to ring  left-click = ring centre  "
                "+/- = radius %.0f\n"
@@ -730,7 +730,7 @@ int main(int argc, char* argv[]) {
     // (spin_fps), not just frame arrivals (that's loop_fps, from loopFps
     // above). "control" covers housekeeping through sendMotors; "draw"/
     // "imshow" only accumulate on iterations that actually render (see
-    // --render-fps above) — 0 the whole time in headless mode.
+    // cfg.renderFps above) — 0 the whole time in headless mode.
     auto   prevIterT      = now;
     auto   lastPerfT      = now;
     double accTotal = 0, accControl = 0, accDraw = 0, accImshow = 0, accWaitKey = 0;
@@ -901,7 +901,10 @@ int main(int argc, char* argv[]) {
         }
         if (g_leftClick) {
             g_leftClick = false;
-            ring.centre    = pixelToWorld({(float)g_clickPt.x, (float)g_clickPt.y});
+            // g_clickPt is in the (possibly debug_frame_scale-shrunk) window's
+            // own pixel space; undo the scale to get back to the full-res
+            // pixel coordinates pixelToWorld()/the homography expect.
+            ring.centre    = pixelToWorld({(float)g_clickPt.x / dbgScale, (float)g_clickPt.y / dbgScale});
             ring.centreSet = true;
             saveRing(ring, ringFile);
         }
@@ -1123,8 +1126,9 @@ int main(int argc, char* argv[]) {
         }
 
         // ── Debug view ───────────────────────────────────────────────────────
-        // Throttled to --render-fps (DEFAULT_RENDER_FPS above): the clone of a
-        // full debug frame plus imshow are the expensive part of this loop;
+        // Throttled to cfg.renderFps (render_fps in aruco_tracker_config.json):
+        // the clone of a full debug frame plus imshow are the expensive part of
+        // this loop;
         // control/the model step/sendMotors above already ran this iteration
         // regardless. waitKey still runs unconditionally below, so the window
         // stays responsive to keys/clicks on skipped render frames.
@@ -1213,6 +1217,17 @@ int main(int argc, char* argv[]) {
         hud.drawTopRight(disp);
         auto tDrawEnd = std::chrono::steady_clock::now();
         if (logPerf) accDraw += std::chrono::duration<double>(tDrawEnd - tControlEnd).count();
+
+        // debug_frame_scale: shrink the fully-composited frame for display
+        // only now that every overlay (tracker's + this loop's own ring/HUD
+        // draws, all in native-resolution coordinates) has already landed on
+        // it — scaling earlier would misalign those draws against a
+        // now-smaller image. This still cuts imshow()'s cost, just not draw's.
+        if (dbgScale < 1.0f) {
+            cv::Mat small;
+            cv::resize(disp, small, {}, dbgScale, dbgScale, cv::INTER_AREA);
+            disp = std::move(small);
+        }
 
         cv::imshow(WIN, disp);
         tImshowEnd = std::chrono::steady_clock::now();
