@@ -47,6 +47,11 @@ static constexpr float MAX_TURN  = 20.0f;
 static constexpr float MAX_TURN_RATE = 120.0f;  // turn-units/s
 static constexpr float ARRIVAL_MM       = 40.0f;   // stop when within this distance of slot
 static constexpr float SEND_INTERVAL_S  = 0.01f; // Send intervall in s
+// Caps the clone-frame + overlay-draw + imshow work below, independent of
+// control/sendMotors, which keep running once per tracker.update() regardless
+// (see --render-fps). waitKey still runs every iteration too, so the window
+// stays responsive to keys/clicks even on skipped render frames.
+static constexpr float DEFAULT_RENDER_FPS = 30.0f;
 
 // Yaw low-pass: smooths the raw per-frame ArUco corner-angle before it reaches
 // any controller. Raw yaw jitters by ~1deg frame-to-frame from corner-detection
@@ -457,6 +462,7 @@ int main(int argc, char* argv[]) {
     bool  doCalibrate = false;
     bool  logPerf     = false;
     bool  logScore    = false;
+    float renderFps   = DEFAULT_RENDER_FPS;
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--serial")       && i+1<argc) serial     = argv[++i];
@@ -466,11 +472,17 @@ int main(int argc, char* argv[]) {
         if (!strcmp(argv[i], "--orbit-speed")  && i+1<argc) orbitSpeed = atof(argv[++i]);
         if (!strcmp(argv[i], "--speed")        && i+1<argc) speedPct   = atof(argv[++i]);
         if (!strcmp(argv[i], "--count")        && i+1<argc) robotCount = atoi(argv[++i]);
+        if (!strcmp(argv[i], "--render-fps")   && i+1<argc) renderFps  = atof(argv[++i]);
         if (!strcmp(argv[i], "--calibrate"))                doCalibrate = true;
         if (!strcmp(argv[i], "--log-perf"))                 logPerf     = true;
         if (!strcmp(argv[i], "--log-score"))                logScore    = true;
     }
     g_defaultSpeedMult = clampf(speedPct / 100.f, 0.05f, 2.0f);
+    if (renderFps <= 0.f) {
+        fprintf(stderr, "--render-fps must be > 0\n");
+        return 2;
+    }
+    const float renderIntervalS = 1.f / renderFps;
 
     SwarmClient swarm;
     if (swarm.connect()) printf("[hub] Connected.\n");
@@ -533,6 +545,9 @@ int main(int argc, char* argv[]) {
     // to locate where the loop falls behind det_fps before optimizing.
     auto   prevIterT  = lastSend;
     double accTotal   = 0, accControl = 0, accDraw = 0, accImshow = 0, accWaitKey = 0;
+    // Init in the past so the very first iteration always renders.
+    auto   lastRenderT = lastSend - std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                             std::chrono::duration<float>(renderIntervalS));
 
     std::unordered_map<int, std::chrono::steady_clock::time_point> robotLastSeen;
     std::unordered_map<int, std::chrono::steady_clock::time_point> robotLostSince;
@@ -949,6 +964,18 @@ int main(int argc, char* argv[]) {
         accControl += std::chrono::duration<double>(tControlEnd - now).count();
 
         // ── Draw HUD ──────────────────────────────────────────────────────────
+        // Throttled to --render-fps: the clone of a full debug frame plus imshow
+        // are the expensive part of the loop (see DEFAULT_RENDER_FPS above),
+        // while control/sendMotors above run every tracker.update() regardless.
+        // waitKey below still runs every iteration so the window stays
+        // responsive even on skipped render frames.
+        bool doRender = std::chrono::duration<float>(tControlEnd - lastRenderT).count() >= renderIntervalS;
+        // waitKey below needs an end-of-render timestamp even when skipped, so
+        // accWaitKey (a skipped-frame poll) is attributed correctly rather than
+        // referencing an out-of-scope variable.
+        auto tImshowEnd = tControlEnd;
+        if (doRender) {
+        lastRenderT = tControlEnd;
         cv::Mat disp = tracker.debugFrame().clone();
 
         // Circle overlay (always, even before centre is clicked).
@@ -1081,8 +1108,9 @@ int main(int argc, char* argv[]) {
 
         cv::imshow(WIN, disp);
 
-        auto tImshowEnd = std::chrono::steady_clock::now();
+        tImshowEnd = std::chrono::steady_clock::now();
         accImshow += std::chrono::duration<double>(tImshowEnd - tDrawEnd).count();
+        }  // doRender
 
         int key = cv::waitKey(1) & 0xFF;
 

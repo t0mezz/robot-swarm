@@ -14,7 +14,7 @@
 //                   [--ring-file PATH] [--fit] [--robot-max-speed MM_S]
 //                   [--time-scale K] [--start] [--buffer-b B] [--buffer-id ID]
 //                   [--bridge] [--port N] [--debug] [--serial SN] [--ip IP]
-//                   [--count N]
+//                   [--count N] [--render-fps N]
 //
 // ── Setup, cue, run ──────────────────────────────────────────────────────────
 //
@@ -200,6 +200,13 @@ static constexpr float MOTOR_HOLD_S = 0.20f;
 // registerRobot() is one-way, so a single frame of a misread id would
 // otherwise put that id in every MSG_SWARM frame for the rest of the run.
 static constexpr float REGISTER_DEBOUNCE_S = 0.30f;
+// Caps the clone-frame + overlay-draw + imshow work in --debug (see
+// DEFAULT_RENDER_FPS in circle_demo.cpp — same idea, same default). Control,
+// the model step and sendMotors above all run once per tracker.update()
+// regardless; only the drawing/display work below the "Debug view" comment is
+// throttled. waitKey still runs every iteration so the window stays
+// responsive to keys/clicks on skipped render frames.
+static constexpr float DEFAULT_RENDER_FPS = 30.0f;
 
 // Alignment — driving to evenly spaced slots ahead of a run, rather than a
 // car-following tick. Deliberately gentler than a run's own top speed: this
@@ -491,6 +498,7 @@ int main(int argc, char* argv[]) {
     bool   bridge      = false;
     bool   autoStart   = false;
     int    port        = 8770;
+    float  renderFps   = DEFAULT_RENDER_FPS;
 
     for (int i = 1; i < argc; ++i) {
         auto arg = [&](const char* n) { return strcmp(argv[i], n) == 0 && i + 1 < argc; };
@@ -516,6 +524,7 @@ int main(int argc, char* argv[]) {
         else if (arg("--robot-max-speed")) robotMaxMms = (float)atof(argv[++i]);
         else if (arg("--time-scale"))      timeScale   = (float)atof(argv[++i]);
         else if (arg("--port"))            port        = atoi(argv[++i]);
+        else if (arg("--render-fps"))      renderFps   = (float)atof(argv[++i]);
         else if (arg("--dir"))             dirSign     = strcmp(argv[++i], "cw") == 0 ? -1.f : 1.f;
         else if (strcmp(argv[i], "--centre") == 0 && i + 2 < argc) {
             argCentreX = (float)atof(argv[++i]);
@@ -532,7 +541,8 @@ int main(int argc, char* argv[]) {
                    "       [--centre X Y] [--ring-file PATH] [--fit] [--dir cw|ccw]\n"
                    "       [--time-scale K] [--robot-max-speed MM_S] [--start]\n"
                    "       [--buffer-b B] [--buffer-id ID]\n"
-                   "       [--bridge] [--port N] [--debug] [--serial SN] [--ip IP] [--count N]\n\n"
+                   "       [--bridge] [--port N] [--debug] [--serial SN] [--ip IP] [--count N]\n"
+                   "       [--render-fps N]\n\n"
                    "models: Reuschel Pipes OVM CF-OVM FVDM ATG IDM\n\n"
                    "The robots are set up but held still until a run is cued: the page's\n"
                    "\"Move\" button with --bridge, space in --debug, <enter> on stdin when\n"
@@ -552,8 +562,10 @@ int main(int argc, char* argv[]) {
                    "--count N pins the vehicle count the virtual ring is sized for, so a\n"
                    "dropped detection cannot rescale the model mid-run.\n\n"
                    "The ring is read from %s (falling back to circle_demo's %s) and\n"
-                   "re-saved whenever --radius/--centre/--fit or a debug-view edit changes it.\n",
-                   argv[0], RING_FILE, CIRCLE_FILE);
+                   "re-saved whenever --radius/--centre/--fit or a debug-view edit changes it.\n\n"
+                   "--render-fps N (default %.0f) caps the --debug clone+draw+imshow work;\n"
+                   "control and sendMotors keep running at the full detection rate regardless.\n",
+                   argv[0], RING_FILE, CIRCLE_FILE, DEFAULT_RENDER_FPS);
             return 0;
         }
         else { fprintf(stderr, "unknown argument: %s\n", argv[i]); return 2; }
@@ -573,6 +585,11 @@ int main(int argc, char* argv[]) {
                 TIME_SCALE_MIN, TIME_SCALE_MAX);
         return 2;
     }
+    if (renderFps <= 0.f) {
+        fprintf(stderr, "--render-fps must be > 0\n");
+        return 2;
+    }
+    const float renderIntervalS = 1.f / renderFps;
 
     SwarmClient swarm;
     printf(swarm.connect() ? "[hub] connected\n" : "[hub] not available — will retry\n");
@@ -691,6 +708,9 @@ int main(int argc, char* argv[]) {
     auto fitSince = now;   // when the pending fit started waiting for robots
     auto alignHoldStart = now;   // when allAligned() last became true (ALIGN_HOLD_S debounce)
     DemoHud::LoopFps loopFps;
+    // Init in the past so the first debug-view iteration always renders.
+    auto lastRender = now - std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                          std::chrono::duration<float>(renderIntervalS));
 
     // Zeroes the whole command vector. Used on stop, on exit, and whenever the
     // run is not active — motors[] is the single source of truth for what the
@@ -1056,6 +1076,13 @@ int main(int argc, char* argv[]) {
         }
 
         // ── Debug view ───────────────────────────────────────────────────────
+        // Throttled to --render-fps (DEFAULT_RENDER_FPS above): the clone of a
+        // full debug frame plus imshow are the expensive part of this loop;
+        // control/the model step/sendMotors above already ran this iteration
+        // regardless. waitKey still runs unconditionally below, so the window
+        // stays responsive to keys/clicks on skipped render frames.
+        if (secondsSince(lastRender) >= renderIntervalS) {
+        lastRender = now;
         cv::Mat disp = tracker.debugFrame().clone();
         if (disp.empty()) {
             // No overlay frame yet — but the window still has to take keys, or
@@ -1135,6 +1162,7 @@ int main(int argc, char* argv[]) {
         }
         hud.drawTopRight(disp);
         cv::imshow(WIN, disp);
+        }  // render throttle
 
         int key = cv::waitKey(1) & 0xFF;
         if (key == 'q' || key == 27) break;
