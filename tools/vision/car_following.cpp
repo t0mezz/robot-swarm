@@ -14,7 +14,7 @@
 //                   [--ring-file PATH] [--fit] [--robot-max-speed MM_S]
 //                   [--time-scale K] [--start] [--buffer-b B] [--buffer-id ID]
 //                   [--bridge] [--port N] [--debug] [--serial SN] [--ip IP]
-//                   [--count N] [--render-fps N]
+//                   [--count N] [--render-fps N] [--log-perf]
 //
 // ── Setup, cue, run ──────────────────────────────────────────────────────────
 //
@@ -499,6 +499,7 @@ int main(int argc, char* argv[]) {
     bool   autoStart   = false;
     int    port        = 8770;
     float  renderFps   = DEFAULT_RENDER_FPS;
+    bool   logPerf     = false;
 
     for (int i = 1; i < argc; ++i) {
         auto arg = [&](const char* n) { return strcmp(argv[i], n) == 0 && i + 1 < argc; };
@@ -535,6 +536,7 @@ int main(int argc, char* argv[]) {
         else if (strcmp(argv[i], "--debug")  == 0) debug  = true;
         else if (strcmp(argv[i], "--bridge") == 0) bridge = true;
         else if (strcmp(argv[i], "--start")  == 0) autoStart = true;
+        else if (strcmp(argv[i], "--log-perf") == 0) logPerf = true;
         else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf("usage: %s [--model NAME] [--speed-max M/S] [--car-size M] [--time-gap S]\n"
                    "       [--reaction-time S] [--sigma A] [--sim-length M] [--radius MM]\n"
@@ -542,7 +544,7 @@ int main(int argc, char* argv[]) {
                    "       [--time-scale K] [--robot-max-speed MM_S] [--start]\n"
                    "       [--buffer-b B] [--buffer-id ID]\n"
                    "       [--bridge] [--port N] [--debug] [--serial SN] [--ip IP] [--count N]\n"
-                   "       [--render-fps N]\n\n"
+                   "       [--render-fps N] [--log-perf]\n\n"
                    "models: Reuschel Pipes OVM CF-OVM FVDM ATG IDM\n\n"
                    "The robots are set up but held still until a run is cued: the page's\n"
                    "\"Move\" button with --bridge, space in --debug, <enter> on stdin when\n"
@@ -564,7 +566,13 @@ int main(int argc, char* argv[]) {
                    "The ring is read from %s (falling back to circle_demo's %s) and\n"
                    "re-saved whenever --radius/--centre/--fit or a debug-view edit changes it.\n\n"
                    "--render-fps N (default %.0f) caps the --debug clone+draw+imshow work;\n"
-                   "control and sendMotors keep running at the full detection rate regardless.\n",
+                   "control and sendMotors keep running at the full detection rate regardless.\n\n"
+                   "--log-perf prints one [perf] line per second: loop_fps (frames actually\n"
+                   "processed), det_fps (the ArUco detection thread's own rate), spin_fps\n"
+                   "(raw main-loop iterations/s, frame or not), and where the time in each\n"
+                   "iteration went (control/draw/imshow/waitKey/other), the same breakdown\n"
+                   "circle_demo.cpp's --log-perf prints (see TODO.md \"Performance: loop_fps\n"
+                   "vs cam_fps\").\n",
                    argv[0], RING_FILE, CIRCLE_FILE, DEFAULT_RENDER_FPS);
             return 0;
         }
@@ -712,6 +720,22 @@ int main(int argc, char* argv[]) {
     auto lastRender = now - std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                           std::chrono::duration<float>(renderIntervalS));
 
+    // --log-perf: coarse per-section timings, printed once per second
+    // alongside loop_fps/det_fps — the same breakdown circle_demo.cpp's own
+    // --log-perf prints (see TODO.md "Performance: loop_fps vs cam_fps").
+    // Unlike circle_demo's loop, this one runs every spin regardless of
+    // whether a fresh frame arrived (housekeeping/cues/the stop path must
+    // keep working even if the camera stalls — see the comment at the top of
+    // the loop), so accTotal/perfFrameCount measure the raw iteration rate
+    // (spin_fps), not just frame arrivals (that's loop_fps, from loopFps
+    // above). "control" covers housekeeping through sendMotors; "draw"/
+    // "imshow" only accumulate on iterations that actually render (see
+    // --render-fps above) — 0 the whole time in headless mode.
+    auto   prevIterT      = now;
+    auto   lastPerfT      = now;
+    double accTotal = 0, accControl = 0, accDraw = 0, accImshow = 0, accWaitKey = 0;
+    int    perfFrameCount = 0;
+
     // Zeroes the whole command vector. Used on stop, on exit, and whenever the
     // run is not active — motors[] is the single source of truth for what the
     // robots are being told, so nothing else needs to know about the phase.
@@ -768,6 +792,26 @@ int main(int argc, char* argv[]) {
         bool haveFrame = tracker.update();
         now = std::chrono::steady_clock::now();
         if (haveFrame) loopFps.tick();
+
+        if (logPerf) {
+            accTotal += std::chrono::duration<double>(now - prevIterT).count();
+            prevIterT = now;
+            ++perfFrameCount;
+
+            double perfDt = std::chrono::duration<double>(now - lastPerfT).count();
+            if (perfDt >= 1.0 && perfFrameCount > 0) {
+                double n = (double)perfFrameCount;
+                printf("[perf] loop_fps=%.0f  det_fps=%.0f  spin_fps=%.0f  total=%.2fms  "
+                       "control=%.2fms  draw=%.2fms  imshow=%.2fms  waitKey=%.2fms  other=%.2fms\n",
+                       loopFps.fps(), tracker.detectionFps(), perfFrameCount / perfDt,
+                       accTotal / n * 1000.0, accControl / n * 1000.0, accDraw / n * 1000.0,
+                       accImshow / n * 1000.0, accWaitKey / n * 1000.0,
+                       (accTotal - accControl - accDraw - accImshow - accWaitKey) / n * 1000.0);
+                accTotal = accControl = accDraw = accImshow = accWaitKey = 0;
+                perfFrameCount = 0;
+                lastPerfT = now;
+            }
+        }
 
         if (!swarm.isConnected() && secondsSince(lastHubRetry) >= 2.0) {
             lastHubRetry = now;
@@ -1047,6 +1091,9 @@ int main(int argc, char* argv[]) {
             sendMotors(false);
         }
 
+        auto tControlEnd = std::chrono::steady_clock::now();
+        if (logPerf) accControl += std::chrono::duration<double>(tControlEnd - now).count();
+
         // ── Report ───────────────────────────────────────────────────────────
         if (!debug) {
             if (secondsSince(lastStatus) >= 1.0) {
@@ -1081,6 +1128,9 @@ int main(int argc, char* argv[]) {
         // control/the model step/sendMotors above already ran this iteration
         // regardless. waitKey still runs unconditionally below, so the window
         // stays responsive to keys/clicks on skipped render frames.
+        // waitKey below needs an end-of-render timestamp even on a skipped
+        // render frame, so accWaitKey isn't left referencing a var out of scope.
+        auto tImshowEnd = tControlEnd;
         if (secondsSince(lastRender) >= renderIntervalS) {
         lastRender = now;
         cv::Mat disp = tracker.debugFrame().clone();
@@ -1161,10 +1211,17 @@ int main(int argc, char* argv[]) {
                     DemoHud::COL_OK);
         }
         hud.drawTopRight(disp);
+        auto tDrawEnd = std::chrono::steady_clock::now();
+        if (logPerf) accDraw += std::chrono::duration<double>(tDrawEnd - tControlEnd).count();
+
         cv::imshow(WIN, disp);
+        tImshowEnd = std::chrono::steady_clock::now();
+        if (logPerf) accImshow += std::chrono::duration<double>(tImshowEnd - tDrawEnd).count();
         }  // render throttle
 
         int key = cv::waitKey(1) & 0xFF;
+        if (logPerf)
+            accWaitKey += std::chrono::duration<double>(std::chrono::steady_clock::now() - tImshowEnd).count();
         if (key == 'q' || key == 27) break;
         if (key == ' ') run.toggle("key");
         if (key == 's') run.requestStop("key");
