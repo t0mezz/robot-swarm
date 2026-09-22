@@ -1,0 +1,63 @@
+flowchart TB
+    subgraph RP["RP2040 — MicroPython (uart_controller.py + friends)"]
+        direction TB
+        SPEED_RX["🟢 MSG_SPEED receive\n(robot_uart.py)"]
+        OPENLOOP["🟢 Open-loop target→power\n(ODOMETRY_ENABLED=False)"]
+        CLOSEDLOOP["🔴 PI closed-loop control\n(PI class, pid_left/right.update)"]
+        ENC["🟢 Encoder speed measurement\n(feeds display + dead PID path)"]
+        MOTORS["🟢 motors.set_speeds()"]
+        BATT["🟢 Battery sample → MSG_METRICS"]
+        RGB["🟢 RGB LED green flash on batt report\n(uncommitted, new)"]
+        SCR_MOTORS["🟢 MOTORS screen"]
+        SCR_GRAPH["🟢 GRAPH screen (LineGraph)"]
+        SCR_DEBUG["🟢 ESP DEBUG screen\n(dynamic, driven by ESP32)"]
+        BUTTONB["🟢 Button B — cycle screens"]
+        BARGRAPH["🔴 BarGraph class\n(screen_manager.py, never instantiated)"]
+        GAUGE["🔴 Gauge class\n(screen_manager.py, never instantiated)"]
+        SENDDEBUG["🔴 send_debug()\nRobot→PC log channel, 0 call sites"]
+        ONRAW["🔴 on_raw hook\n(UARTProtocol, never wired)"]
+        ENGINESOUND["🔴 EngineSound module\n(ENGINE_SOUND_ENABLED=False)"]
+        BUZZER["🔴 Buzzer in swarm firmware\n(only stock main.py uses it)"]
+        PING["🟢 MSG_PING heartbeat\n(RP2040↔ESP32 keepalive)"]
+        ROBOTID["🟢 MSG_ROBOT_ID handling"]
+        SPLASH["🟢 Stock Pololu splash_loader\n(entry point, delay just cut 6s→3s)"]
+    end
+
+    subgraph ESP["ESP32-S3 Receiver (main.cpp)"]
+        direction TB
+        ESPNOW["🟢 ESP-NOW transport +\ndongle MAC self-heal"]
+        STATE["🟢 ANNOUNCING↔ACTIVE\nstate machine"]
+        SWARM["🟢 MSG_SWARM parse →\nper-robot speed → UART"]
+        PONG["🟢 MSG_PING/PONG latency"]
+        TDMA["🟢 TDMA telemetry\n(MSG_TELEMETRY)"]
+        WDG["🟢 Watchdog motor-stop\n(WATCHDOG_TIMEOUT_MS)"]
+        KEEPALIVE["🟢 UART keepalive resend\n(200ms)"]
+        DBGPING["🟢 MSG_DEBUG_PING →\nregister debug fields"]
+        DBGRELAY["🟡 MSG_DEBUG relay\nto dongle (wired, but robot\nnever sends one)"]
+        METRICSIN["🟢 MSG_METRICS ingest\n(battery)"]
+        RXQ["🟢 SPSC RX ring buffer\n(core0→core1)"]
+        LEDANIM["🔴 WS2812 rainbow logic\n(hsvToColor, hue) — hardcoded\nto always-off, 'TEMP' hack"]
+        RSSI["🔴 DEBUG_FIELD_RSSI\n(TODO, blocked on ESP-IDF 5.x)"]
+        LEDCONST["🔴 LED_ON_DURATION_MS\n(defined, zero references)"]
+        DIAG["🟢 Serial diagnostics printf\n(dev aid, USB-conditional)"]
+    end
+
+    SPEED_RX --> OPENLOOP --> MOTORS
+    SPEED_RX -.dead branch.-> CLOSEDLOOP
+    ENC --> CLOSEDLOOP
+    ENC --> SCR_GRAPH
+    BATT --> RGB
+    BATT --> SCR_MOTORS
+    PING --> SCR_DEBUG
+    ROBOTID --> SCR_MOTORS
+    DBGPING -. UART .-> SCR_DEBUG
+    SWARM -- UART MSG_SPEED --> SPEED_RX
+    METRICSIN -. UART MSG_METRICS .-> BATT
+    DBGRELAY -.would carry.-> SENDDEBUG
+
+    classDef used fill:#1f6f43,stroke:#0f3d25,color:#fff
+    classDef partial fill:#8a6d1f,stroke:#5c4a14,color:#fff
+    classDef dead fill:#555,stroke:#333,color:#ddd,stroke-dasharray: 4 3
+    class SPEED_RX,OPENLOOP,ENC,MOTORS,BATT,RGB,SCR_MOTORS,SCR_GRAPH,SCR_DEBUG,BUTTONB,PING,ROBOTID,SPLASH,ESPNOW,STATE,SWARM,PONG,TDMA,WDG,KEEPALIVE,DBGPING,METRICSIN,RXQ,DIAG used
+    class DBGRELAY partial
+    class CLOSEDLOOP,BARGRAPH,GAUGE,SENDDEBUG,ONRAW,ENGINESOUND,BUZZER,LEDANIM,RSSI,LEDCONST dead

@@ -137,6 +137,43 @@ inline float cfAcceleration(CfModel m, const CfInput& in, const CfParams& p) {
     }
 }
 
+// ── Closing the loop against a real robot ────────────────────────────────────
+//
+// `in.speed` is the vehicle's own *state*, not a fresh measurement. Every
+// second-order model returns `in.speed + a*dt`, so handing cfStep a measured
+// speed each step closes a loop with gain
+//
+//     (1 - dt/reactionTime) * k
+//
+// around the measurement, where k is whatever gain error the measurement
+// carries. dt/reactionTime is small (0.025/0.7 = 3.6% at the tool's defaults),
+// so any k above ~1.04 diverges and the command pins at speedMax — the model
+// stops running at all. On the ring tool k is ring.radius / the robot's actual
+// orbit radius, because road position is an angle: a robot orbiting 5% inside
+// the ring covers road 5% faster than it is really driving.
+//
+// So the state is integrated, and the measurement is folded in as a slow
+// first-order correction instead. With blend coefficient alpha the loop gain
+// becomes
+//
+//     (1 - dt/reactionTime) * (1 + alpha*(k - 1))
+//
+// which stays below 1 for any plausible k once tau >> reactionTime — at the
+// default 2s against a reaction time of 0.7s, a robot orbiting at *half* the
+// ring radius (k = 2) still converges, and the settled speed is within 2% of
+// V(gap) for the few-percent errors that actually occur. Re-seeding, by
+// contrast, is already commanding 2.2x V(gap) at k = 1.02 and pins at speedMax
+// past 1.04. Both are pinned down in tests/test_car_following.cpp.
+constexpr float CF_SYNC_TAU_S = 2.0f;   // s, simulated
+
+// EMA coefficient for that correction, from a time constant, so the blend keeps
+// the same memory in simulated seconds whatever dt the caller steps with.
+// tau <= 0 returns 1 — i.e. replace the state with the measurement outright,
+// which is the unstable behaviour described above and is only useful in tests.
+inline float cfSyncAlpha(float dt, float tauS = CF_SYNC_TAU_S) {
+    return tauS <= 0.f ? 1.f : dt / (tauS + dt);
+}
+
 // One explicit-Euler step: returns the vehicle's new speed in m/s.
 //
 // `noise` is a unit gaussian sample supplied by the caller, so this stays a

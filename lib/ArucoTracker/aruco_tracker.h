@@ -124,6 +124,26 @@ struct ArucoConfig {
     bool debugOverlay = false;
     bool mirrorInput  = false;
 
+    // Debug/display tuning — not read by ArucoTracker's detection pipeline
+    // itself (that always runs at cam_width x cam_height), only by the parts
+    // that turn a tracked frame into something drawn on screen.
+    //
+    // Target scale for the final on-screen debug image, applied by the demo
+    // tool (car_following.cpp, circle_demo.cpp) right before imshow(), not by
+    // ArucoTracker — debugFrame() itself always stays at full camera
+    // resolution because callers draw their own overlay on top of it using
+    // full-res pixel/world coordinates (worldToPixel(), RobotPose::px/py);
+    // shrinking the base frame first would misalign that overlay against the
+    // now-smaller image. 1.0 = no scaling (previous behavior). Must be in
+    // (0, 1].
+    float debugFrameScale = 1.0f;
+    // Caps how often car_following.cpp / circle_demo.cpp redo the
+    // clone-frame + overlay-draw + imshow work in their own loops; control
+    // and sendMotors in those tools run once per tracker.update() regardless.
+    // Formerly a --render-fps flag on each tool — centralized here so it
+    // lives with the rest of the per-camera-setup tuning.
+    float renderFps = 30.0f;
+
     static ArucoConfig fromFile(const std::string& path = defaultConfigPath());
 };
 
@@ -193,6 +213,8 @@ inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
     rb("mirror_input",    c.mirrorInput);
     ri("offset_x",        c.offsetX);
     ri("offset_y",        c.offsetY);
+    rf("debug_frame_scale", c.debugFrameScale);
+    rf("render_fps",        c.renderFps);
     return c;
 }
 
@@ -698,6 +720,18 @@ private:
                 else cv::putText(debug,
                     "tags:" + std::to_string(outRobots.size()) + (hasH_ ? "  world" : "  px"),
                     {10, 28}, cv::FONT_HERSHEY_SIMPLEX, 0.7, {0,255,0}, 2);
+
+                // debug_frame_scale (cfg_.debugFrameScale) is deliberately NOT
+                // applied here. debugFrame() is handed to callers (e.g.
+                // car_following.cpp, circle_demo.cpp) that draw their own
+                // application-level overlay on top — a ring/circle outline,
+                // per-robot labels, HUD — using pixel/world coordinates
+                // computed at this frame's native resolution (worldToPixel(),
+                // RobotPose::px/py). Shrinking the frame here, before that
+                // drawing happens, would leave those coordinates pointing at
+                // the wrong place on the now-smaller image. Callers that want
+                // the resource savings scale their own fully-composited `disp`
+                // right before imshow() instead, once every draw call is done.
 
                 // ── Latency EMA ───────────────────────────────────────────────
                 float ms_elapsed = std::chrono::duration<float, std::milli>(Clock::now() - t0).count();
