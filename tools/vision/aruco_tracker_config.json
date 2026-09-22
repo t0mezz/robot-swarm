@@ -1,6 +1,6 @@
 {
     "basler_serial": "",
-    "basler_ip": "",
+    "basler_ip": "192.168.1.101",
     "cam_width": 2048,
     "cam_height": 2048,
     "cam_fps": 115, // dont change
@@ -35,5 +35,5 @@
     "offset_x": 160,
     "offset_y": 0,
     "debug_frame_scale": 1.0,
-    "render_fps": 30
+    "render_fps": 12
 }
