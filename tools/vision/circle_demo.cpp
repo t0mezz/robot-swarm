@@ -481,6 +481,16 @@ int main(int argc, char* argv[]) {
     if (!ip.empty())     cfg.baslerIp     = ip;
     if (robotCount > 0)  cfg.robotCount   = robotCount;
     cfg.debugOverlay = true;
+    if (cfg.renderFps <= 0.f) {
+        fprintf(stderr, "render_fps in aruco_tracker_config.json must be > 0\n");
+        return 2;
+    }
+    const float renderIntervalS = 1.f / cfg.renderFps;
+    // Clamped once here so every consumer (window size, final imshow resize,
+    // click-coordinate scaling) agrees on the same factor even if the config
+    // has a stray 0/negative/>1 value.
+    const float dbgScale = (cfg.debugFrameScale > 0.f && cfg.debugFrameScale <= 1.0f)
+                                ? cfg.debugFrameScale : 1.0f;
     ArucoTracker tracker(cfg);
     if (!tracker.open()) { fprintf(stderr, "Could not open Basler camera.\n"); return 1; }
     //auto undist = std::make_unique<FisheyeUndistortPreprocessor>();
@@ -496,7 +506,11 @@ int main(int argc, char* argv[]) {
 
     const char* WIN = "Circle Demo";
     cv::namedWindow(WIN, cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
-    cv::resizeWindow(WIN, tracker.frameSize().width, tracker.frameSize().height);
+    // Match the window to what actually gets shown (debug_frame_scale-scaled),
+    // not the raw camera resolution, so the window doesn't sit mostly empty
+    // (or stretch the image) — the click handler below undoes the same scale.
+    cv::resizeWindow(WIN, (int)(tracker.frameSize().width  * dbgScale),
+                          (int)(tracker.frameSize().height * dbgScale));
     cv::setMouseCallback(WIN, onMouse, nullptr);
 
     CircleState circle;
@@ -533,6 +547,9 @@ int main(int argc, char* argv[]) {
     // to locate where the loop falls behind det_fps before optimizing.
     auto   prevIterT  = lastSend;
     double accTotal   = 0, accControl = 0, accDraw = 0, accImshow = 0, accWaitKey = 0;
+    // Init in the past so the very first iteration always renders.
+    auto   lastRenderT = lastSend - std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                             std::chrono::duration<float>(renderIntervalS));
 
     std::unordered_map<int, std::chrono::steady_clock::time_point> robotLastSeen;
     std::unordered_map<int, std::chrono::steady_clock::time_point> robotLostSince;
@@ -617,7 +634,10 @@ int main(int argc, char* argv[]) {
 
         // ── Handle click: set new circle centre ───────────────────────────────
         if (g_leftClick) {
-            cv::Point2f w = pixelToWorld({(float)g_clickPt.x, (float)g_clickPt.y});
+            // g_clickPt is in the (possibly debug_frame_scale-shrunk) window's
+            // own pixel space; undo the scale to get back to the full-res
+            // pixel coordinates pixelToWorld()/the homography expect.
+            cv::Point2f w = pixelToWorld({(float)g_clickPt.x / dbgScale, (float)g_clickPt.y / dbgScale});
             circle.centre    = w;
             circle.centreSet = true;
             slotsDirty       = true;   // robot angles changed → reassign slots
@@ -949,6 +969,19 @@ int main(int argc, char* argv[]) {
         accControl += std::chrono::duration<double>(tControlEnd - now).count();
 
         // ── Draw HUD ──────────────────────────────────────────────────────────
+        // Throttled to cfg.renderFps (render_fps in aruco_tracker_config.json):
+        // the clone of a full debug frame plus imshow are the expensive part of
+        // the loop, while control/sendMotors above run every tracker.update()
+        // regardless.
+        // waitKey below still runs every iteration so the window stays
+        // responsive even on skipped render frames.
+        bool doRender = std::chrono::duration<float>(tControlEnd - lastRenderT).count() >= renderIntervalS;
+        // waitKey below needs an end-of-render timestamp even when skipped, so
+        // accWaitKey (a skipped-frame poll) is attributed correctly rather than
+        // referencing an out-of-scope variable.
+        auto tImshowEnd = tControlEnd;
+        if (doRender) {
+        lastRenderT = tControlEnd;
         cv::Mat disp = tracker.debugFrame().clone();
 
         // Circle overlay (always, even before centre is clicked).
@@ -1079,10 +1112,22 @@ int main(int argc, char* argv[]) {
         auto tDrawEnd = std::chrono::steady_clock::now();
         accDraw += std::chrono::duration<double>(tDrawEnd - tControlEnd).count();
 
+        // debug_frame_scale: shrink the fully-composited frame for display
+        // only now that every overlay (tracker's + this loop's own ring/HUD
+        // draws, all in native-resolution coordinates) has already landed on
+        // it — scaling earlier would misalign those draws against a
+        // now-smaller image. This still cuts imshow()'s cost, just not draw's.
+        if (dbgScale < 1.0f) {
+            cv::Mat small;
+            cv::resize(disp, small, {}, dbgScale, dbgScale, cv::INTER_AREA);
+            disp = std::move(small);
+        }
+
         cv::imshow(WIN, disp);
 
-        auto tImshowEnd = std::chrono::steady_clock::now();
+        tImshowEnd = std::chrono::steady_clock::now();
         accImshow += std::chrono::duration<double>(tImshowEnd - tDrawEnd).count();
+        }  // doRender
 
         int key = cv::waitKey(1) & 0xFF;
 

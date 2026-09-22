@@ -14,7 +14,7 @@
 //                   [--ring-file PATH] [--fit] [--robot-max-speed MM_S]
 //                   [--time-scale K] [--start] [--buffer-b B] [--buffer-id ID]
 //                   [--bridge] [--port N] [--debug] [--serial SN] [--ip IP]
-//                   [--count N]
+//                   [--count N] [--log-perf]
 //
 // ── Setup, cue, run ──────────────────────────────────────────────────────────
 //
@@ -209,7 +209,6 @@ static constexpr float MOTOR_HOLD_S = 0.20f;
 // registerRobot() is one-way, so a single frame of a misread id would
 // otherwise put that id in every MSG_SWARM frame for the rest of the run.
 static constexpr float REGISTER_DEBOUNCE_S = 0.30f;
-
 // Alignment — driving to evenly spaced slots ahead of a run, rather than a
 // car-following tick. Deliberately gentler than a run's own top speed: this
 // is a setup maneuver, not the experiment.
@@ -500,6 +499,7 @@ int main(int argc, char* argv[]) {
     bool   bridge      = false;
     bool   autoStart   = false;
     int    port        = 8770;
+    bool   logPerf     = false;
 
     for (int i = 1; i < argc; ++i) {
         auto arg = [&](const char* n) { return strcmp(argv[i], n) == 0 && i + 1 < argc; };
@@ -540,13 +540,15 @@ int main(int argc, char* argv[]) {
         else if (strcmp(argv[i], "--debug")  == 0) debug  = true;
         else if (strcmp(argv[i], "--bridge") == 0) bridge = true;
         else if (strcmp(argv[i], "--start")  == 0) autoStart = true;
+        else if (strcmp(argv[i], "--log-perf") == 0) logPerf = true;
         else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printf("usage: %s [--model NAME] [--speed-max M/S] [--car-size M] [--time-gap S]\n"
                    "       [--reaction-time S] [--sigma A] [--sim-length M] [--radius MM]\n"
                    "       [--centre X Y] [--ring-file PATH] [--fit] [--dir cw|ccw]\n"
                    "       [--time-scale K] [--robot-max-speed MM_S] [--start]\n"
                    "       [--buffer-b B] [--buffer-id ID]\n"
-                   "       [--bridge] [--port N] [--debug] [--serial SN] [--ip IP] [--count N]\n\n"
+                   "       [--bridge] [--port N] [--debug] [--serial SN] [--ip IP] [--count N]\n"
+                   "       [--log-perf]\n\n"
                    "models: Reuschel Pipes OVM CF-OVM FVDM ATG IDM\n\n"
                    "The robots are set up but held still until a run is cued: the page's\n"
                    "\"Move\" button with --bridge, space in --debug, <enter> on stdin when\n"
@@ -566,7 +568,16 @@ int main(int argc, char* argv[]) {
                    "--count N pins the vehicle count the virtual ring is sized for, so a\n"
                    "dropped detection cannot rescale the model mid-run.\n\n"
                    "The ring is read from %s (falling back to circle_demo's %s) and\n"
-                   "re-saved whenever --radius/--centre/--fit or a debug-view edit changes it.\n",
+                   "re-saved whenever --radius/--centre/--fit or a debug-view edit changes it.\n\n"
+                   "render_fps and debug_frame_scale in aruco_tracker_config.json cap the\n"
+                   "--debug clone+draw+imshow work and the size of the published debug frame;\n"
+                   "control and sendMotors keep running at the full detection rate regardless.\n\n"
+                   "--log-perf prints one [perf] line per second: loop_fps (frames actually\n"
+                   "processed), det_fps (the ArUco detection thread's own rate), spin_fps\n"
+                   "(raw main-loop iterations/s, frame or not), and where the time in each\n"
+                   "iteration went (control/draw/imshow/waitKey/other), the same breakdown\n"
+                   "circle_demo.cpp's --log-perf prints (see TODO.md \"Performance: loop_fps\n"
+                   "vs cam_fps\").\n",
                    argv[0], RING_FILE, CIRCLE_FILE);
             return 0;
         }
@@ -591,7 +602,6 @@ int main(int argc, char* argv[]) {
                 TIME_SCALE_MIN, TIME_SCALE_MAX);
         return 2;
     }
-
     SwarmClient swarm;
     printf(swarm.connect() ? "[hub] connected\n" : "[hub] not available — will retry\n");
 
@@ -600,6 +610,17 @@ int main(int argc, char* argv[]) {
     if (!ip.empty())     cfg.baslerIp     = ip;
     if (robotCount > 0)  cfg.robotCount   = robotCount;
     cfg.debugOverlay = debug;
+
+    if (cfg.renderFps <= 0.f) {
+        fprintf(stderr, "render_fps in aruco_tracker_config.json must be > 0\n");
+        return 2;
+    }
+    const float renderIntervalS = 1.f / cfg.renderFps;
+    // Clamped once here so every consumer (window size, final imshow resize,
+    // click-coordinate scaling) agrees on the same factor even if the config
+    // has a stray 0/negative/>1 value.
+    const float dbgScale = (cfg.debugFrameScale > 0.f && cfg.debugFrameScale <= 1.0f)
+                                ? cfg.debugFrameScale : 1.0f;
 
     ArucoTracker tracker(cfg);
     if (!tracker.open()) { fprintf(stderr, "Could not open Basler camera.\n"); return 1; }
@@ -668,7 +689,11 @@ int main(int argc, char* argv[]) {
     const char* WIN = "Car Following";
     if (debug) {
         cv::namedWindow(WIN, cv::WINDOW_NORMAL | cv::WINDOW_GUI_NORMAL);
-        cv::resizeWindow(WIN, tracker.frameSize().width, tracker.frameSize().height);
+        // Match the window to what actually gets shown (debug_frame_scale-
+        // shrunk), not the raw camera resolution — the click handler below
+        // undoes the same scale.
+        cv::resizeWindow(WIN, (int)(tracker.frameSize().width  * dbgScale),
+                              (int)(tracker.frameSize().height * dbgScale));
         cv::setMouseCallback(WIN, onMouse, nullptr);
         printf("[cf] space = run/stop  s = stop  a = align to ring  left-click = ring centre  "
                "+/- = radius %.0f\n"
@@ -709,6 +734,25 @@ int main(int argc, char* argv[]) {
     auto fitSince = now;   // when the pending fit started waiting for robots
     auto alignHoldStart = now;   // when allAligned() last became true (ALIGN_HOLD_S debounce)
     DemoHud::LoopFps loopFps;
+    // Init in the past so the first debug-view iteration always renders.
+    auto lastRender = now - std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                          std::chrono::duration<float>(renderIntervalS));
+
+    // --log-perf: coarse per-section timings, printed once per second
+    // alongside loop_fps/det_fps — the same breakdown circle_demo.cpp's own
+    // --log-perf prints (see TODO.md "Performance: loop_fps vs cam_fps").
+    // Unlike circle_demo's loop, this one runs every spin regardless of
+    // whether a fresh frame arrived (housekeeping/cues/the stop path must
+    // keep working even if the camera stalls — see the comment at the top of
+    // the loop), so accTotal/perfFrameCount measure the raw iteration rate
+    // (spin_fps), not just frame arrivals (that's loop_fps, from loopFps
+    // above). "control" covers housekeeping through sendMotors; "draw"/
+    // "imshow" only accumulate on iterations that actually render (see
+    // cfg.renderFps above) — 0 the whole time in headless mode.
+    auto   prevIterT      = now;
+    auto   lastPerfT      = now;
+    double accTotal = 0, accControl = 0, accDraw = 0, accImshow = 0, accWaitKey = 0;
+    int    perfFrameCount = 0;
 
     // Zeroes the whole command vector. Used on stop, on exit, and whenever the
     // run is not active — motors[] is the single source of truth for what the
@@ -766,6 +810,26 @@ int main(int argc, char* argv[]) {
         bool haveFrame = tracker.update();
         now = std::chrono::steady_clock::now();
         if (haveFrame) loopFps.tick();
+
+        if (logPerf) {
+            accTotal += std::chrono::duration<double>(now - prevIterT).count();
+            prevIterT = now;
+            ++perfFrameCount;
+
+            double perfDt = std::chrono::duration<double>(now - lastPerfT).count();
+            if (perfDt >= 1.0 && perfFrameCount > 0) {
+                double n = (double)perfFrameCount;
+                printf("[perf] loop_fps=%.0f  det_fps=%.0f  spin_fps=%.0f  total=%.2fms  "
+                       "control=%.2fms  draw=%.2fms  imshow=%.2fms  waitKey=%.2fms  other=%.2fms\n",
+                       loopFps.fps(), tracker.detectionFps(), perfFrameCount / perfDt,
+                       accTotal / n * 1000.0, accControl / n * 1000.0, accDraw / n * 1000.0,
+                       accImshow / n * 1000.0, accWaitKey / n * 1000.0,
+                       (accTotal - accControl - accDraw - accImshow - accWaitKey) / n * 1000.0);
+                accTotal = accControl = accDraw = accImshow = accWaitKey = 0;
+                perfFrameCount = 0;
+                lastPerfT = now;
+            }
+        }
 
         if (!swarm.isConnected() && secondsSince(lastHubRetry) >= 2.0) {
             lastHubRetry = now;
@@ -855,7 +919,10 @@ int main(int argc, char* argv[]) {
         }
         if (g_leftClick) {
             g_leftClick = false;
-            ring.centre    = pixelToWorld({(float)g_clickPt.x, (float)g_clickPt.y});
+            // g_clickPt is in the (possibly debug_frame_scale-shrunk) window's
+            // own pixel space; undo the scale to get back to the full-res
+            // pixel coordinates pixelToWorld()/the homography expect.
+            ring.centre    = pixelToWorld({(float)g_clickPt.x / dbgScale, (float)g_clickPt.y / dbgScale});
             ring.centreSet = true;
             saveRing(ring, ringFile);
         }
@@ -1058,6 +1125,9 @@ int main(int argc, char* argv[]) {
             sendMotors(false);
         }
 
+        auto tControlEnd = std::chrono::steady_clock::now();
+        if (logPerf) accControl += std::chrono::duration<double>(tControlEnd - now).count();
+
         // ── Report ───────────────────────────────────────────────────────────
         if (!debug) {
             if (secondsSince(lastStatus) >= 1.0) {
@@ -1087,6 +1157,17 @@ int main(int argc, char* argv[]) {
         }
 
         // ── Debug view ───────────────────────────────────────────────────────
+        // Throttled to cfg.renderFps (render_fps in aruco_tracker_config.json):
+        // the clone of a full debug frame plus imshow are the expensive part of
+        // this loop;
+        // control/the model step/sendMotors above already ran this iteration
+        // regardless. waitKey still runs unconditionally below, so the window
+        // stays responsive to keys/clicks on skipped render frames.
+        // waitKey below needs an end-of-render timestamp even on a skipped
+        // render frame, so accWaitKey isn't left referencing a var out of scope.
+        auto tImshowEnd = tControlEnd;
+        if (secondsSince(lastRender) >= renderIntervalS) {
+        lastRender = now;
         cv::Mat disp = tracker.debugFrame().clone();
         if (disp.empty()) {
             // No overlay frame yet — but the window still has to take keys, or
@@ -1165,9 +1246,28 @@ int main(int argc, char* argv[]) {
                     DemoHud::COL_OK);
         }
         hud.drawTopRight(disp);
+        auto tDrawEnd = std::chrono::steady_clock::now();
+        if (logPerf) accDraw += std::chrono::duration<double>(tDrawEnd - tControlEnd).count();
+
+        // debug_frame_scale: shrink the fully-composited frame for display
+        // only now that every overlay (tracker's + this loop's own ring/HUD
+        // draws, all in native-resolution coordinates) has already landed on
+        // it — scaling earlier would misalign those draws against a
+        // now-smaller image. This still cuts imshow()'s cost, just not draw's.
+        if (dbgScale < 1.0f) {
+            cv::Mat small;
+            cv::resize(disp, small, {}, dbgScale, dbgScale, cv::INTER_AREA);
+            disp = std::move(small);
+        }
+
         cv::imshow(WIN, disp);
+        tImshowEnd = std::chrono::steady_clock::now();
+        if (logPerf) accImshow += std::chrono::duration<double>(tImshowEnd - tDrawEnd).count();
+        }  // render throttle
 
         int key = cv::waitKey(1) & 0xFF;
+        if (logPerf)
+            accWaitKey += std::chrono::duration<double>(std::chrono::steady_clock::now() - tImshowEnd).count();
         if (key == 'q' || key == 27) break;
         if (key == ' ') run.toggle("key");
         if (key == 's') run.requestStop("key");

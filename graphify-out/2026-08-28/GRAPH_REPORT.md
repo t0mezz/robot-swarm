@@ -106,16 +106,16 @@
 10. `main()` - 30 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `main()` --references--> `SwarmClient`  [INFERRED]
-  tools/swarm/latency_plot.cpp → lib/SwarmClient/SwarmClient.h
-- `main()` --references--> `SwarmClient`  [INFERRED]
-  tools/swarm/swarm_telemetry_json.cpp → lib/SwarmClient/SwarmClient.h
-- `main()` --references--> `SwarmClient`  [INFERRED]
-  tools/vision/car_following.cpp → lib/SwarmClient/SwarmClient.h
-- `main()` --references--> `SwarmClient`  [INFERRED]
-  tools/vision/circle_demo.cpp → lib/SwarmClient/SwarmClient.h
-- `main()` --references--> `SwarmClient`  [INFERRED]
-  tools/vision/shape_demo.cpp → lib/SwarmClient/SwarmClient.h
+- `main()` --calls--> `buildArucoDetector()`  [INFERRED]
+  tools/vision/frame_inspector.cpp → lib/ArucoTracker/aruco_tracker.h
+- `main()` --calls--> `bestX_`  [INFERRED]
+  tools/vision/calibration/calib_main.cpp → lib/Calibration/cmaes.h
+- `main()` --calls--> `fromNorm()`  [INFERRED]
+  tools/vision/calibration/calib_main.cpp → lib/Calibration/param_space.h
+- `main()` --calls--> `encode()`  [INFERRED]
+  tools/vision/calibration/calib_main.cpp → lib/Calibration/param_space.h
+- `runOptimisation()` --calls--> `encode()`  [INFERRED]
+  tools/vision/calibration/calib_main.cpp → lib/Calibration/param_space.h
 
 ## Import Cycles
 - None detected.
@@ -420,7 +420,7 @@ Cohesion: 0.67
 Nodes (3): RobotRowLayout, meterWidth, sparkWidth
 
 ## Knowledge Gaps
-- **534 isolated node(s):** `termios`, `cars_`, `cfg_`, `pendingCount_`, `pendingSince_` (+529 more)
+- **534 isolated node(s):** `open`, `id`, `x`, `y`, `yaw` (+529 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **5 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -428,10 +428,10 @@ Nodes (3): RobotRowLayout, meterWidth, sparkWidth
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `ArucoTracker` connect `ArucoTracker` to `ICameraSource`, `unordered_map`, `main`, `aruco_tracker.h`, `DetectionResult`, `circle_demo.cpp`, `ArucoConfig`, `IPreprocessor`, `shape_demo.cpp`, `wingman.cpp`, `vector`, `vision_controller.cpp`, `string`?**
-  _High betweenness centrality (0.064) - this node is a cross-community bridge._
+  _High betweenness centrality (0.106) - this node is a cross-community bridge._
 - **Why does `main()` connect `main` to `CfRing`, `car_following.cpp`, `SwarmClient`, `car_following.h`, `drawPanel`, `HttpBridge`?**
-  _High betweenness centrality (0.044) - this node is a cross-community bridge._
-- **Why does `SwarmClient` connect `SwarmClient` to `main`, `Vehicle`, `DebugEntry`, `shape_demo.cpp`, `RobotState`, `drag_drop_demo.cpp`, `main`?**
+  _High betweenness centrality (0.045) - this node is a cross-community bridge._
+- **Why does `ArucoConfig` connect `ArucoConfig` to `BaslerPylonSource`, `aruco_tracker.h`, `param_space.h`, `main`, `ArucoTracker`, `CMAES`, `objective.h`, `main`, `string`?**
   _High betweenness centrality (0.042) - this node is a cross-community bridge._
 - **Are the 6 inferred relationships involving `SwarmClient` (e.g. with `main()` and `main()`) actually correct?**
   _`SwarmClient` has 6 INFERRED edges - model-reasoned connections that need verification._
@@ -439,5 +439,5 @@ _Questions this graph is uniquely positioned to answer:_
   _`CfRing` has 12 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 28 inferred relationships involving `main()` (e.g. with `cfModelFromName()` and `cfModelHasDesiredGap()`) actually correct?**
   _`main()` has 28 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `termios`, `cars_`, `cfg_` to the rest of the system?**
+- **What connects `open`, `id`, `x` to the rest of the system?**
   _534 weakly-connected nodes found - possible documentation gaps or missing edges._
