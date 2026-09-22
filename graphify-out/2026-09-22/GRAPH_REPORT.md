@@ -456,7 +456,7 @@ Cohesion: 0.67
 Nodes (3): SlotOffset, dx, dy
 
 ## Knowledge Gaps
-- **538 isolated node(s):** `termios`, `cars_`, `cfg_`, `pendingCount_`, `pendingSince_` (+533 more)
+- **538 isolated node(s):** `open`, `id`, `x`, `y`, `yaw` (+533 more)
   These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 817 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **7 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -464,16 +464,16 @@ Nodes (3): SlotOffset, dx, dy
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `ArucoTracker` connect `ArucoTracker` to `RobotPose`, `swarm_telemetry_json.cpp`, `wingman.cpp`, `IPreprocessor`, `vector`, `circle_demo.cpp`, `ICameraSource`, `ArucoConfig`, `aruco_tracker.h`, `shape_demo.cpp`, `DetectionResult`, `drag_drop_demo.cpp`, `.detectionLoop`, `RingBuffer`, `string`, `vision_controller.cpp`?**
-  _High betweenness centrality (0.065) - this node is a cross-community bridge._
+  _High betweenness centrality (0.076) - this node is a cross-community bridge._
 - **Why does `ArucoConfig` connect `ArucoConfig` to `param_space.h`, `aruco_tracker.h`, `calib_main.cpp`, `ArucoTracker`, `CMAES`, `BaslerPylonSource`, `fromFile`, `objective.h`, `string`?**
-  _High betweenness centrality (0.052) - this node is a cross-community bridge._
-- **Why does `SwarmClient` connect `SwarmClient` to `swarm_telemetry_json.cpp`, `main`, `circle_demo.cpp`, `cstdio`, `shape_demo.cpp`, `RobotState`, `drag_drop_demo.cpp`, `string`, `drawTelHud`?**
-  _High betweenness centrality (0.046) - this node is a cross-community bridge._
+  _High betweenness centrality (0.041) - this node is a cross-community bridge._
+- **Why does `main()` connect `main` to `CfRing`, `swarm_telemetry_json.cpp`, `test_car_following.cpp`, `HttpBridge`, `SwarmClient`, `DemoHud`, `fromFile`, `drawTelHud`?**
+  _High betweenness centrality (0.039) - this node is a cross-community bridge._
 - **Are the 6 inferred relationships involving `SwarmClient` (e.g. with `main()` and `main()`) actually correct?**
   _`SwarmClient` has 6 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 12 inferred relationships involving `CfRing` (e.g. with `test_a_dropout_keeps_its_place_on_the_ring()` and `test_a_lagging_robot_still_gets_the_ring_moving()`) actually correct?**
   _`CfRing` has 12 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 28 inferred relationships involving `main()` (e.g. with `cfModelFromName()` and `cfModelHasDesiredGap()`) actually correct?**
   _`main()` has 28 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `termios`, `cars_`, `cfg_` to the rest of the system?**
+- **What connects `open`, `id`, `x` to the rest of the system?**
   _538 weakly-connected nodes found - possible documentation gaps or missing edges._
