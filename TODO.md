@@ -2,7 +2,6 @@
 
 # ink dashboards plots are not plottet over the whole horizontal dimention correctly
 
-# simplify the whole pipeline for modular, headless use with ability to attach different hud
 - get rid of redundant and unsed code
 
 # add 2 params to circle_demo maybe create a new polished circle util drop "demo" phrase
