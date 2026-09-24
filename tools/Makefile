@@ -40,7 +40,7 @@ OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config -
 
 .PHONY: all clean calibrate
 
-all: $(BUILD_DIR)/swarm_hub $(BUILD_DIR)/swarm_hub_simulation $(BUILD_DIR)/swarm_terminal $(BUILD_DIR)/latency_plot $(BUILD_DIR)/swarm_dashboard $(BUILD_DIR)/swarm_telemetry_json $(BUILD_DIR)/swarm_controller $(BUILD_DIR)/game $(BUILD_DIR)/vision_controller $(BUILD_DIR)/circle_demo $(BUILD_DIR)/car_following $(BUILD_DIR)/wingman $(BUILD_DIR)/shape_demo $(BUILD_DIR)/drag_drop_demo $(BUILD_DIR)/marker_eval $(BUILD_DIR)/frame_inspector $(BUILD_DIR)/demo_hud_preview calibrate
+all: $(BUILD_DIR)/swarm_hub $(BUILD_DIR)/swarm_hub_simulation $(BUILD_DIR)/swarm_terminal $(BUILD_DIR)/latency_plot $(BUILD_DIR)/swarm_dashboard $(BUILD_DIR)/swarm_telemetry_json $(BUILD_DIR)/swarm_controller $(BUILD_DIR)/game $(BUILD_DIR)/vision_controller $(BUILD_DIR)/circle_demo $(BUILD_DIR)/car_following $(BUILD_DIR)/wingman $(BUILD_DIR)/shape_demo $(BUILD_DIR)/drag_drop_demo $(BUILD_DIR)/marker_eval $(BUILD_DIR)/frame_inspector $(BUILD_DIR)/demo_hud_preview $(BUILD_DIR)/max_speed_test $(BUILD_DIR)/measurement_test $(BUILD_DIR)/circle_speed_test calibrate
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -102,6 +102,27 @@ $(BUILD_DIR)/drag_drop_demo: vision/drag_drop_demo.cpp $(LIBDIR)/ArucoTracker/ar
 $(BUILD_DIR)/marker_eval: vision/marker_eval.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/DemoHud \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS)
+
+# Motor-command -> real-world mm/s calibration tool (see robotMaxMms note in
+# CLAUDE.md). Drives one robot and needs SwarmClient, same deps as drag_drop_demo.
+$(BUILD_DIR)/max_speed_test: vision/max_speed_test.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
+	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud \
+	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
+
+# Homography/pixel-to-mm sanity check — click-to-measure against a tape
+# measure. No SwarmClient: camera + homography only, like marker_eval.
+$(BUILD_DIR)/measurement_test: vision/measurement_test.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/DemoHud \
+	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS)
+
+# Same motor-command -> mm/s calibration as max_speed_test, but orbiting on
+# circle_demo.cpp's own control law (shares its /tmp/circle_demo.yml fixture)
+# instead of driving straight, plus a sweep/plot mode (writes CSV + PNG).
+$(BUILD_DIR)/circle_speed_test: vision/circle_speed_test.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
+	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud \
+	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
 $(BUILD_DIR)/frame_inspector: vision/frame_inspector.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker \
