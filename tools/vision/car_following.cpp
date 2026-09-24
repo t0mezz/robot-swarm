@@ -259,20 +259,36 @@ static constexpr float REGISTER_DEBOUNCE_S = 0.30f;
 // Alignment — driving to evenly spaced slots ahead of a run, rather than a
 // car-following tick. Deliberately gentler than a run's own top speed: this
 // is a setup maneuver, not the experiment.
-// K_ALIGN is proportional-only, so the commanded speed shrinks with the
-// error and has no integral term to close out whatever is left once that
-// command drops below the robots' own floor for a motor command to move
-// them at all — the error asymptotes rather than reaching zero. 5deg sat
-// right where that residual lands on real hardware, so allAligned() could
-// need every one of a full ring of robots to cross a line none of them
-// individually could ever quite reach, stalling the maneuver forever.
-static constexpr float ALIGN_TOLERANCE_DEG = 20.0f;  // "in its slot" for allAligned()
+// K_ALIGN alone is proportional-only, so the commanded speed shrinks with
+// the error and has nothing to close out whatever is left once that command
+// drops below the robots' own floor for a motor command to move them at all
+// — the error asymptotes rather than reaching zero, and a P-only controller
+// stalled at 5deg with a full ring never able to cross the line together.
+// K_ALIGN_I adds the integral term that closes that residual: it keeps
+// accumulating on whatever error is left below the floor until the command
+// crosses it, the same way an integrator recovers a deadband anywhere else.
+// ALIGN_INTEGRAL_MAX_MMS anti-windup-clamps the accumulator itself (not just
+// the summed output) so a robot held short of its slot for a while doesn't
+// overshoot once it finally breaks free.
+static constexpr float ALIGN_TOLERANCE_DEG = 5.0f;  // "in its slot" for allAligned()
 // Debounce on "aligned", the same instinct as REGISTER_DEBOUNCE_S: a vehicle
 // only has to cross the tolerance band once, e.g. mid-jitter, not settle in
 // it, so the alignment would otherwise finish on a frame it is still moving.
 static constexpr float ALIGN_HOLD_S        = 0.5f;
-static constexpr float ALIGN_SPEED_MAX_MMS = 120.f;  // world units/s, real time — no time-scale
-static constexpr float K_ALIGN             = 2.0f;   // deg of error -> mm/s of tangential command
+// K_ALIGN, K_ALIGN_I and ALIGN_SPEED_MAX_MMS were tuned against the tool's
+// old default --robot-max-speed of 300mm/s. mmPerUnit = robotMaxMms /
+// MOTOR_MAX divides every mm/s target down to a motor-unit command, so
+// raising the default to the confirmed 1200mm/s (7c59e2a) quartered the
+// motor-unit output of every one of these mm/s constants for the same
+// error, without changing anything else — the robots didn't get gentler,
+// their commands just got four times smaller. K_RAD and the heading gains
+// below are unaffected: they're tuned directly in motor units, the same way
+// circle_demo's are, and never pass through mmPerUnit.
+static constexpr float ALIGN_RESCALE       = 1200.f / 300.f;  // matches the robotMaxMms default change
+static constexpr float ALIGN_SPEED_MAX_MMS = 120.f * ALIGN_RESCALE;  // world units/s, real time — no time-scale
+static constexpr float K_ALIGN             = 2.0f * ALIGN_RESCALE;   // deg of error -> mm/s of tangential command
+static constexpr float K_ALIGN_I           = 0.5f * ALIGN_RESCALE;   // deg*s of accumulated error -> mm/s
+static constexpr float ALIGN_INTEGRAL_MAX_MMS = ALIGN_SPEED_MAX_MMS / K_ALIGN_I;  // anti-windup clamp on the accumulator
 // Closest the jam layout parks two robots, centre to centre. The spacing it
 // asks for is the model's own bumper-to-bumper one (see jamSpacingDeg below),
 // which shrinks with the density scale and would eventually ask two 98mm
@@ -594,6 +610,7 @@ static void applyParams(const std::string& body, CfParams& p, CfModel& model,
 struct Servo {
     RateEstimator yawRate;
     float         prevTurn  = 0.f;   // slew-limited turn output
+    float         alignIntegral = 0.f;   // accumulated alignErrorDeg*dt, see K_ALIGN_I
     // Low-passed pose yaw (see YAW_TAU_S). Seeded from the first sighting so a
     // robot does not spend a time constant steering out of a filter that
     // started at zero; `yawInit` is what distinguishes seeding from blending.
@@ -903,7 +920,7 @@ int main(int argc, char* argv[]) {
 
     auto restToSetup = [&](const char* why) {
         cfRing.rest();
-        for (auto& [id, s] : servos) { s.prevTurn = 0.f; s.yawRate = RateEstimator{}; }
+        for (auto& [id, s] : servos) { s.prevTurn = 0.f; s.yawRate = RateEstimator{}; s.alignIntegral = 0.f; }
         allStop();
         sendMotors(true);
         printf("[cf] setup — robots at rest (%s)\n", why);
@@ -1262,7 +1279,14 @@ int main(int argc, char* argv[]) {
                     float vTan    = 0.f;   // motor units
                     if (run.aligning()) {
                         if (c) {
-                            float vTanMms = dirSign * clampf(K_ALIGN * c->alignErrorDeg,
+                            // Anti-windup: clamp the accumulator itself before
+                            // it feeds the output, not just the summed
+                            // command, so a robot held short of its slot
+                            // doesn't bank a huge overshoot for later.
+                            s.alignIntegral = clampf(s.alignIntegral + c->alignErrorDeg * controlDt,
+                                                     -ALIGN_INTEGRAL_MAX_MMS, ALIGN_INTEGRAL_MAX_MMS);
+                            float vTanMms = dirSign * clampf(K_ALIGN * c->alignErrorDeg
+                                                             + K_ALIGN_I * s.alignIntegral,
                                                              -ALIGN_SPEED_MAX_MMS, ALIGN_SPEED_MAX_MMS);
                             vTan    = clampf(vTanMms / mmPerUnit, -MOTOR_MAX, MOTOR_MAX);
                             haveCmd = true;
