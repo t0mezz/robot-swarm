@@ -638,7 +638,7 @@ int main(int argc, char* argv[]) {
     std::string ringFile = RING_FILE;
     float  dirSign     = 1.f;            // +1 = counter-clockwise
     float  timeScale   = 1.f;            // >1 = slow motion; see the header
-    float  robotMaxMms = 300.f;          // physical speed at motor command 100
+    float  robotMaxMms = 1200.f;         // physical speed at motor command 100
     int    robotCount  = -1;
     bool   debug       = false;
     bool   bridge      = false;
