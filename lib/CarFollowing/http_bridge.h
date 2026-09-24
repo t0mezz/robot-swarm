@@ -40,6 +40,11 @@ public:
         page_ = std::move(page);
         listen_ = ::socket(AF_INET, SOCK_STREAM, 0);
         if (listen_ < 0) return false;
+        // Without this, a fork()+exec() elsewhere in the process (e.g.
+        // SwarmClient::connect() auto-launching swarm_hub) inherits this fd
+        // and the long-lived hub daemon ends up squatting on the bridge port
+        // forever, long after this process exits.
+        ::fcntl(listen_, F_SETFD, FD_CLOEXEC);
 
         int one = 1;
         ::setsockopt(listen_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
