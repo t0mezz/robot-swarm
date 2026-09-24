@@ -27,7 +27,7 @@
     "roi_fail_max": 5,
     "roi_area_max": 0.6,
     "global_reset": 30,
-    "robot_count": 3,
+    "robot_count": 12,
     "clahe_clip": 0, //2.0144, // 2.5,
     "clahe_tile": 8,
     "debug_overlay": 1,
