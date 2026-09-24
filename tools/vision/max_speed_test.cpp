@@ -49,7 +49,12 @@ static constexpr float WARMUP_FRAC      = 0.25f;  // fraction of run-time exclud
 static constexpr int   MAX_ROBOTS       = 32;
 static constexpr int   LOG_MAX_ROWS     = 8;
 
-static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
+// Exe-relative, alongside aruco_tracker_config.json, not /tmp — matches
+// circle_demo.cpp/car_following.cpp (arucoVisionDataPath() in
+// aruco_tracker.h) so calibration done here is visible to them, and survives
+// a reboot instead of living on tmpfs.
+static const std::string HOMOGRAPHY_FILE_S = arucoVisionDataPath("aruco_homography.yml");
+static const char* HOMOGRAPHY_FILE = HOMOGRAPHY_FILE_S.c_str();
 
 // ── Globals (signal handling only) ───────────────────────────────────────────
 

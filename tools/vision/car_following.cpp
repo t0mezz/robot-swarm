@@ -13,6 +13,7 @@
 //                   [--sim-length M] [--radius MM] [--centre X Y] [--dir cw|ccw]
 //                   [--ring-file PATH] [--fit] [--robot-max-speed MM_S]
 //                   [--time-scale K] [--start] [--buffer-b B] [--buffer-id ID]
+//                   [--init-layout uniform|jam]
 //                   [--bridge] [--port N] [--debug] [--serial SN] [--ip IP]
 //                   [--count N] [--log-perf]
 //
@@ -35,17 +36,41 @@
 // returns the models to rest, so the next run begins from standstill the way
 // the experiment's own setup does.
 //
-// A second cue, *align*, drives the robots to evenly spaced slots on the ring
-// instead — what the NetLogo page's own "Setup" button asks for, so pressing
-// it (or 'a' in --debug, or "a"/"align" on stdin) first rests the robots the
-// same way a stop does and then spaces them out, finishing on its own once
-// every visible robot is in its slot and leaving the tool back in setup, ready
-// for a clean "Move". It is a position controller, not the car-following
-// model: CfRing::computeAlignTargets() picks the rotation of an evenly spaced
-// slot pattern that minimizes total travel, and the per-robot loop below
-// steers each one's raw angular error onto that slot the same way it steers
-// the model's tangential speed during a run — same heading controller, same
-// radial pull onto the ring, only the source of the tangential term differs.
+// A second cue, *align*, drives the robots to their starting positions on the
+// ring instead — what the NetLogo page's own "Setup" button asks for, so
+// pressing it (or 'a' in --debug, or "a"/"align" on stdin) first rests the
+// robots the same way a stop does and then places them, finishing on its own
+// once every visible robot is in its slot and leaving the tool back in setup,
+// ready for a clean "Move". It is a position controller, not the car-following
+// model: CfRing::computeAlignTargets() picks the rotation of a slot pattern
+// that minimizes total travel, and the per-robot loop below steers each one's
+// raw angular error onto that slot the same way it steers the model's
+// tangential speed during a run — same heading controller, same radial pull
+// onto the ring, only the source of the tangential term differs.
+//
+// ── Initial position ────────────────────────────────────────────────────────
+//
+// Which slot pattern that is, is the experiment's initial condition, chosen by
+// --init-layout or the "Initial position" selector the bridge page injects:
+//
+//   uniform — evenly spaced, the paper's own starting state and the default.
+//             The run is then the question the paper asks: does a wave form
+//             out of an evenly spaced ring on its own?
+//   jam     — everyone queued up behind one leader with the rest of the road
+//             empty ahead of it, so a run starts mid-wave and the question is
+//             instead whether the model (or a buffering vehicle) dissolves it.
+//             The leader is the buffering robot if --buffer-id names one, and
+//             otherwise the lowest id on the ring — the same robot every run,
+//             so two runs are comparable.
+//
+// A jam is driven as *two* maneuvers, evenly spaced first and then closed up,
+// which is also how it reads on the page ("first uniform, then jammed"). That
+// is not just presentation: the queue is built out of the ring order the
+// vehicles already sit in, so going through the even spread first is what
+// guarantees no two of them have to swap places around the ring to reach their
+// slots. Its spacing is the model's own bumper-to-bumper distance — one car
+// length — mapped back through the density scale, floored at what the chassis
+// physically need (JAM_MIN_SPACING_MM).
 //
 // -- The ring is a saved fixture, not something inferred per run -------------
 //
@@ -128,12 +153,16 @@
 // (see the long comment there for why pure feedback oscillates on a circle).
 // The one difference is where the tangential speed comes from — per robot,
 // from the car-following model, instead of one global orbit rate. Its inputs
-// are circle_demo's too: the *raw* pose yaw for the heading error, and a
-// sample-and-held rate for the D-term. An earlier version fed the controller a
-// half-second EMA of the yaw instead, which on a circle — where the true
-// heading rotates continuously at v/R — lags by about tau*v/R and so hands the
-// P-term a standing error (~9 deg at 100 mm/s on a 300 mm ring) that it steers
-// out of a robot that was already pointing the right way.
+// are circle_demo's too, and its constants are circle_demo's values: the
+// half-second yaw low-pass (YAW_TAU_S), the one-control-period D-term window
+// on top of it, and the single MAX_TURN cap over feedforward and feedback
+// together. Two departures from that were tried on hardware and both made the
+// ring worse, so they are recorded at their constants rather than repeated
+// here: dropping the yaw filter (YAW_TAU_S) and splitting MAX_TURN into a
+// per-half budget (MAX_TURN). The rule they add up to is that this controller
+// is a port, not a variant — the one thing that legitimately differs is where
+// the tangential speed comes from, and changes to the control law itself
+// should land in both files.
 //
 // That controller's velocity field is in *motor units*, not mm/s: circle_demo
 // never converts, and K_FF_YAW / K_RAD were tuned on hardware against that
@@ -163,6 +192,7 @@
 #include <cstdlib>
 #include <cctype>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <random>
 #include <sstream>
@@ -184,7 +214,23 @@ static constexpr float MODEL_DT_S       = 0.10f;   // the paper's integration st
 static constexpr float TIME_SCALE_MIN  = 0.25f;
 static constexpr float TIME_SCALE_MAX  = 50.0f;
 static constexpr float TIME_SCALE_STEP = 1.25f;   // ',' / '.' in the debug view
-static constexpr float CONTROL_INTERVAL_S = 0.01f;
+// A new camera frame is what drives the control law; this is only the floor
+// that keeps it ticking if the camera stalls, so the stop path and the motor
+// keepalive still run. It used to be a plain 100Hz timer, which meant the law
+// re-ran on poses that had not changed: at ~116fps the two rates alias, so the
+// yaw-rate estimator below differenced some samples against themselves (rate
+// -> 0) and others across two frames (rate -> 2x), and the D-term alternated
+// between the two every few ticks.
+static constexpr float CONTROL_STALL_S = 0.05f;
+// Time span of the --bridge page's camera-trajectories graph, in *simulated*
+// seconds. It is the fixed extent of that graph's time axis, not a rolling
+// window: the vendored NetLogo plots both draw an absolute 0..250s axis and
+// clear themselves every 2500 ticks, so this graph does the same — the trace
+// sweeps the plot once, then the buffer and its clock reset to zero and the
+// next sweep starts from the bottom. That keeps all three graphs on one
+// shared, non-scrolling timescale, which a rolling window did not: it slid
+// under the trace, so the same wave never sat at the same height twice.
+static constexpr float TRAJ_WINDOW_S = 250.0f;
 // The motor frame is only written when a command actually changed, plus this
 // keepalive so the robots' own WATCHDOG_TIMEOUT_MS (1s, lib/SwarmProtocol/
 // hardware.h) never expires. In setup — and any time the ring is coasting on
@@ -212,13 +258,41 @@ static constexpr float REGISTER_DEBOUNCE_S = 0.30f;
 // Alignment — driving to evenly spaced slots ahead of a run, rather than a
 // car-following tick. Deliberately gentler than a run's own top speed: this
 // is a setup maneuver, not the experiment.
-static constexpr float ALIGN_TOLERANCE_DEG = 5.0f;   // "in its slot" for allAligned()
+// K_ALIGN alone is proportional-only, so the commanded speed shrinks with
+// the error and has nothing to close out whatever is left once that command
+// drops below the robots' own floor for a motor command to move them at all
+// — the error asymptotes rather than reaching zero, and a P-only controller
+// stalled at 5deg with a full ring never able to cross the line together.
+// K_ALIGN_I adds the integral term that closes that residual: it keeps
+// accumulating on whatever error is left below the floor until the command
+// crosses it, the same way an integrator recovers a deadband anywhere else.
+// ALIGN_INTEGRAL_MAX_MMS anti-windup-clamps the accumulator itself (not just
+// the summed output) so a robot held short of its slot for a while doesn't
+// overshoot once it finally breaks free.
+static constexpr float ALIGN_TOLERANCE_DEG = 5.0f;  // "in its slot" for allAligned()
 // Debounce on "aligned", the same instinct as REGISTER_DEBOUNCE_S: a vehicle
 // only has to cross the tolerance band once, e.g. mid-jitter, not settle in
 // it, so the alignment would otherwise finish on a frame it is still moving.
 static constexpr float ALIGN_HOLD_S        = 0.5f;
-static constexpr float ALIGN_SPEED_MAX_MMS = 120.f;  // world units/s, real time — no time-scale
-static constexpr float K_ALIGN             = 2.0f;   // deg of error -> mm/s of tangential command
+// K_ALIGN, K_ALIGN_I and ALIGN_SPEED_MAX_MMS were tuned against the tool's
+// old default --robot-max-speed of 300mm/s. mmPerUnit = robotMaxMms /
+// MOTOR_MAX divides every mm/s target down to a motor-unit command, so
+// raising the default to the confirmed 1200mm/s (7c59e2a) quartered the
+// motor-unit output of every one of these mm/s constants for the same
+// error, without changing anything else — the robots didn't get gentler,
+// their commands just got four times smaller. K_RAD and the heading gains
+// below are unaffected: they're tuned directly in motor units, the same way
+// circle_demo's are, and never pass through mmPerUnit.
+static constexpr float ALIGN_RESCALE       = 1200.f / 300.f;  // matches the robotMaxMms default change
+static constexpr float ALIGN_SPEED_MAX_MMS = 120.f * ALIGN_RESCALE;  // world units/s, real time — no time-scale
+static constexpr float K_ALIGN             = 2.0f * ALIGN_RESCALE;   // deg of error -> mm/s of tangential command
+static constexpr float K_ALIGN_I           = 0.5f * ALIGN_RESCALE;   // deg*s of accumulated error -> mm/s
+static constexpr float ALIGN_INTEGRAL_MAX_MMS = ALIGN_SPEED_MAX_MMS / K_ALIGN_I;  // anti-windup clamp on the accumulator
+// Closest the jam layout parks two robots, centre to centre. The spacing it
+// asks for is the model's own bumper-to-bumper one (see jamSpacingDeg below),
+// which shrinks with the density scale and would eventually ask two 98mm
+// chassis to occupy the same patch of floor.
+static constexpr float JAM_MIN_SPACING_MM  = 150.f;
 
 // Heading controller — carried over from circle_demo.cpp's orbit mode, where
 // these were tuned on hardware.
@@ -227,19 +301,45 @@ static constexpr float K_YAW_D       = 0.15f;
 static constexpr float K_FF_YAW      = 1.00f;
 static constexpr float K_RAD         = 0.30f;   // radial pull back onto the ring
 static constexpr float MOTOR_MAX     = 100.0f;
+// Caps the turn differential as a whole -- feedforward and feedback together,
+// exactly as circle_demo does. Splitting it into a per-half budget so the PD
+// kept +/-20 at every speed was tried and made the ring oscillate harder the
+// faster it ran: because the feedforward grows with speed, the shared cap is
+// also a gain limit that tightens as the loop speeds up, and the loop needs
+// it. Its bandwidth already rises with speed (a heading error turns into
+// lateral offset at a rate proportional to v), so the margin is thinnest
+// exactly where the split handed the PD the most authority.
 static constexpr float MAX_TURN      = 20.0f;
 static constexpr float MAX_TURN_RATE = 120.0f;  // turn-units/s
-// Window the yaw rate feeding the D-term is sampled and held over, as in
-// circle_demo: one control period, with the MAX_TURN_RATE slew limit doing the
-// smoothing rather than a filter on the measurement.
-static constexpr float D_TERM_WINDOW_S = CONTROL_INTERVAL_S;
+// Yaw low-pass, as a time constant rather than a fixed per-frame EMA
+// coefficient, so the smoothing is frame-rate independent: alpha is rebuilt
+// each frame as dt/(YAW_TAU_S+dt) from the real frame dt. circle_demo's value
+// and circle_demo's reasoning -- see the long comment there. This tool ran
+// without it for a while, on the argument that a lagged heading becomes a
+// standing P-term error on a circle (tau*v/R, ~9 deg at 100mm/s on a 300mm
+// ring). That argument is still true, but a standing bias is a fixed radius
+// offset, whereas the raw yaw it left in the D-term -- a degree of ArUco noise
+// over a ~10ms window reads as 100 deg/s -- is oscillation, and oscillation is
+// the worse failure. Filter the heading, and keep the D-term window at one
+// control period so the derivative is taken of an already-smooth signal.
+static constexpr float YAW_TAU_S = 0.50f;
+
+// D-term rate window: sample-and-hold rather than per-frame, as in
+// circle_demo. It is short on purpose -- YAW_TAU_S upstream is what removes
+// the measurement noise, and the slew limit is what shapes the output.
+static constexpr float D_TERM_WINDOW_S = 0.01f;
 
 static constexpr float DEG2RAD = (float)M_PI / 180.f;
 static constexpr float RAD2DEG = 180.f / (float)M_PI;
 
-static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
-static const char* RING_FILE       = "/tmp/car_following_ring.yml";
-static const char* CIRCLE_FILE     = "/tmp/circle_demo.yml";   // circle_demo's, read as a fallback
+// Exe-relative, alongside aruco_tracker_config.json, so calibration and the
+// saved ring survive a reboot — /tmp is typically tmpfs and gets wiped.
+static const std::string HOMOGRAPHY_FILE_S = arucoVisionDataPath("aruco_homography.yml");
+static const std::string RING_FILE_S       = arucoVisionDataPath("car_following_ring.yml");
+static const std::string CIRCLE_FILE_S     = arucoVisionDataPath("circle_demo.yml");   // circle_demo's, read as a fallback
+static const char* HOMOGRAPHY_FILE = HOMOGRAPHY_FILE_S.c_str();
+static const char* RING_FILE       = RING_FILE_S.c_str();
+static const char* CIRCLE_FILE     = CIRCLE_FILE_S.c_str();
 
 static volatile std::sig_atomic_t g_running = 1;
 static void onSignal(int) { g_running = 0; }
@@ -420,8 +520,56 @@ struct Buffering {
     bool on() const { return id >= 0 && b > 1.f; }
 };
 
+// The initial position the align maneuver parks the robots in, by the names
+// the page's own selector and --init-layout use.
+static const char* layoutName(CfLayout l) {
+    return l == CfLayout::Jam ? "jam" : "uniform";
+}
+
+static bool layoutFromName(const char* s, CfLayout& out) {
+    if (strcasecmp(s, "uniform") == 0) { out = CfLayout::Uniform; return true; }
+    if (strcasecmp(s, "jam")     == 0) { out = CfLayout::Jam;     return true; }
+    return false;
+}
+
+// One camera-measured (space, time) sample for the --bridge page's third
+// graph. `t` is seconds since the run started, in the model's own dilated
+// clock (runElapsedS below) so it lines up with the "Simulation" plot's
+// ticks*0.1 axis rather than wall-clock time; `s` is the vehicle's arc-length
+// position, derived from CfRingCar::angleDeg the same way the NetLogo plots
+// use xcor — see the CLAUDE.md note on car_following for why the model
+// itself never gets a position state.
+struct TrajSample {
+    float t, s;
+    int   id;
+};
+
+// Hand-rolled the way swarm_telemetry_json.cpp builds its NDJSON: no fields
+// here need escaping (ids and floats only), so a full jsonEscape isn't
+// worth pulling in for this one array.
+static std::string trajectoriesJson(const std::deque<TrajSample>& buf, float roadM,
+                                    float windowS) {
+    std::string out;
+    out.reserve(buf.size() * 24 + 48);
+    char line[80];
+    // "window" is the axis extent, so the page scales time against it rather
+    // than against whatever range the samples happen to span.
+    snprintf(line, sizeof(line), "{\"road\":%.3f,\"window\":%.3f,\"pts\":[",
+             roadM, windowS);
+    out += line;
+    bool first = true;
+    for (const auto& s : buf) {
+        if (!first) out += ',';
+        first = false;
+        snprintf(line, sizeof(line), "[%d,%.3f,%.3f]", s.id, s.t, s.s);
+        out += line;
+    }
+    out += "]}";
+    return out;
+}
+
 static void applyParams(const std::string& body, CfParams& p, CfModel& model,
-                        PageState& page, Buffering& buf) {
+                        PageState& page, Buffering& buf, CfLayout& layout) {
     size_t pos = 0;
     while (pos < body.size()) {
         size_t nl = body.find('\n', pos);
@@ -445,6 +593,12 @@ static void applyParams(const std::string& body, CfParams& p, CfModel& model,
         else if (k == "setup")         page.setupNo   = atol(v.c_str());
         else if (k == "buffer-b")      buf.b          = (float)atof(v.c_str());
         else if (k == "buffer-id")     buf.id         = atoi(v.c_str());
+        // Read when "Setup" is pressed, not acted on here — the layout only
+        // describes where that maneuver parks everyone. The page posts the
+        // whole snapshot in one body, so a layout changed in the same breath
+        // as the Setup click is already in force by the time the caller sees
+        // the click counter move.
+        else if (k == "init-layout")   layoutFromName(v.c_str(), layout);
     }
 }
 
@@ -455,6 +609,12 @@ static void applyParams(const std::string& body, CfParams& p, CfModel& model,
 struct Servo {
     RateEstimator yawRate;
     float         prevTurn  = 0.f;   // slew-limited turn output
+    float         alignIntegral = 0.f;   // accumulated alignErrorDeg*dt, see K_ALIGN_I
+    // Low-passed pose yaw (see YAW_TAU_S). Seeded from the first sighting so a
+    // robot does not spend a time constant steering out of a filter that
+    // started at zero; `yawInit` is what distinguishes seeding from blending.
+    float         yaw       = 0.f;
+    bool          yawInit   = false;
     double        firstSeen  = 0.0;   // for the registerRobot debounce
     double        lastSeen   = 0.0;
     bool          everSeen   = false;
@@ -485,6 +645,7 @@ int main(int argc, char* argv[]) {
     CfParams    params;
     CfModel     model = CfModel::FVDM;   // the page's default chooser entry
     Buffering   buf;
+    CfLayout    initLayout = CfLayout::Uniform;   // the paper's own initial condition
     float  simLengthM  = -1.f;           // <0 = derive from the robot count
     float  argRadiusMm = -1.f;           // <0 = keep whatever the ring file holds
     float  argCentreX = 0.f, argCentreY = 0.f;
@@ -519,6 +680,12 @@ int main(int argc, char* argv[]) {
         else if (arg("--sigma"))           params.sigma        = (float)atof(argv[++i]);
         else if (arg("--buffer-b"))        buf.b       = (float)atof(argv[++i]);
         else if (arg("--buffer-id"))       buf.id      = atoi(argv[++i]);
+        else if (arg("--init-layout")) {
+            if (!layoutFromName(argv[++i], initLayout)) {
+                fprintf(stderr, "--init-layout must be uniform or jam, got: %s\n", argv[i]);
+                return 2;
+            }
+        }
         else if (arg("--sim-length"))      simLengthM  = (float)atof(argv[++i]);
         else if (arg("--radius"))          argRadiusMm = (float)atof(argv[++i]);
         else if (arg("--ring-file"))       ringFile    = argv[++i];
@@ -546,7 +713,7 @@ int main(int argc, char* argv[]) {
                    "       [--reaction-time S] [--sigma A] [--sim-length M] [--radius MM]\n"
                    "       [--centre X Y] [--ring-file PATH] [--fit] [--dir cw|ccw]\n"
                    "       [--time-scale K] [--robot-max-speed MM_S] [--start]\n"
-                   "       [--buffer-b B] [--buffer-id ID]\n"
+                   "       [--buffer-b B] [--buffer-id ID] [--init-layout uniform|jam]\n"
                    "       [--bridge] [--port N] [--debug] [--serial SN] [--ip IP] [--count N]\n"
                    "       [--log-perf]\n\n"
                    "models: Reuschel Pipes OVM CF-OVM FVDM ATG IDM\n\n"
@@ -555,8 +722,14 @@ int main(int argc, char* argv[]) {
                    "headless, or --start at launch. \"s\"/\"stop\" returns them to rest;\n"
                    "\"q\" quits. The page's \"Setup\" button (or 'a' in --debug, or\n"
                    "\"a\"/\"align\" on stdin) rests them the same way and then drives them to\n"
-                   "evenly spaced slots on the ring, finishing on its own once everyone\n"
+                   "their starting positions on the ring, finishing on its own once everyone\n"
                    "visible is in place.\n\n"
+                   "--init-layout picks those positions, as does the page's own \"Initial\n"
+                   "position\" selector. uniform (the default) spreads everyone evenly, the\n"
+                   "paper's own initial condition. jam spreads them evenly first and then\n"
+                   "closes them up into a queue behind one leader — the buffering robot if\n"
+                   "--buffer-id names one, else the lowest id on the ring — leaving the rest\n"
+                   "of the road empty ahead of it, so a run starts mid-wave.\n\n"
                    "--buffer-id ID makes robot ID the buffering vehicle: it keeps B times the\n"
                    "nominal time gap while the other N-1 keep (N-B)/(N-1) of theirs, so the\n"
                    "mean gap — and the density — is unchanged. B = 1 is the non-cooperative\n"
@@ -711,6 +884,18 @@ int main(int argc, char* argv[]) {
     CfRunState run;
     if (autoStart) run.requestStart("--start");
 
+    // Which half of the maneuver is running. A jam is driven as two: spread out
+    // evenly, then close up behind the leader. Compressing a scattered ring
+    // straight into a queue is the case where two robots can be asked to swap
+    // places to reach their slots — going through the even spread first means
+    // the queue is built out of the order they already sit in.
+    CfLayout alignStage = CfLayout::Uniform;
+
+    // Camera-measured trajectories for the --bridge page's third graph, kept
+    // only while a bridge client might poll for them.
+    std::deque<TrajSample> trajBuf;
+    float                  runElapsedS = 0.f;
+
     std::unordered_map<int, Servo> servos;
     std::unordered_map<int, RobotPose> poseById;
     int8_t motors[SC_MAX_ROBOTS][2] = {};
@@ -730,7 +915,7 @@ int main(int argc, char* argv[]) {
     };
 
     auto lastModel = now, lastControl = now, lastStatus = now,
-         lastHubRetry = now, lastMotorTx = now;
+         lastHubRetry = now, lastMotorTx = now, lastFrame = now;
     auto fitSince = now;   // when the pending fit started waiting for robots
     auto alignHoldStart = now;   // when allAligned() last became true (ALIGN_HOLD_S debounce)
     DemoHud::LoopFps loopFps;
@@ -779,7 +964,7 @@ int main(int argc, char* argv[]) {
 
     auto restToSetup = [&](const char* why) {
         cfRing.rest();
-        for (auto& [id, s] : servos) { s.prevTurn = 0.f; s.yawRate = RateEstimator{}; }
+        for (auto& [id, s] : servos) { s.prevTurn = 0.f; s.yawRate = RateEstimator{}; s.alignIntegral = 0.f; }
         allStop();
         sendMotors(true);
         printf("[cf] setup — robots at rest (%s)\n", why);
@@ -790,6 +975,10 @@ int main(int argc, char* argv[]) {
                cfModelName(model));
     if (buf.on())
         printf("[cf] buffering: robot %d at B=%.2g\n", buf.id, buf.b);
+    if (initLayout == CfLayout::Jam)
+        printf("[cf] initial position: jam, led by %s\n",
+               buf.id >= 0 ? DemoHud::fmt("robot %d", buf.id).c_str()
+                           : "the lowest id on the ring");
     printf("[cf] model=%s  speed-max=%.1f  car-size=%.1f  time-gap=%.2f  "
            "reaction-time=%.2f  sigma=%.2f  time-scale=%.2gx\n",
            cfModelName(model), params.speedMax, params.carSize,
@@ -842,11 +1031,25 @@ int main(int argc, char* argv[]) {
             for (const auto& body : http.poll()) {
                 bool wasRun  = page.run;
                 long wasSetup = page.setupNo;
-                applyParams(body, params, model, page, buf);
+                applyParams(body, params, model, page, buf, initLayout);
                 if (page.setupNo != wasSetup && wasSetup >= 0)
                     run.requestAlign("page setup");
-                else if (page.run != wasRun)
-                    page.run ? run.requestStart("page") : run.requestStop("page");
+                else if (page.run != wasRun && page.run)
+                    run.requestStart("page");
+                else if (page.run != wasRun) {
+                    // "Move" going off is not always a stop: running "Setup"
+                    // ends the page's own forever button, and that lands here
+                    // as a separate snapshot a poll or two after the click
+                    // that cued the align. Obeying it cancelled the align
+                    // almost as soon as it started — which is why an align
+                    // cued from the page only ever completed while "Move" had
+                    // never been pressed, i.e. the first one after launch.
+                    if (run.aligning() || run.alignPending())
+                        printf("[cf] page \"Move\" went off while aligning — that is the "
+                               "page resetting its own button, not a stop\n");
+                    else
+                        run.requestStop("page");
+                }
             }
         }
 
@@ -871,6 +1074,17 @@ int main(int argc, char* argv[]) {
             for (auto& r : tracker.robots())
                 if (r.id >= 0 && r.id < SC_MAX_ROBOTS) poseById[r.id] = r;
 
+            // Yaw low-pass, applied here rather than in the control block so
+            // it advances once per *frame*: the control block can also run on
+            // the CONTROL_STALL_S floor, and re-blending a pose that has not
+            // changed would walk the filter toward that stale yaw at a rate
+            // set by the stall timer instead of the camera. alpha is rebuilt
+            // from the real frame dt, so the time constant holds whatever the
+            // frame rate does (see YAW_TAU_S).
+            float frameDt   = clampf((float)secondsSince(lastFrame), 0.001f, 0.2f);
+            lastFrame       = now;
+            float yawAlpha  = frameDt / (YAW_TAU_S + frameDt);
+
             cfRing.beginFrame();
             for (auto& [id, p] : poseById) {
                 float a = atan2f(p.y - ring.centre.y, p.x - ring.centre.x) * RAD2DEG;
@@ -879,6 +1093,11 @@ int main(int argc, char* argv[]) {
                 Servo& s = servos[id];
                 if (!s.everSeen) { s.firstSeen = tNow; s.everSeen = true; }
                 s.lastSeen = tNow;
+
+                // normAngle on the delta so the blend crosses +/-180 correctly.
+                if (!s.yawInit) { s.yaw = p.yaw; s.yawInit = true; }
+                else s.yaw = cfNormAngleDeg(s.yaw + yawAlpha * cfNormAngleDeg(p.yaw - s.yaw));
+                p.yaw = s.yaw;
             }
             cfRing.endFrame(tNow);
 
@@ -937,6 +1156,21 @@ int main(int argc, char* argv[]) {
                    cfRing.simLengthM() / std::max(1, cfRing.rosterCount()));
         }
 
+        // ── Where the align maneuver parks everyone ──────────────────────────
+        // Recomputed per frame, since all three inputs move: the page can
+        // change the layout or the buffering robot mid-session, and the jam's
+        // spacing follows the ring's radius and the model's car size.
+        //
+        // That spacing is the model's own bumper-to-bumper one — one car length
+        // — mapped back through the same density scale the models see, so the
+        // queue is as tight relative to the ring as 22 five-metre cars are on
+        // the paper's 230m one. Floored at what the chassis physically need.
+        const float jamMm       = simPerMm > 0.f ? params.carSize / simPerMm : 0.f;
+        const float jamSpaceDeg = ring.radius > 0.f
+            ? std::max(jamMm, JAM_MIN_SPACING_MM) / ring.radius * RAD2DEG
+            : 0.f;
+        cfRing.setLayout(alignStage, buf.id, jamSpaceDeg);
+
         // ── Run state ────────────────────────────────────────────────────────
         // Everything either cue needs before a wheel turns: a link to the
         // robots, a ring to drive round, a settled roster to scale the model
@@ -948,14 +1182,34 @@ int main(int argc, char* argv[]) {
         // true for one frame (e.g. mid-jitter) should not end the maneuver
         // while a robot is still visibly moving.
         if (!cfRing.allAligned(ALIGN_TOLERANCE_DEG)) alignHoldStart = now;
-        const bool alignDone = cfRing.allAligned(ALIGN_TOLERANCE_DEG) &&
-                               secondsSince(alignHoldStart) >= ALIGN_HOLD_S;
+        bool alignDone = cfRing.allAligned(ALIGN_TOLERANCE_DEG) &&
+                         secondsSince(alignHoldStart) >= ALIGN_HOLD_S;
+
+        // Half-way through a jam: everyone is evenly spaced, so the ring order
+        // is settled and the queue can be built out of it. Re-target onto the
+        // jam and keep aligning rather than reporting the maneuver finished —
+        // CfRunState only ever sees the end of the second stage.
+        if (run.aligning() && alignDone &&
+            initLayout == CfLayout::Jam && alignStage == CfLayout::Uniform) {
+            alignStage     = CfLayout::Jam;
+            alignHoldStart = now;
+            alignDone      = false;
+            cfRing.setLayout(alignStage, buf.id, jamSpaceDeg);
+            printf("[cf] spread out — closing up into a jam behind robot %d "
+                   "(%.0f%s apart)\n",
+                   cfRing.jamLeader(), std::max(jamMm, JAM_MIN_SPACING_MM),
+                   g_H.empty() ? "px" : "mm");
+        }
 
         switch (run.update(ready, alignDone)) {
             case CfRunEvent::Started:
                 // The model's clock restarts with the run: without this the
-                // first tick would integrate the whole setup period.
-                lastModel = now;
+                // first tick would integrate the whole setup period. The
+                // trajectory graph's clock restarts with it too, so a new
+                // run starts its trace at t=0 like the NetLogo plots do.
+                lastModel   = now;
+                runElapsedS = 0.f;
+                trajBuf.clear();
                 cfRing.rest();
                 printf("[cf] running (%s) — %d robots, %s, %.2gx\n",
                        run.source(), cfRing.visibleCount(), cfModelName(model), timeScale);
@@ -972,8 +1226,13 @@ int main(int argc, char* argv[]) {
                 break;
             case CfRunEvent::AlignStarted:
                 alignHoldStart = now;
-                printf("[cf] aligning (%s) — %d robots to evenly spaced slots\n",
-                       run.source(), cfRing.visibleCount());
+                // Every maneuver starts with the even spread, whichever layout
+                // it is heading for.
+                alignStage = CfLayout::Uniform;
+                cfRing.setLayout(alignStage, buf.id, jamSpaceDeg);
+                printf("[cf] aligning (%s) — %d robots to evenly spaced slots%s\n",
+                       run.source(), cfRing.visibleCount(),
+                       initLayout == CfLayout::Jam ? ", then into a jam" : "");
                 break;
             case CfRunEvent::AlignWaiting:
                 printf("[cf] align cued (%s) — waiting for%s%s%s%s\n", run.source(),
@@ -985,7 +1244,7 @@ int main(int argc, char* argv[]) {
             case CfRunEvent::Aligned:
                 allStop();
                 sendMotors(true);
-                printf("[cf] aligned — ready to run\n");
+                printf("[cf] aligned (%s) — ready to run\n", layoutName(alignStage));
                 break;
             case CfRunEvent::None:
                 break;
@@ -1002,10 +1261,37 @@ int main(int argc, char* argv[]) {
             // makes the integration finer.
             cfRing.step(model, params, modelDt / timeScale, ring.radius,
                         [&] { return gauss(rng); }, buf.id, buf.b);
+
+            if (bridge) {
+                // Same dilation as the model's own clock: this is what makes
+                // the camera trace and the "Simulation" plot's ticks*0.1
+                // axis comparable.
+                runElapsedS += modelDt / timeScale;
+                // Full plot: clear it and start the next sweep at the bottom,
+                // the way the page's own plots do at 2500 ticks. The overshoot
+                // is carried rather than dropped so the sweeps stay a whole
+                // TRAJ_WINDOW_S apart.
+                if (runElapsedS >= TRAJ_WINDOW_S) {
+                    runElapsedS -= TRAJ_WINDOW_S;
+                    trajBuf.clear();
+                }
+                for (int id : cfRing.order()) {
+                    const CfRingCar* c = cfRing.car(id);
+                    if (c && c->visible)
+                        trajBuf.push_back({runElapsedS,
+                                           c->angleDeg / 360.f * cfRing.simLengthM(), id});
+                }
+                http.publishTrajectories(
+                    trajectoriesJson(trajBuf, cfRing.simLengthM(), TRAJ_WINDOW_S));
+            }
         }
 
         // ── Servo each robot onto its commanded speed ────────────────────────
-        if (secondsSince(lastControl) >= CONTROL_INTERVAL_S) {
+        // A fresh pose is the input to the law, so a fresh pose is what runs it;
+        // CONTROL_STALL_S only keeps the stop path and the keepalive alive if
+        // the camera goes quiet. See the constant for what the old free-running
+        // 100Hz timer did to the yaw-rate estimator.
+        if (haveFrame || secondsSince(lastControl) >= CONTROL_STALL_S) {
             float controlDt = clampf((float)secondsSince(lastControl), 0.001f, 0.2f);
             lastControl = now;
 
@@ -1060,7 +1346,14 @@ int main(int argc, char* argv[]) {
                     float vTan    = 0.f;   // motor units
                     if (run.aligning()) {
                         if (c) {
-                            float vTanMms = dirSign * clampf(K_ALIGN * c->alignErrorDeg,
+                            // Anti-windup: clamp the accumulator itself before
+                            // it feeds the output, not just the summed
+                            // command, so a robot held short of its slot
+                            // doesn't bank a huge overshoot for later.
+                            s.alignIntegral = clampf(s.alignIntegral + c->alignErrorDeg * controlDt,
+                                                     -ALIGN_INTEGRAL_MAX_MMS, ALIGN_INTEGRAL_MAX_MMS);
+                            float vTanMms = dirSign * clampf(K_ALIGN * c->alignErrorDeg
+                                                             + K_ALIGN_I * s.alignIntegral,
                                                              -ALIGN_SPEED_MAX_MMS, ALIGN_SPEED_MAX_MMS);
                             vTan    = clampf(vTanMms / mmPerUnit, -MOTOR_MAX, MOTOR_MAX);
                             haveCmd = true;
@@ -1085,10 +1378,10 @@ int main(int argc, char* argv[]) {
                         float vMag = std::hypot(vx, vy);
 
                         if (vMag >= 0.5f) {
-                            // Raw pose yaw, not a filtered one: on a circle the
-                            // true heading rotates at v/R, so any lag in the
-                            // measurement becomes a standing heading error the
-                            // P-term steers out (see the file header).
+                            // pose.yaw is the low-passed one — the pose block
+                            // above replaced it in place, so the heading error
+                            // and the D-term's rate are taken of the same
+                            // smoothed signal, as in circle_demo (YAW_TAU_S).
                             float angleErr  = cfNormAngleDeg(atan2f(vy, vx) * RAD2DEG - pose.yaw);
                             float headingN  = clampf(fabsf(angleErr) / 90.f, 0.f, 1.f);
                             float headingSc = 1.f - headingN * headingN;
@@ -1134,7 +1427,8 @@ int main(int argc, char* argv[]) {
                 lastStatus = now;
                 printf("[cf] %-7s %-8s loop:%3.0f  robots:%d/%d  %.2gx  hub:%s",
                        run.running()  ? "RUN"   :
-                       run.aligning() ? "ALIGN" : (run.pending() ? "CUED" : "SETUP"),
+                       run.aligning() ? (alignStage == CfLayout::Jam ? "JAM" : "ALIGN")
+                                      : (run.pending() ? "CUED" : "SETUP"),
                        cfModelName(model), loopFps.fps(),
                        cfRing.visibleCount(), cfRing.rosterCount(), timeScale,
                        swarm.isConnected() ? "ok" : "--");
@@ -1216,7 +1510,9 @@ int main(int argc, char* argv[]) {
         hud.title(DemoHud::fmt("loop_fps:%.0f  %s  %s  robots:%d/%d  ring:%.0f  %.2gx%s  HUB:%s%s",
                                loopFps.fps(),
                                run.running()  ? "RUNNING" :
-                               run.aligning() ? "ALIGNING" : (run.pending() ? "CUED" : "SETUP"),
+                               run.aligning() ? (alignStage == CfLayout::Jam ? "JAMMING"
+                                                                             : "ALIGNING")
+                                              : (run.pending() ? "CUED" : "SETUP"),
                                cfModelName(model),
                                cfRing.visibleCount(), cfRing.rosterCount(),
                                ring.radius, timeScale,

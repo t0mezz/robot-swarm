@@ -93,8 +93,14 @@ static constexpr int   LOG_MAX_ROWS = 8;
 static constexpr float SEEK_ARRIVAL_MM = 20.f;
 static constexpr float SEEK_TIMEOUT_S  = 8.f;   // abort if it never reaches the ring (bad radius, stuck robot, ...)
 
-static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
-static const char* CIRCLE_FILE     = "/tmp/circle_demo.yml";
+// Exe-relative, not /tmp — matches circle_demo.cpp/car_following.cpp
+// (arucoVisionDataPath() in aruco_tracker.h) so this tool reads/writes the
+// exact same fixture files circle_demo does, and they survive a reboot
+// instead of living on tmpfs.
+static const std::string HOMOGRAPHY_FILE_S = arucoVisionDataPath("aruco_homography.yml");
+static const std::string CIRCLE_FILE_S     = arucoVisionDataPath("circle_demo.yml");
+static const char* HOMOGRAPHY_FILE = HOMOGRAPHY_FILE_S.c_str();
+static const char* CIRCLE_FILE     = CIRCLE_FILE_S.c_str();
 
 // ── Globals ───────────────────────────────────────────────────────────────────
 

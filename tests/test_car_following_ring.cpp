@@ -561,6 +561,130 @@ static void test_all_aligned_skips_a_vehicle_that_is_not_currently_visible() {
                 "the rest are close enough even though the missing vehicle is not");
 }
 
+// ── Jam layout ───────────────────────────────────────────────────────────────
+//
+// The other initial condition the tool offers: everyone queued up behind one
+// leader, with the rest of the road empty ahead of it. Checked against the
+// geometry — consecutive targets one spacing apart, against the direction of
+// travel — rather than pinned angles, like the rest of this file.
+
+// Where each vehicle ends up, in the direction of travel, relative to the
+// leader's target. Zero for the leader, then one spacing per place behind it.
+static float travelBehindLeader(const CfRing& ring, int id, float dirSign) {
+    const int leader = ring.jamLeader();
+    return dirSign * cfNormAngleDeg(ring.car(leader)->alignTargetDeg -
+                                    ring.car(id)->alignTargetDeg);
+}
+
+static void test_jam_queues_everyone_behind_the_leader() {
+    for (float dirSign : {1.f, -1.f}) {
+        CfRingConfig cfg;
+        cfg.dirSign = dirSign;
+        CfRing ring(cfg);
+        double t = 0.0;
+        placeEvenly(ring, 4, t);          // 90 deg apart to start with
+        ring.setLayout(CfLayout::Jam, -1, 20.f);
+
+        EXPECT_TRUE(ring.jamLeader() == 0,
+                    "with no leader requested it is the lowest id on the ring");
+        EXPECT_NEAR(travelBehindLeader(ring, 0, dirSign), 0.f, 1e-2,
+                    "the leader heads the queue");
+
+        // order_ is the angular sort and the vehicles were placed in id order,
+        // so ids ascend with angle. "Behind" is against the direction of
+        // travel, so the queue behind vehicle 0 is 3, 2, 1 counter-clockwise
+        // and 1, 2, 3 clockwise — the same pattern, mirrored.
+        for (int k = 1; k <= 3; ++k) {
+            int id = dirSign > 0.f ? 4 - k : k;
+            EXPECT_NEAR(travelBehindLeader(ring, id, dirSign), 20.f * (float)k, 1e-2,
+                        "each follower sits one spacing further back");
+        }
+    }
+}
+
+// The empty road is *ahead* of the leader, not behind it: that is what makes
+// this a jam rather than a platoon with the leader boxed in. Read off the gaps
+// the models would see if the ring were actually in that state.
+static void test_the_jam_leaves_the_road_ahead_of_the_leader_empty() {
+    CfRingConfig cfg;
+    CfRing ring(cfg);
+    double t = 0.0;
+    placeEvenly(ring, 4, t);
+    ring.setLayout(CfLayout::Jam, -1, 20.f);
+
+    // Drive everyone onto their targets, then let the ring re-measure.
+    std::vector<float> targets;
+    for (int id = 0; id < 4; ++id) targets.push_back(ring.car(id)->alignTargetDeg);
+    t += 0.1;
+    ring.beginFrame();
+    for (int id = 0; id < 4; ++id) ring.observe(id, targets[(size_t)id], t);
+    ring.endFrame(t);
+
+    CfParams p;
+    p.carSize = 0.f;   // gaps as raw arc length, so the geometry is what is read
+    ring.step(CfModel::Pipes, p, 0.1f, RADIUS_MM, noNoise);
+
+    const float spm    = ring.simPerMm(RADIUS_MM);
+    const float perDeg = CF_DEG2RAD * RADIUS_MM * spm;
+    EXPECT_NEAR(ring.car(0)->gap, (360.f - 3.f * 20.f) * perDeg, 1e-2,
+                "the leader has the whole rest of the ring in front of it");
+    for (int id = 1; id < 4; ++id)
+        EXPECT_NEAR(ring.car(id)->gap, 20.f * perDeg, 1e-2,
+                    "everyone else is bumper to bumper");
+}
+
+static void test_the_buffering_robot_leads_the_jam_when_it_is_on_the_ring() {
+    CfRingConfig cfg;
+    CfRing ring(cfg);
+    double t = 0.0;
+    placeEvenly(ring, 4, t);
+
+    ring.setLayout(CfLayout::Jam, 2, 20.f);
+    EXPECT_TRUE(ring.jamLeader() == 2, "the requested leader leads");
+    EXPECT_NEAR(travelBehindLeader(ring, 1, 1.f), 20.f, 1e-2,
+                "and its follower queues up one spacing behind it");
+
+    // A leader that is not on the ring at all cannot strand the queue waiting
+    // for a slot nobody occupies.
+    ring.setLayout(CfLayout::Jam, 9, 20.f);
+    EXPECT_TRUE(ring.jamLeader() == 0,
+                "regression: an absent leader falls back to the lowest id");
+}
+
+// A queue longer than the ring is an evenly spaced ring, so the spacing is
+// capped there rather than wrapping the tail past the leader.
+static void test_a_jam_spacing_wider_than_the_ring_is_just_the_even_spread() {
+    CfRingConfig cfg;
+    CfRing ring(cfg);
+    double t = 0.0;
+    placeEvenly(ring, 4, t, 37.f);
+    ring.setLayout(CfLayout::Jam, -1, 200.f);   // 4 x 200 deg does not fit
+    for (int id = 0; id < 4; ++id)
+        EXPECT_NEAR(ring.car(id)->alignErrorDeg, 0.f, 1e-2,
+                    "already evenly spaced, so nobody has anywhere to go");
+}
+
+// Same property the even spread has: the pattern is rotated onto the ring
+// where it costs the least travel, rather than pinned to whoever the angle
+// sort put first.
+static void test_jam_targets_minimize_total_travel() {
+    CfRingConfig cfg;
+    CfRing ring(cfg);
+    double t = 0.0;
+    const float angles[3] = {100.f, 120.f, 140.f};   // already a queue, 20 deg apart
+    for (int frame = 0; frame < 3; ++frame) {
+        t += 1.0;
+        ring.beginFrame();
+        for (int i = 0; i < 3; ++i) ring.observe(i, angles[i], t);
+        ring.endFrame(t);
+    }
+    ring.setLayout(CfLayout::Jam, 2, 20.f);   // 2 is already the front one
+
+    for (int id = 0; id < 3; ++id)
+        EXPECT_NEAR(ring.car(id)->alignErrorDeg, 0.f, 1e-2,
+                    "a ring already in the requested jam needs no travel at all");
+}
+
 // ── Run state ────────────────────────────────────────────────────────────────
 
 static void test_run_state_starts_in_setup() {
@@ -637,6 +761,34 @@ static void test_an_align_cue_is_latched_until_ready() {
     EXPECT_TRUE(!run.aligning() && run.phase() == CfPhase::Setup, "back in setup");
 }
 
+// The caller needs to know an align is under way from the moment the cue is
+// latched, not from the moment it starts: the page turns its own "Move" button
+// off when "Setup" runs, and that arrives as a stop cue a poll or two later —
+// while the maneuver is still latched, waiting for the rig. Taking it at face
+// value cancelled the align (see the note in car_following.cpp).
+static void test_a_latched_align_cue_is_visible_before_it_starts() {
+    CfRunState run;
+    EXPECT_TRUE(!run.alignPending(), "nothing latched to begin with");
+
+    run.requestAlign("page setup");
+    EXPECT_TRUE(run.alignPending() && !run.aligning(),
+                "latched, but not started — the window a stray stop arrives in");
+    run.update(false, false);
+    EXPECT_TRUE(run.alignPending(), "still latched while the rig is not ready");
+
+    run.update(true, false);
+    EXPECT_TRUE(!run.alignPending() && run.aligning(),
+                "handed over to the phase once it starts");
+
+    // Either flavour of stop drops it, so a real one still gets through.
+    run.requestAlign("page setup");
+    run.requestStop("page");
+    EXPECT_TRUE(!run.alignPending(), "a stop drops a latched align");
+    run.requestAlign("page setup");
+    run.requestStart("page");
+    EXPECT_TRUE(!run.alignPending(), "and so does a start");
+}
+
 static void test_align_cue_rests_a_running_ring_first() {
     CfRunState run;
     run.requestStart("key");
@@ -658,6 +810,21 @@ static void test_a_start_cue_cancels_a_pending_align() {
     run.requestStart("key");
     EXPECT_TRUE(run.update(true, false) == CfRunEvent::Started,
                 "regression: a run cue supersedes a pending align rather than queuing behind it");
+}
+
+static void test_a_start_cue_interrupts_an_alignment_already_in_progress() {
+    CfRunState run;
+    run.requestAlign("page");
+    run.update(true, false);
+    EXPECT_TRUE(run.aligning(), "aligning");
+
+    // Not yet aligned — allAligned() needs every visible robot within
+    // tolerance at once, which a start cue should not have to wait out.
+    run.requestStart("page");
+    EXPECT_TRUE(run.update(true, false) == CfRunEvent::Started,
+                "a start cue interrupts an in-progress align rather than "
+                "waiting for it to finish on its own");
+    EXPECT_TRUE(run.running(), "running, not stuck in Aligning");
 }
 
 static void test_stop_cancels_alignment_in_progress() {
@@ -749,14 +916,21 @@ int main() {
     test_align_targets_are_already_correct_when_evenly_spaced();
     test_align_targets_minimize_total_travel();
     test_all_aligned_skips_a_vehicle_that_is_not_currently_visible();
+    test_jam_queues_everyone_behind_the_leader();
+    test_the_jam_leaves_the_road_ahead_of_the_leader_empty();
+    test_the_buffering_robot_leads_the_jam_when_it_is_on_the_ring();
+    test_a_jam_spacing_wider_than_the_ring_is_just_the_even_spread();
+    test_jam_targets_minimize_total_travel();
     test_run_state_starts_in_setup();
     test_a_start_cue_is_latched_until_ready();
     test_stop_returns_to_setup_once();
     test_toggle_cancels_a_pending_cue();
     test_stop_while_never_started_is_quiet();
     test_an_align_cue_is_latched_until_ready();
+    test_a_latched_align_cue_is_visible_before_it_starts();
     test_align_cue_rests_a_running_ring_first();
     test_a_start_cue_cancels_a_pending_align();
+    test_a_start_cue_interrupts_an_alignment_already_in_progress();
     test_stop_cancels_alignment_in_progress();
     test_buffering_is_off_unless_the_buffering_vehicle_is_on_the_ring();
     test_the_buffering_vehicle_hangs_back();

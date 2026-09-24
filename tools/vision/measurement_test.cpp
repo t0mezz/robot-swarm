@@ -31,7 +31,11 @@
 #include <chrono>
 #include <thread>
 
-static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
+// Exe-relative, not /tmp — matches circle_demo.cpp/car_following.cpp
+// (arucoVisionDataPath() in aruco_tracker.h) so calibration is shared and
+// survives a reboot instead of living on tmpfs.
+static const std::string HOMOGRAPHY_FILE_S = arucoVisionDataPath("aruco_homography.yml");
+static const char* HOMOGRAPHY_FILE = HOMOGRAPHY_FILE_S.c_str();
 static constexpr int   MAX_POINTS = 20;
 static constexpr float GRID_STEP_MM = 100.f;
 

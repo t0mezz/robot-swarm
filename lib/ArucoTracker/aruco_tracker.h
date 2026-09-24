@@ -114,7 +114,10 @@ struct ArucoConfig {
     // global sweep only fires when markerStates_ is empty or some existing
     // marker has fully lost tracking, so a marker that never had an entry
     // stays invisible indefinitely. 0 = unknown/uncapped: always keep
-    // sweeping every frame.
+    // sweeping every frame. -1 = auto: keep sweeping (same as 0) for
+    // AUTO_ROBOT_COUNT_WINDOW_S after the first frame, tracking the most
+    // markers seen at once in any single frame, then pin robotCount to that
+    // peak — see ArucoTracker::detectionLoop().
     int   robotCount  = 0;
 
     // CLAHE — applied lazily (only to the image actually passed to detectMarkers)
@@ -163,6 +166,29 @@ inline std::string ArucoConfig::defaultConfigPath() {
     path = path.substr(0, slash + 1) + "../vision/aruco_tracker_config.json";
     if (access(path.c_str(), R_OK) != 0) return kDefaultConfigPath;
     return path;
+}
+
+// <exe_dir>/../vision/<filename> — the same demo-binaries-land-in-tools/build/
+// convention defaultConfigPath() resolves aruco_tracker_config.json with,
+// reused here for other data that must survive a reboot rather than living in
+// /tmp (which most Linux systems mount as tmpfs and wipe on restart): saved
+// camera calibration and ring/circle geometry. Unlike defaultConfigPath(),
+// this has no access()-gated fallback — callers use it as a write target that
+// may not exist yet on first run.
+inline std::string arucoVisionDataPath(const char* filename) {
+    char buf[4096];
+#ifdef __APPLE__
+    uint32_t size = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &size) != 0) return std::string("../vision/") + filename;
+#else
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n <= 0) return std::string("../vision/") + filename;
+    buf[n] = '\0';
+#endif
+    std::string path(buf);
+    size_t slash = path.rfind('/');
+    if (slash == std::string::npos) return std::string("../vision/") + filename;
+    return path.substr(0, slash + 1) + "../vision/" + filename;
 }
 
 inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
@@ -716,6 +742,30 @@ private:
                                 cv::FONT_HERSHEY_SIMPLEX, 1.2, {255,255,0}, 2);
                 }
 
+                // ── Auto robot count (robotCount == -1, see ArucoConfig) ───────
+                // Learn the count from the peak simultaneous detection rather
+                // than markerStates_.size(): a marker that briefly failed and
+                // re-entered LOCAL tracking gets a fresh entry, not a second
+                // one, but a robot that was only ever glimpsed once during the
+                // window still bumped outRobots.size() that frame, so the peak
+                // is the honest "most robots seen at once" reading.
+                if (cfg_.robotCount == -1) {
+                    if (!autoCountStarted_) {
+                        autoCountStarted_ = true;
+                        autoCountStart_   = Clock::now();
+                    }
+                    autoCountPeak_ = std::max(autoCountPeak_, (int)outRobots.size());
+                    float elapsed = std::chrono::duration<float>(Clock::now() - autoCountStart_).count();
+                    if (elapsed >= kAutoRobotCountWindowS) {
+                        // 0 (nothing ever seen) falls back to robotCount's own
+                        // "unknown/uncapped" meaning rather than pinning a
+                        // count that would force perpetual sweeping anyway.
+                        cfg_.robotCount = autoCountPeak_;
+                        printf("[aruco] auto robot count: %d (peak over first %.0fs)\n",
+                               cfg_.robotCount, kAutoRobotCountWindowS);
+                    }
+                }
+
                 if (cfg_.debugOverlay) drawDebugOverlay(debug, fps, outRobots.size());
                 else cv::putText(debug,
                     "tags:" + std::to_string(outRobots.size()) + (hasH_ ? "  world" : "  px"),
@@ -880,6 +930,15 @@ private:
     std::atomic<bool>                        detectionRunning_{false};
     std::atomic<bool>                        statsReset_{false};
     std::unordered_map<int, MarkerState>     markerStates_; // detection thread only
+
+    // robotCount == -1 (see ArucoConfig::robotCount): peak simultaneous
+    // marker count observed during the first AUTO_ROBOT_COUNT_WINDOW_S of
+    // detection, after which cfg_.robotCount is pinned to it. Detection
+    // thread only, like markerStates_.
+    static constexpr float            kAutoRobotCountWindowS = 2.0f;
+    std::chrono::steady_clock::time_point autoCountStart_{};
+    bool                               autoCountStarted_ = false;
+    int                                autoCountPeak_    = 0;
 
     // ── Result (detection → main thread, guarded by resultMutex_) ────────────
     std::mutex      resultMutex_;
