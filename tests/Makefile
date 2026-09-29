@@ -7,13 +7,14 @@ BUILD_DIR = build
 
 .PHONY: all test clean
 
-all: $(BUILD_DIR)/test_protocol $(BUILD_DIR)/test_pose_hub $(BUILD_DIR)/test_car_following $(BUILD_DIR)/test_car_following_ring
+all: $(BUILD_DIR)/test_protocol $(BUILD_DIR)/test_pose_hub $(BUILD_DIR)/test_car_following $(BUILD_DIR)/test_car_following_ring $(BUILD_DIR)/test_battery_log
 
 test: all
 	./$(BUILD_DIR)/test_protocol
 	./$(BUILD_DIR)/test_pose_hub
 	./$(BUILD_DIR)/test_car_following
 	./$(BUILD_DIR)/test_car_following_ring
+	./$(BUILD_DIR)/test_battery_log
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -31,6 +32,10 @@ $(BUILD_DIR)/test_car_following: test_car_following.cpp ../lib/CarFollowing/car_
 
 # ring.h is the same: angles, timestamps and bookkeeping, no OpenCV or sockets.
 $(BUILD_DIR)/test_car_following_ring: test_car_following_ring.cpp ../lib/CarFollowing/ring.h ../lib/CarFollowing/car_following.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $< -o $@
+
+# battery_log.h is the camera-free half of tools/vision/battery_log.cpp.
+$(BUILD_DIR)/test_battery_log: test_battery_log.cpp ../lib/BatteryLog/battery_log.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $< -o $@
 
 clean:

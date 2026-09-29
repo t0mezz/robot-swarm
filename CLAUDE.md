@@ -56,7 +56,7 @@ make test         # builds and runs tests/build/test_protocol
 make clean        # removes tests/build/
 ```
 
-Covers the CRC-8 framing pure functions (`crc8`, `buildFrame`, `validateFrame`, `frameSize` in `lib/SwarmProtocol/protocol.h`), the pose-hub publish/subscribe round trip (`test_pose_hub.cpp` — real sockets, no camera), the car-following models (`test_car_following.cpp`), and the ring bookkeeping + run-state machine behind them (`test_car_following_ring.cpp`) with a small assert-based harness — no test framework dependency. There's no CI configured yet. Formation-math unit tests are still pending extraction of that logic into testable pure functions (see `TODO.md` under "Tooling / Tests"); `lib/CarFollowing/car_following.h` is the model for how that extraction should look.
+Covers the CRC-8 framing pure functions (`crc8`, `buildFrame`, `validateFrame`, `frameSize` in `lib/SwarmProtocol/protocol.h`), the pose-hub publish/subscribe round trip (`test_pose_hub.cpp` — real sockets, no camera), the car-following models (`test_car_following.cpp`), the ring bookkeeping + run-state machine behind them (`test_car_following_ring.cpp`), and `battery_log`'s speed/stop bookkeeping (`test_battery_log.cpp`) with a small assert-based harness — no test framework dependency. There's no CI configured yet. Formation-math unit tests are still pending extraction of that logic into testable pure functions (see `TODO.md` under "Tooling / Tests"); `lib/CarFollowing/car_following.h` is the model for how that extraction should look.
 
 ## Architecture
 
@@ -143,6 +143,16 @@ The page's third graph — the camera-measured trajectories — is injected the 
 
 `lib/CarFollowing/http_bridge.h` is a ~150-line loopback HTTP server used by `--bridge` to serve the vendored NetLogo page and receive its slider/chooser values and run state back as `name=value` lines. It is **not** a fourth implementation of the swarm wire protocol — it carries UI parameters only, never `MSG_*` frames, so the "keep it at three" rule above is unaffected. Plain HTTP rather than WebSockets because the traffic is one small POST per parameter change over loopback; the handshake and framing a WebSocket needs would be larger than the whole file. The vendored HTML is never modified on disk — the reporting script is injected at serve time.
 
+### `battery_log` measures speed against voltage, and depends on open-loop robots
+
+`tools/vision/battery_log.cpp` is the first tool for the battery-runtime research: can remaining charge be estimated from the camera alone? It orbits one robot (`--robot`) on the saved ring at a fixed motor command until the battery is flat. It writes one CSV row per second (vision speed, battery mV, phase) and a PNG plot every minute into `battery_log_results/`. `tools/analysis/battery_log_plot.py` fits speed against voltage across runs. Its shape copies `car_following`: headless-first, the ring as a read-only fixture (no fitting, and it refuses to run without a ring or a homography), and the camera-free bookkeeping in `lib/BatteryLog/battery_log.h`, tested by `tests/test_battery_log.cpp`. Its heading controller is another port of circle_demo's orbit law, taken from `car_following` with the yaw low-pass, so the "port, not a variant" rule above applies to it too.
+
+Three things it relies on:
+
+- **The measurement only exists because the robots run open-loop** (`ODOMETRY_ENABLED = False`). A command is then a fixed PWM duty and the speed follows the battery. With the encoder PID on, the speed holds until the motors saturate and the log is flat. Flipping that flag invalidates every comparison with earlier runs.
+- **Speed is the displacement projected onto the ring tangent**, not the `hypot` of frame deltas. Position noise always adds to a magnitude, so the `hypot` version reads fast by an amount that depends on the frame rate. Rows that span a dropout don't count the gap's time.
+- **Rests are part of the data, not downtime.** Every `--rest-every` seconds the motors are held at zero for `--rest-for` seconds. The resting voltage minus the loaded voltage is the cell's sag under the motor current, a second signal next to the speed. A rest ends in a reseek, and each row belongs to exactly one phase (hence the `dt_s` column). The battery is only sampled every 2 s (`BAT_INTERVAL_MS`) and telemetry repeats that sample, so low-voltage stops are debounced by time below `--stop-mv`, not by counting readings. `STATUS_LOW_BATTERY` is logged and obeyed, but nothing in the firmware sets it yet.
+
 ### MicroPython robot firmware: feature-flag + isolated-module pattern
 
 `src/robots/uart_controller.py` is the main loop (UART receive → PID speed control → motor output → display), and it deliberately keeps optional features out of the core file: each one is gated by a module-level `..._ENABLED` flag and implemented in its own module, with the main loop calling at most one hook per loop iteration. Example: `ENGINE_SOUND_ENABLED` guards both the import of `engine_sound.EngineSound` and the single `engine.update(actual_l, actual_r, dt)` call inside `run_pid()`. Follow this pattern for new robot-local features (sound, additional sensors, etc.) rather than growing `uart_controller.py` or `robot_uart.py` directly — and keep such features computed from data the robot already has rather than extending the shared wire protocol, since that protocol is also implemented independently in the C++ firmware and PC client (see above).
@@ -158,6 +168,7 @@ lib/SwarmProtocol/         — wire protocol shared by both firmware targets (ca
 lib/SwarmClient/           — header-only PC client library; new PC tools should build on this
 lib/ArucoTracker/          — camera + ArUco tracking abstraction (Basler pylon + OpenCV)
 lib/CarFollowing/          — car-following models, ring bookkeeping + run state, localhost HTTP bridge (no OpenCV/pylon/SwarmClient)
+lib/BatteryLog/            — battery_log's row/stop/schedule bookkeeping (no OpenCV/pylon/SwarmClient)
 tools/                     — Makefile + PC tool entry points (game.cpp, vision/*.cpp, swarm/*.cpp); binaries land in tools/build/
 docs/architecture.md       — protocol/timing design doc (German)
 ```

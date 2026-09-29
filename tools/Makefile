@@ -40,7 +40,7 @@ OPENCV_LIBS   := $(shell pkg-config --libs   opencv4 2>/dev/null || pkg-config -
 
 .PHONY: all clean calibrate
 
-all: $(BUILD_DIR)/swarm_hub $(BUILD_DIR)/swarm_hub_simulation $(BUILD_DIR)/swarm_terminal $(BUILD_DIR)/latency_plot $(BUILD_DIR)/swarm_dashboard $(BUILD_DIR)/swarm_telemetry_json $(BUILD_DIR)/swarm_controller $(BUILD_DIR)/game $(BUILD_DIR)/vision_controller $(BUILD_DIR)/circle_demo $(BUILD_DIR)/car_following $(BUILD_DIR)/wingman $(BUILD_DIR)/shape_demo $(BUILD_DIR)/drag_drop_demo $(BUILD_DIR)/marker_eval $(BUILD_DIR)/frame_inspector $(BUILD_DIR)/demo_hud_preview $(BUILD_DIR)/max_speed_test $(BUILD_DIR)/measurement_test $(BUILD_DIR)/circle_speed_test calibrate
+all: $(BUILD_DIR)/swarm_hub $(BUILD_DIR)/swarm_hub_simulation $(BUILD_DIR)/swarm_terminal $(BUILD_DIR)/latency_plot $(BUILD_DIR)/swarm_dashboard $(BUILD_DIR)/swarm_telemetry_json $(BUILD_DIR)/swarm_controller $(BUILD_DIR)/game $(BUILD_DIR)/vision_controller $(BUILD_DIR)/circle_demo $(BUILD_DIR)/car_following $(BUILD_DIR)/wingman $(BUILD_DIR)/shape_demo $(BUILD_DIR)/drag_drop_demo $(BUILD_DIR)/marker_eval $(BUILD_DIR)/frame_inspector $(BUILD_DIR)/demo_hud_preview $(BUILD_DIR)/max_speed_test $(BUILD_DIR)/measurement_test $(BUILD_DIR)/circle_speed_test $(BUILD_DIR)/battery_log calibrate
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -122,6 +122,14 @@ $(BUILD_DIR)/measurement_test: vision/measurement_test.cpp $(LIBDIR)/ArucoTracke
 $(BUILD_DIR)/circle_speed_test: vision/circle_speed_test.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
 	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud \
+	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
+
+# Orbits one robot at a fixed command until its battery is flat, logging
+# vision speed against reported battery voltage (CSV + PNG plot). The
+# measurement bookkeeping is lib/BatteryLog/battery_log.h (tests/).
+$(BUILD_DIR)/battery_log: vision/battery_log.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h $(LIBDIR)/BatteryLog/battery_log.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
+	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud -I$(LIBDIR)/BatteryLog \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
 $(BUILD_DIR)/frame_inspector: vision/frame_inspector.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)

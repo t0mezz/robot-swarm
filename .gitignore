@@ -30,6 +30,9 @@ tools/vision/aruco_homography.yml
 tools/vision/car_following_ring.yml
 tools/vision/circle_demo.yml
 
+# battery_log run output (CSV + PNG), written relative to the cwd
+battery_log_results/
+
 # macOS
 .DS_Store
 
