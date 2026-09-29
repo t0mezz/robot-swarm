@@ -18,7 +18,7 @@
 // Usage:
 //   ./battery_log --robot ID [--cmd N] [--dir cw|ccw]
 //                 [--rest-every S] [--rest-for S] [--stop-mv MV] [--max-time S]
-//                 [--start] [--out DIR] [--debug] [--serial SN] [--ip IP]
+//                 [--start] [--out DIR] [--debug] [--no-open] [--serial SN] [--ip IP]
 //
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 //   setup  motors held at zero until the run is cued (<enter> on stdin,
@@ -28,7 +28,9 @@
 //   orbit  the fixed command, round the ring.
 //   rest   motors at zero every --rest-every s for --rest-for s, so the log
 //          also records the resting voltage; ends in a reseek.
-//   done   low voltage, a stall, a lost robot, --max-time, or s/q.
+//   done   low voltage, a stall, a lost robot, --max-time, or s/q. The final
+//          PNG is then opened in the desktop's image viewer (--no-open to
+//          skip, e.g. over ssh).
 //
 // Every log row belongs to exactly one phase: a phase change closes the
 // current row early, which is why the CSV carries its own dt_s column.
@@ -65,6 +67,7 @@
 #include <vector>
 
 #include <poll.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 // ── Tunables ─────────────────────────────────────────────────────────────────
@@ -176,6 +179,31 @@ static std::string wallTime(const char* fmt) {
 static std::string hms(double s) {
     int t = (int)s;
     return DemoHud::fmt("%d:%02d:%02d", t / 3600, (t / 60) % 60, t % 60);
+}
+
+// Opens a file in the desktop's default viewer and returns at once. fork+exec
+// rather than system() so a path with quotes or spaces in --out needs no shell
+// escaping; the child gets its own session so closing this terminal does not
+// take the viewer with it. Skipped without a display, where it could only fail.
+static void openInViewer(const std::string& path) {
+#ifdef __APPLE__
+    const char* opener = "open";
+#else
+    const char* opener = "xdg-open";
+    if (!getenv("DISPLAY") && !getenv("WAYLAND_DISPLAY")) {
+        printf("[bl] no display — not opening %s\n", path.c_str());
+        return;
+    }
+#endif
+    pid_t pid = fork();
+    if (pid == 0) {
+        setsid();
+        int devnull = open("/dev/null", O_RDWR);
+        if (devnull >= 0) { dup2(devnull, STDIN_FILENO); dup2(devnull, STDOUT_FILENO); dup2(devnull, STDERR_FILENO); }
+        execlp(opener, opener, path.c_str(), (char*)nullptr);
+        _exit(127);
+    }
+    if (pid < 0) fprintf(stderr, "[bl] could not open %s in a viewer\n", path.c_str());
 }
 
 // ── Plot ─────────────────────────────────────────────────────────────────────
@@ -329,6 +357,7 @@ int main(int argc, char* argv[]) {
     double maxTimeS  = 0.0;       // 0 = no limit
     bool   autoStart = false;
     bool   debug     = false;
+    bool   openPlot  = true;
     BlSchedule   sched;
     BlStopConfig stopCfg;
 
@@ -351,15 +380,17 @@ int main(int argc, char* argv[]) {
         }
         else if (!strcmp(argv[i], "--start")) autoStart = true;
         else if (!strcmp(argv[i], "--debug")) debug     = true;
+        else if (!strcmp(argv[i], "--no-open")) openPlot = false;
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
             printf("usage: %s --robot ID [--cmd N] [--dir cw|ccw]\n"
                    "       [--rest-every S] [--rest-for S] [--stop-mv MV] [--max-time S]\n"
-                   "       [--start] [--out DIR] [--debug] [--serial SN] [--ip IP]\n\n"
+                   "       [--start] [--out DIR] [--debug] [--no-open] [--serial SN] [--ip IP]\n\n"
                    "Orbits one robot on the saved ring at motor command N (default 60) until\n"
                    "its battery reads <= MV (default 4000) for %.0f s, it stalls, or it is\n"
                    "lost; logs vision speed + battery mV to DIR/*.csv and plots them to *.png.\n"
                    "Rests (motors off) every S (default 120, 0 = never) for S (default 12).\n"
-                   "Start: <enter> on stdin, space in --debug, or --start. s/q ends the run.\n",
+                   "Start: <enter> on stdin, space in --debug, or --start. s/q ends the run.\n"
+                   "When the run ends the final plot is opened in the image viewer (--no-open).\n",
                    argv[0], stopCfg.lowHoldS);
             return 0;
         } else { fprintf(stderr, "unknown argument: %s\n", argv[i]); return 2; }
@@ -756,6 +787,7 @@ int main(int argc, char* argv[]) {
         printf("[bl] ended (%s) after %s — %zu rows\n[bl] wrote %s\n[bl] wrote %s\n",
                endNote.c_str(), hms(tNowS() - runStartS).c_str(), points.size(),
                csvPath.c_str(), pngPath.c_str());
+        if (openPlot) openInViewer(pngPath);
     }
     if (debug) cv::destroyAllWindows();
     return 0;

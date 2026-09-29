@@ -114,6 +114,9 @@ a pure header.
   the ring before its speed counts again.
 - **done**: the final row is closed, the CSV gets an `# ended:` footer, the
   PNG is written one last time, and a zero motor command is sent three times.
+  The final PNG is then opened in the desktop's image viewer (`xdg-open`,
+  `open` on macOS). It is skipped with `--no-open` or when no display is set,
+  e.g. over ssh.
 
 **Every row belongs to exactly one phase.** A phase change closes the current
 row early, which is why the CSV carries a `dt_s` column. Ctrl-C leaves the loop
