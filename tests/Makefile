@@ -7,11 +7,12 @@ BUILD_DIR = build
 
 .PHONY: all test clean
 
-all: $(BUILD_DIR)/test_protocol $(BUILD_DIR)/test_pose_hub $(BUILD_DIR)/test_car_following $(BUILD_DIR)/test_car_following_ring $(BUILD_DIR)/test_battery_log $(BUILD_DIR)/test_camera_intrinsics
+all: $(BUILD_DIR)/test_protocol $(BUILD_DIR)/test_pose_hub $(BUILD_DIR)/test_mjpeg_server $(BUILD_DIR)/test_car_following $(BUILD_DIR)/test_car_following_ring $(BUILD_DIR)/test_battery_log $(BUILD_DIR)/test_camera_intrinsics
 
 test: all
 	./$(BUILD_DIR)/test_protocol
 	./$(BUILD_DIR)/test_pose_hub
+	./$(BUILD_DIR)/test_mjpeg_server
 	./$(BUILD_DIR)/test_car_following
 	./$(BUILD_DIR)/test_car_following_ring
 	./$(BUILD_DIR)/test_battery_log
@@ -26,6 +27,10 @@ $(BUILD_DIR)/test_protocol: test_protocol.cpp ../lib/SwarmProtocol/protocol.h | 
 # pose_hub.h is deliberately free of OpenCV/pylon, so this needs no extra flags.
 $(BUILD_DIR)/test_pose_hub: test_pose_hub.cpp ../lib/ArucoTracker/pose_hub.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -pthread $< -o $@
+
+# mjpeg_server.h takes finished JPEG bytes, so it too needs no OpenCV.
+$(BUILD_DIR)/test_mjpeg_server: test_mjpeg_server.cpp ../lib/ArucoTracker/mjpeg_server.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $< -o $@
 
 # car_following.h is pure maths — no OpenCV, no sockets, nothing to link.
 $(BUILD_DIR)/test_car_following: test_car_following.cpp ../lib/CarFollowing/car_following.h | $(BUILD_DIR)

@@ -364,8 +364,42 @@ public:
         return true;
     }
 
+    // Poses from whoever already owns the camera (a running vision_hub, or any
+    // demo — they all publish on pose_hub.h's socket) instead of from the
+    // camera. No pylon, no detection threads, no frame: debugFrame() stays
+    // empty, so this is for tools that only steer from poses. Frame size and
+    // lens model are taken from the publisher so the homography check in
+    // loadHomography() sees the same pixel space it was fitted in.
+    // Returns false if nobody is publishing.
+    bool attach() {
+        if (source_) return false;
+        if (!subscriber_.connect()) return false;
+        // The first snapshot carries the frame size; the publisher sends one per
+        // detection, so this is a few milliseconds when it is alive.
+        auto t0 = std::chrono::steady_clock::now();
+        while (!subscriber_.hasSnapshot() &&
+               std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(1500)) {
+            subscriber_.poll();
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        if (!subscriber_.hasSnapshot()) { subscriber_.disconnect(); return false; }
+        fw_ = (float)subscriber_.frameWidth();
+        fh_ = (float)subscriber_.frameHeight();
+        loadIntrinsics();
+        subscribed_ = true;
+        return true;
+    }
+
+    // Attach to a live publisher if there is one, otherwise own the camera. A
+    // publisher is preferred because it can never fail the way a second
+    // open() does, and because two owners cannot exist.
+    bool openOrAttach() { return attach() || open(); }
+
+    bool subscribed() const { return subscribed_; }
+
     // Non-blocking. Returns true when a fresh detection result has been swapped in.
     bool update() {
+        if (subscribed_) return updateFromHub();
         std::unique_lock<std::mutex> lk(resultMutex_);
         if (!latestResult_.fresh) return false;
         robots_    = std::move(latestResult_.robots);
@@ -380,7 +414,7 @@ public:
             hubPoses_.reserve(robots_.size());
             for (const auto& r : robots_)
                 hubPoses_.push_back(HubPose{r.id, r.x, r.y, r.yaw, r.px, r.py});
-            poseHub_.publish(hubPoses_, fps_, (int)fw_, (int)fh_);
+            poseHub_.publish(hubPoses_, fps_, (int)fw_, (int)fh_, hasH_);
         }
         return true;
     }
@@ -415,6 +449,17 @@ public:
         cv::FileStorage fs(path, cv::FileStorage::READ);
         if (!fs.isOpened()) return false;
         fs["H"] >> H_;
+        // Subscribed poses arrive already converted — or deliberately not. Only
+        // the publisher's own state says which, so a pixel-space publisher
+        // overrides a homography file that happens to exist here.
+        if (subscribed_ && !subscriber_.worldCoords()) {
+            fprintf(stderr,
+                "[aruco] the publisher on " POSE_HUB_SOCK_PATH " has no homography, so its "
+                "poses are pixels — ignoring '%s'. Start the hub with one.\n", path.c_str());
+            H_.release();
+            hasH_ = false;
+            return false;
+        }
         // A homography is only valid for the resolution it was calibrated at:
         // pixel coords scale with resolution, so a homography from a different
         // frame size silently maps the current pixels to mis-scaled world
@@ -470,7 +515,7 @@ public:
     const std::vector<RobotPose>& robots()    const { return robots_; }
     cv::Mat  debugFrame() const { return debug_; }
     cv::Size frameSize()  const { return {(int)fw_, (int)fh_}; }
-    bool     isOpen()     const { return source_ != nullptr; }
+    bool     isOpen()     const { return source_ != nullptr || subscribed_; }
     // Detection-thread throughput (frames actually processed per second), NOT
     // the camera's acquisition rate — with GrabStrategy_LatestImageOnly the
     // camera can deliver faster while this thread skips frames it can't keep
@@ -996,6 +1041,30 @@ private:
     float                  latencyMs_ = 0.f;
 
     // ── Pose publishing (main thread, inside update()) ────────────────────────
+    // Subscriber mode (attach()): poses come from another process, not a camera.
+    bool updateFromHub() {
+        if (!subscriber_.isConnected()) {
+            // The publisher went away. Keep trying, quietly, so a restarted hub
+            // is picked up; update() meanwhile reports no fresh result, which
+            // is what a stalled camera looks like to every caller.
+            auto now = std::chrono::steady_clock::now();
+            if (now - lastReconnect_ < std::chrono::seconds(1)) return false;
+            lastReconnect_ = now;
+            subscriber_.connect();
+            return false;
+        }
+        if (!subscriber_.poll()) return false;
+        robots_.clear();
+        for (const auto& p : subscriber_.poses())
+            robots_.push_back({p.id, p.x, p.y, p.yaw, p.px, p.py});
+        fps_       = subscriber_.detectionFps();
+        latencyMs_ = 0.f;   // not measured across the process boundary
+        return true;
+    }
+
+    PoseHubSubscriber    subscriber_;
+    bool                 subscribed_ = false;
+    std::chrono::steady_clock::time_point lastReconnect_{};
     PoseHubPublisher     poseHub_;
     std::vector<HubPose> hubPoses_;   // reused so publishing never allocates
 };

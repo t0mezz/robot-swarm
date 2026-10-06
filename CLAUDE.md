@@ -56,7 +56,7 @@ make test         # builds and runs tests/build/test_protocol
 make clean        # removes tests/build/
 ```
 
-Covers the lens model's round trips and file-compatibility rules (`test_camera_intrinsics.cpp`), the CRC-8 framing pure functions (`crc8`, `buildFrame`, `validateFrame`, `frameSize` in `lib/SwarmProtocol/protocol.h`), the pose-hub publish/subscribe round trip (`test_pose_hub.cpp` — real sockets, no camera), the car-following models (`test_car_following.cpp`), the ring bookkeeping + run-state machine behind them (`test_car_following_ring.cpp`), and `battery_log`'s speed/stop bookkeeping (`test_battery_log.cpp`) with a small assert-based harness — no test framework dependency. There's no CI configured yet. Formation-math unit tests are still pending extraction of that logic into testable pure functions (see `TODO.md` under "Tooling / Tests"); `lib/CarFollowing/car_following.h` is the model for how that extraction should look.
+Covers the lens model's round trips and file-compatibility rules (`test_camera_intrinsics.cpp`), the CRC-8 framing pure functions (`crc8`, `buildFrame`, `validateFrame`, `frameSize` in `lib/SwarmProtocol/protocol.h`), the pose-hub publish/subscribe round trip (`test_pose_hub.cpp` — real sockets, no camera), the MJPEG server's routing, viewer counting and slow-client behaviour (`test_mjpeg_server.cpp`), the car-following models (`test_car_following.cpp`), the ring bookkeeping + run-state machine behind them (`test_car_following_ring.cpp`), and `battery_log`'s speed/stop bookkeeping (`test_battery_log.cpp`) with a small assert-based harness — no test framework dependency. There's no CI configured yet. Formation-math unit tests are still pending extraction of that logic into testable pure functions (see `TODO.md` under "Tooling / Tests"); `lib/CarFollowing/car_following.h` is the model for how that extraction should look.
 
 ## Architecture
 
@@ -83,6 +83,17 @@ For new PC tools, use `lib/SwarmClient/SwarmClient.h` rather than talking to the
 The Basler admits exactly one application — a second `open()` gets `0xE1018006` ("device is controlled by another application") — so the camera cannot be multiplexed the way `swarm_hub` multiplexes the dongle. Instead, whichever tool opens it publishes tracked poses on `/tmp/vision_hub.sock` automatically (`lib/ArucoTracker/pose_hub.h`, wired into `ArucoTracker::open()`/`update()`); pose-only tools subscribe rather than opening the camera.
 
 The rule this buys: **only tools that need pixels own the camera.** Every vision demo calls `debugFrame()`/`cv::imshow`, so they own it and publish. `swarm_telemetry_json` needs poses only, so it subscribes by default and a demo can always start alongside it. `--camera` makes it own the device instead, for standalone use — at the cost of locking demos out.
+
+`vision_hub` (`tools/vision/vision_hub.cpp`) is the **opt-in** way to be that owner without a demo: start it by hand and it holds the camera, publishes poses, and streams the tracker's frame as MJPEG on `127.0.0.1:8081` (`ssh -L 8081:localhost:8081 <host>`, then `/`, `/stream` or `/snapshot.jpg`). Nothing auto-launches it, so by default every tool still opens the camera itself with no extra hop. It is the *only* place the stream is served from — keep the tracker free of HTTP and encoding. Resize, JPEG encode and all socket I/O run on a second thread; the main thread only calls `update()` and, while `MjpegServer::wantsFrames()`, hands over a `cv::Mat` header (no pixel copy — the tracker never writes into a frame it has handed out). Nobody watching means no encoding. Measured on the real camera: detection stays at ~116 fps while streaming ~28 fps at ~900 kB/s. A second hub refuses to start (it probes `vision_hub.sock` first, because `open()` ignores that refusal).
+
+**Subscriber mode** (`ArucoTracker::attach()` / `openOrAttach()`) is how a tool that only steers from poses runs alongside a hub — or alongside any demo, since they all publish on the same socket. It opens no camera and starts no detection threads; `update()` fills `robots()` from the publisher's snapshots, `debugFrame()` stays empty, and a vanished publisher is retried once a second while `update()` reports nothing fresh, exactly what a stalled camera looks like. `car_following` and `battery_log` use it when headless (`openOrAttach()` prefers a live publisher); with `--debug` they call `open()`, since they draw on the frame. Three things about it are easy to get wrong:
+- **Coordinate space comes from the publisher, not the local homography file.** `PoseHubHeader::flags` carries `POSE_HUB_FLAG_WORLD`; `loadHomography()` in subscriber mode refuses (returns false) when the publisher's poses are pixels, since treating those as millimetres is off by an order of magnitude and nothing complains.
+- **Frame size and lens model are the publisher's.** `attach()` waits (up to 1.5 s) for the first snapshot to learn the size, then loads intrinsics, so the homography's resolution and `undistorted` checks run against the same pixel space.
+- **Detection settings are the hub's.** `--count`/`robotCount`, exposure, ROI and dictionary on the attached tool's `ArucoConfig` do nothing; `latencyMs()` is 0 (not measured across the process boundary).
+
+Tools that call `debugFrame()` (`circle_demo`, `wingman`, `shape_demo`, the calibration tools, …) still need the camera and cannot attach; giving them pixels would take shared-memory frames.
+
+`lib/ArucoTracker/mjpeg_server.h` is the server (loopback only, non-blocking, takes finished JPEG bytes). A client that can't keep up misses frames rather than queueing them, so a slow link never adds latency. `/snapshot.jpg` waits for the next fresh frame and counts as demand.
 
 `pose_hub.h` is deliberately free of OpenCV and pylon includes, so subscribers link neither. Frames are *not* shared (2048² at ~116 fps is ~470 MB/s — that needs shared memory, see `TODO.md` under "Webserver / Headless").
 
@@ -176,7 +187,7 @@ src/dongle, src/receiver   — PlatformIO firmware (C++), built/flashed independ
 src/robots/                — MicroPython firmware for the RP2040, deployed without a build step
 lib/SwarmProtocol/         — wire protocol shared by both firmware targets (canonical C++ definition)
 lib/SwarmClient/           — header-only PC client library; new PC tools should build on this
-lib/ArucoTracker/          — camera + ArUco tracking abstraction (Basler pylon + OpenCV); camera_intrinsics.h is the lens model (OpenCV only)
+lib/ArucoTracker/          — camera + ArUco tracking abstraction (Basler pylon + OpenCV); camera_intrinsics.h is the lens model (OpenCV only); pose_hub.h / mjpeg_server.h are the OpenCV-free pose and video servers
 lib/CarFollowing/          — car-following models, ring bookkeeping + run state, localhost HTTP bridge (no OpenCV/pylon/SwarmClient)
 lib/BatteryLog/            — battery_log's row/stop/schedule bookkeeping (no OpenCV/pylon/SwarmClient)
 tools/                     — Makefile + PC tool entry points (game.cpp, vision/*.cpp, swarm/*.cpp); binaries land in tools/build/

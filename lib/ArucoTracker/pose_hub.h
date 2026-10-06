@@ -55,14 +55,21 @@ struct PoseHubHeader {
     int32_t  frameW, frameH;
     uint16_t version;
     uint16_t count;
+    uint32_t flags;    // POSE_HUB_FLAG_*
 };
 
 static constexpr uint32_t POSE_HUB_MAGIC   = 0x42554856;  // 'VHUB' little-endian
-static constexpr uint16_t POSE_HUB_VERSION = 1;
+static constexpr uint16_t POSE_HUB_VERSION = 2;
 static constexpr uint16_t POSE_HUB_MAX     = 256;         // sanity bound on count
 
 static_assert(sizeof(HubPose) == 24, "HubPose must stay tightly packed");
-static_assert(sizeof(PoseHubHeader) == 24, "PoseHubHeader must stay tightly packed");
+// Set when HubPose::x/y/yaw are world millimetres (the publisher has a
+// homography); clear when they are pixels. A subscriber that loads its own
+// homography file must not trust it over this: applying "world" semantics to
+// pixel poses is wrong by an order of magnitude and nothing complains.
+static constexpr uint32_t POSE_HUB_FLAG_WORLD = 1u << 0;
+
+static_assert(sizeof(PoseHubHeader) == 28, "PoseHubHeader must stay tightly packed");
 
 // ── Publisher ────────────────────────────────────────────────────────────────
 
@@ -109,13 +116,15 @@ public:
     // control loop that is driving robots. A subscriber whose buffer is full
     // simply misses this snapshot — poses are absolute state, so the next one
     // it does read is just as good as the one it lost.
-    void publish(const std::vector<HubPose>& poses, float detFps, int w, int h) {
+    void publish(const std::vector<HubPose>& poses, float detFps, int w, int h,
+                 bool world = false) {
         if (listenFd_ < 0) return;
         acceptPending();
         if (clients_.empty()) return;
 
         uint16_t n = (uint16_t)std::min<size_t>(poses.size(), POSE_HUB_MAX);
-        PoseHubHeader hdr{POSE_HUB_MAGIC, seq_++, detFps, w, h, POSE_HUB_VERSION, n};
+        PoseHubHeader hdr{POSE_HUB_MAGIC, seq_++, detFps, w, h, POSE_HUB_VERSION, n,
+                          world ? POSE_HUB_FLAG_WORLD : 0u};
 
         buf_.resize(sizeof(hdr) + (size_t)n * sizeof(HubPose));
         std::memcpy(buf_.data(), &hdr, sizeof(hdr));
@@ -204,6 +213,7 @@ public:
         if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
         poses_.clear();
         detFps_ = 0.f;
+        seen_   = false;
     }
 
     bool isConnected() const { return fd_ >= 0; }
@@ -248,6 +258,8 @@ public:
             detFps_ = hdr.detFps;
             frameW_ = hdr.frameW;
             frameH_ = hdr.frameH;
+            world_  = (hdr.flags & POSE_HUB_FLAG_WORLD) != 0;
+            seen_   = true;
             off += need;
             fresh = true;
         }
@@ -259,6 +271,10 @@ public:
     float detectionFps() const { return detFps_; }
     int   frameWidth()   const { return frameW_; }
     int   frameHeight()  const { return frameH_; }
+    // True once a snapshot has arrived, so frame size and coordinate space are
+    // known. False right after connect() until the publisher's next detection.
+    bool  hasSnapshot()  const { return seen_; }
+    bool  worldCoords()  const { return world_; }
 
 private:
     int                  fd_ = -1;
@@ -266,4 +282,5 @@ private:
     std::vector<HubPose> poses_;
     float                detFps_ = 0.f;
     int                  frameW_ = 0, frameH_ = 0;
+    bool                 world_ = false, seen_ = false;
 };

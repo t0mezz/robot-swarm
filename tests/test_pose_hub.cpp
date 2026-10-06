@@ -181,7 +181,29 @@ static void test_no_subscribers_is_harmless() {
     EXPECT_TRUE(pub.isRunning(), "publishing into the void must not break it");
 }
 
+static void test_world_flag_round_trips() {
+    PoseHubPublisher pub;
+    pub.start();
+    PoseHubSubscriber sub;
+    EXPECT_TRUE(sub.connect(), "subscriber connects");
+    EXPECT_TRUE(!sub.hasSnapshot(), "nothing known before the first snapshot");
+
+    pub.poll();
+    pub.publish(samplePoses(), 100.f, 2048, 2048, true);
+    EXPECT_TRUE(pumpUntilFresh(sub), "snapshot arrives");
+    EXPECT_TRUE(sub.hasSnapshot() && sub.worldCoords(), "world flag set");
+    EXPECT_EQ(sub.frameWidth(), 2048, "frame size known from the first snapshot");
+
+    pub.publish(samplePoses(), 100.f, 2048, 2048, false);
+    EXPECT_TRUE(pumpUntilFresh(sub), "second snapshot arrives");
+    EXPECT_TRUE(!sub.worldCoords(), "pixel poses are flagged as such");
+
+    sub.disconnect();
+    EXPECT_TRUE(!sub.hasSnapshot(), "disconnect forgets what the publisher said");
+}
+
 int main() {
+    test_world_flag_round_trips();
     test_round_trip();
     test_empty_snapshot();
     test_keeps_only_newest();

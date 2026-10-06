@@ -417,8 +417,22 @@ int main(int argc, char* argv[]) {
     const float dbgScale = (cfg.debugFrameScale > 0.f && cfg.debugFrameScale <= 1.f) ? cfg.debugFrameScale : 1.f;
 
     ArucoTracker tracker(cfg);
-    if (!tracker.open()) { fprintf(stderr, "Could not open Basler camera.\n"); return 1; }
-    printf("[vision] camera open at %dx%d\n", tracker.frameSize().width, tracker.frameSize().height);
+    // Headless needs poses only, so it can ride on whoever already owns the camera
+    // (a vision_hub, or another demo) instead of locking them out. --debug draws on
+    // the frame, which only the owner has.
+    const bool opened = debug ? tracker.open() : tracker.openOrAttach();
+    if (!opened) {
+        fprintf(stderr, "Could not open Basler camera.%s\n",
+                debug ? " (--debug needs the frame itself, so it cannot attach to a vision_hub; "
+                        "watch the hub's stream or run headless.)" : "");
+        return 1;
+    }
+    if (tracker.subscribed())
+        printf("[vision] attached to the pose publisher at %dx%d (no camera, no frame)\n",
+               tracker.frameSize().width, tracker.frameSize().height);
+    else
+        printf("[vision] camera open at %dx%d\n",
+               tracker.frameSize().width, tracker.frameSize().height);
 
     // Speed has to be in mm for the log to mean anything, so unlike
     // car_following there is no pixel fallback.
