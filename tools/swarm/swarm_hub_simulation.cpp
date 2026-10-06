@@ -128,7 +128,7 @@ static void client_accept(int serverFd) {
 struct SimRobot {
     uint8_t  id;
     uint8_t  mac[6];
-    float    batteryF;     // telemetry byte, 40mV/LSB; drains slowly with a slight ripple
+    float    batteryF;     // battery in 40mV units (sent as mV); drains slowly with a slight ripple
     float    motorPhase;   // drives a sine-wave motor pattern
     uint16_t baseLatencyUs;
     uint16_t uptime = 0;
@@ -160,23 +160,23 @@ static void sendTelemetry(SimRobot& r, double t) {
     // Slow drain with a small ripple so the battery meter isn't static.
     r.batteryF -= 0.01f;
     if (r.batteryF < 100.0f) r.batteryF = 160.0f;  // simulate a "swap" once drained (4.0V -> 6.4V)
-    uint8_t battery = (uint8_t)std::clamp(r.batteryF, 0.0f, 255.0f);
+    uint16_t batteryMv = (uint16_t)std::clamp(r.batteryF * 40.0f, 0.0f, 65535.0f);
 
     float   motor = 100.0f * (float)std::sin(t * 0.5 + r.motorPhase);
     int8_t  motorL = (int8_t)std::clamp(motor, -127.0f, 127.0f);
     int8_t  motorR = (int8_t)std::clamp(motor * 0.9f, -127.0f, 127.0f);
 
-    uint8_t flags = STATUS_BAT_VALID | ((battery < 115) ? STATUS_LOW_BATTERY : 0);  // low < 4.6V
+    uint8_t flags = STATUS_BAT_VALID | ((batteryMv < 4600) ? STATUS_LOW_BATTERY : 0);  // low < 4.6V
     r.uptime++;
 
-    uint8_t payload[7] = {
-        r.id, battery, flags,
+    uint8_t payload[8] = {
+        r.id, (uint8_t)batteryMv, (uint8_t)(batteryMv >> 8), flags,
         (uint8_t)motorL, (uint8_t)motorR,
         (uint8_t)r.uptime, (uint8_t)(r.uptime >> 8)
     };
-    uint8_t frame[4 + 7 + 1];
-    buildFrame(frame, MSG_TELEMETRY, payload, 7);
-    broadcast(frame, frameSize(7));
+    uint8_t frame[4 + 8 + 1];
+    buildFrame(frame, MSG_TELEMETRY, payload, 8);
+    broadcast(frame, frameSize(8));
 }
 
 static void sendPong(uint8_t robotId, uint16_t baseLatencyUs) {

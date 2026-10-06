@@ -162,10 +162,10 @@ public:
         std::chrono::steady_clock::time_point last_ = std::chrono::steady_clock::now();
     };
 
-    // Battery telemetry byte is 40mV/LSB (0-255 -> 0-10.2V). 0 means the robot
-    // has not reported a measurement yet, not an empty battery.
-    static std::string formatBattery(uint8_t raw) {
-        return raw > 0 ? fmt("%.2fV", raw * 0.04f) : "--";
+    // Battery telemetry is uint16 millivolts. 0 means the robot has not
+    // reported a measurement yet, not an empty battery.
+    static std::string formatBattery(uint16_t mv) {
+        return mv > 0 ? fmt("%.2fV", mv * 0.001f) : "--";
     }
 
     static std::string formatLatency(uint16_t latencyUs) {

@@ -70,7 +70,7 @@ public:
     void sample(uint8_t robotId, const SwarmClient::RobotState& s) {
         auto& entry = perRobot_[robotId];
         entry.buffers[(size_t)Metric::Latency].push((float)s.latencyUs);
-        entry.buffers[(size_t)Metric::Battery].push((float)s.battery);
+        entry.buffers[(size_t)Metric::Battery].push((float)s.batteryMv);
         entry.buffers[(size_t)Metric::MotorL].push((float)s.motorL);
         entry.buffers[(size_t)Metric::MotorR].push((float)s.motorR);
     }

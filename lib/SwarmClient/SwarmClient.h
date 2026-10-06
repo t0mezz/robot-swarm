@@ -62,11 +62,11 @@ static constexpr uint8_t SC_DBG_STRING  = 0x04;
 
 static constexpr uint8_t SC_STATUS_LOW_BATTERY = 0x04;
 static constexpr uint8_t SC_STATUS_ANNOUNCING  = 0x08;
-static constexpr uint8_t SC_STATUS_BAT_VALID   = 0x10;  // battery byte is real data, not "never measured"
+static constexpr uint8_t SC_STATUS_BAT_VALID   = 0x10;  // battery value is real data, not "never measured"
 
-// Battery telemetry byte -> volts (40mV/LSB). Only meaningful when the robot's
-// flags carry SC_STATUS_BAT_VALID.
-static inline float scBatteryVolts(uint8_t raw) { return raw * 0.04f; }
+// Battery telemetry (uint16 millivolts) -> volts. Only meaningful when the
+// robot's flags carry SC_STATUS_BAT_VALID.
+static inline float scBatteryVolts(uint16_t mv) { return mv * 0.001f; }
 
 // ── SwarmClient ───────────────────────────────────────────────────────────────
 
@@ -75,7 +75,7 @@ public:
     struct RobotState {
         bool     known     = false;
         uint8_t  mac[6]    = {};
-        uint8_t  battery   = 0;
+        uint16_t batteryMv = 0;
         uint8_t  flags     = 0;
         int8_t   motorL    = 0;
         int8_t   motorR    = 0;
@@ -435,14 +435,14 @@ private:
                 }
                 break;
             case SC_MSG_TELEMETRY:
-                if (plen >= 7 && p[0] < SC_MAX_ROBOTS) {
+                if (plen >= 8 && p[0] < SC_MAX_ROBOTS) {
                     uint8_t id = p[0];
-                    m_robots[id].known    = true;
-                    m_robots[id].battery  = p[1];
-                    m_robots[id].flags    = p[2];
-                    m_robots[id].motorL   = static_cast<int8_t>(p[3]);
-                    m_robots[id].motorR   = static_cast<int8_t>(p[4]);
-                    m_robots[id].uptime   = static_cast<uint16_t>(p[5] | (p[6] << 8));
+                    m_robots[id].known     = true;
+                    m_robots[id].batteryMv = static_cast<uint16_t>(p[1] | (p[2] << 8));
+                    m_robots[id].flags     = p[3];
+                    m_robots[id].motorL    = static_cast<int8_t>(p[4]);
+                    m_robots[id].motorR    = static_cast<int8_t>(p[5]);
+                    m_robots[id].uptime    = static_cast<uint16_t>(p[6] | (p[7] << 8));
                     m_robots[id].hasTelemetry = true;
                     m_robots[id].lastSeen = now;
                 }

@@ -245,7 +245,7 @@ int main(int argc, char** argv) {
             // metrics frame from the RP2040, so the battery byte is not a
             // reading of 0V — it's the absence of one. Emit null, never 0.
             if (r.flags & SC_STATUS_BAT_VALID)
-                appendf(line, "\"batteryV\":%.3f}", scBatteryVolts(r.battery));
+                appendf(line, "\"batteryV\":%.3f}", scBatteryVolts(r.batteryMv));
             else
                 line += "\"batteryV\":null}";
         }

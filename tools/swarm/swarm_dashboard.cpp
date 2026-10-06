@@ -258,8 +258,8 @@ static void drawUI(const Snapshot& snap, const TelemetryHistory& hist,
         // never received a metrics frame from the RP2040 — show "--", not 0.0V.
         if (r.flags & SC_STATUS_BAT_VALID) {
             appendf(f, "bat %s %4.2fV  ",
-                    peakMeter(scBatteryVolts(r.battery), BATTERY_MAX_V, layout.meterWidth).c_str(),
-                    scBatteryVolts(r.battery));
+                    peakMeter(scBatteryVolts(r.batteryMv), BATTERY_MAX_V, layout.meterWidth).c_str(),
+                    scBatteryVolts(r.batteryMv));
         } else {
             appendf(f, "bat %s %5s  ", peakMeter(0.0f, BATTERY_MAX_V, layout.meterWidth).c_str(), "--");
         }

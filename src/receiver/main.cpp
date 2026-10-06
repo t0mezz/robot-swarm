@@ -122,7 +122,7 @@ static int8_t   currentMotorL = 0;
 static int8_t   currentMotorR = 0;
 static uint16_t lastLatencyUs = 0;
 static uint8_t  statusFlags   = STATUS_ANNOUNCING;
-static uint8_t  lastBattery   = 0;  // from MSG_METRICS, uint8 0-255 -> 0-5V
+static uint16_t lastBatteryMv = 0;  // from MSG_METRICS, millivolts
 
 // ═══════════════════════════════════════════════════════════════
 // ESP-NOW Callback
@@ -283,9 +283,9 @@ static void processUartFrame(const uint8_t* data, uint8_t len) {
         buildFrame(frame, MSG_DEBUG, outPayload, payloadLen + 1);
         Transport::sendToDongle(frame, frameSize(payloadLen + 1));
     } else if (data[2] == MSG_METRICS) {
-        // Batteriespannung vom RP2040: [battery] (uint8, 40mV/LSB)
-        if (data[3] >= 1) {
-            lastBattery  = data[4];
+        // Batteriespannung vom RP2040: [mV lo, mV hi] (uint16 LE)
+        if (data[3] >= 2) {
+            lastBatteryMv = (uint16_t)(data[4] | (data[5] << 8));
             statusFlags |= STATUS_BAT_VALID;
         }
     }
@@ -335,9 +335,10 @@ static void uart_send_robot_id() {
 static void sendTelemetry() {
     uint16_t uptime = (uint16_t)((millis() - bootTime) / 1000);
 
-    uint8_t payload[7] = {
+    uint8_t payload[8] = {
         ROBOT_ID,
-        lastBattery,
+        (uint8_t)(lastBatteryMv & 0xFF),
+        (uint8_t)(lastBatteryMv >> 8),
         statusFlags,
         (uint8_t)currentMotorL,
         (uint8_t)currentMotorR,
@@ -345,9 +346,9 @@ static void sendTelemetry() {
         (uint8_t)(uptime >> 8)
     };
 
-    uint8_t frame[12];
-    buildFrame(frame, MSG_TELEMETRY, payload, 7);
-    Transport::sendToDongle(frame, 12);
+    uint8_t frame[13];
+    buildFrame(frame, MSG_TELEMETRY, payload, 8);
+    Transport::sendToDongle(frame, 13);
 }
 
 static bool isMyTDMASlot() {

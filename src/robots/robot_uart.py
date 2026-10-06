@@ -139,14 +139,15 @@ class UARTProtocol:
         payload = struct.pack('bb', left, right)
         self.send(MSG_SPEED, payload)
 
-    def send_metrics(self, battery_byte: int):
+    def send_metrics(self, battery_mv: int):
         """
         Sendet die Batteriespannung an den ESP32 (MSG_METRICS).
 
-        :param battery_byte: Spannung, 40mV/LSB (0..255 -> 0-10.2V), wird vom
-                             ESP32 1:1 in den MSG_TELEMETRY-Batterie-Byte übernommen
+        :param battery_mv: Spannung in mV (uint16, little-endian), wird vom
+                           ESP32 1:1 in MSG_TELEMETRY übernommen
         """
-        self.send(MSG_METRICS, bytes([battery_byte & 0xFF]))
+        battery_mv = max(0, min(0xFFFF, int(battery_mv)))
+        self.send(MSG_METRICS, struct.pack('<H', battery_mv))
 
     def send_debug(self, text, field_id: int = 0):
         """

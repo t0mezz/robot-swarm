@@ -211,7 +211,7 @@ static const char* CIRCLE_FILE     = CIRCLE_FILE_S.c_str();
 
 static cv::Point2f pixelToWorld(cv::Point2f px) {
     if (!g_hasH) return px;
-    std::vector<cv::Point2f> src = {px}, dst;
+    std::vector<cv::Point2f> src = {arucoUndistortPixel(px)}, dst;   // clicks are in the distorted image
     cv::perspectiveTransform(src, dst, g_H);
     return dst[0];
 }
@@ -220,7 +220,7 @@ static cv::Point2f worldToPixel(cv::Point2f w) {
     cv::Mat Hinv = g_H.inv();
     std::vector<cv::Point2f> src = {w}, dst;
     cv::perspectiveTransform(src, dst, Hinv);
-    return dst[0];
+    return arucoDistortPixel(dst[0]);
 }
 
 struct CalibState { std::vector<cv::Point2f> pixPts; bool done = false; };
@@ -269,7 +269,7 @@ static bool runCalibration(ArucoTracker& tracker) {
     if (scanf("%f %f", &W, &H) != 2 || W <= 0 || H <= 0) { printf("Invalid.\n"); return false; }
 
     std::vector<cv::Point2f> worldPts = {{0,0},{W,0},{W,H},{0,H}};
-    g_H    = cv::findHomography(cs.pixPts, worldPts);
+    g_H    = cv::findHomography(arucoUndistortPixels(cs.pixPts), worldPts);
     g_hasH = !g_H.empty();
     if (g_hasH) {
         tracker.setHomography(cs.pixPts, worldPts);
@@ -1104,7 +1104,7 @@ int main(int argc, char* argv[]) {
             hud.row({
                 DemoHud::fmt("%d", id),
                 vis ? "YES" : "NO",
-                ss.known ? DemoHud::formatBattery(ss.battery) : "--",
+                ss.known ? DemoHud::formatBattery(ss.batteryMv) : "--",
                 ss.known ? DemoHud::formatLatency(ss.latencyUs) : "--",
                 vis ? DemoHud::fmt("%+d", (int)motors[id][0]) : "--",
                 vis ? DemoHud::fmt("%+d", (int)motors[id][1]) : "--",

@@ -55,7 +55,7 @@ static void setH(const cv::Mat& H) {
 
 static cv::Point2f pixelToWorld(cv::Point2f px) {
     if (!g_hasH) return px;
-    std::vector<cv::Point2f> src = {px}, dst;
+    std::vector<cv::Point2f> src = {arucoUndistortPixel(px)}, dst;   // clicks are in the distorted image
     cv::perspectiveTransform(src, dst, g_H);
     return dst[0];
 }
@@ -63,7 +63,7 @@ static cv::Point2f worldToPixel(cv::Point2f w) {
     if (!g_hasH) return w;
     std::vector<cv::Point2f> src = {w}, dst;
     cv::perspectiveTransform(src, dst, g_Hinv);
-    return dst[0];
+    return arucoDistortPixel(dst[0]);
 }
 
 // ── Points ────────────────────────────────────────────────────────────────────
@@ -124,7 +124,7 @@ static bool runCalibration(ArucoTracker& tracker, const char* win) {
     if (scanf("%f %f", &W, &H) != 2 || W <= 0 || H <= 0) return false;
 
     std::vector<cv::Point2f> worldPts = {{0,0},{W,0},{W,H},{0,H}};
-    cv::Mat H_ = cv::findHomography(cs.pixPts, worldPts);
+    cv::Mat H_ = cv::findHomography(arucoUndistortPixels(cs.pixPts), worldPts);
     if (H_.empty()) return false;
     tracker.setHomography(cs.pixPts, worldPts);
     tracker.saveHomography(HOMOGRAPHY_FILE);
@@ -145,7 +145,7 @@ static void drawGrid(cv::Mat& disp, cv::Size frameSz) {
         {0,0}, {(float)frameSz.width,0}, {(float)frameSz.width,(float)frameSz.height}, {0,(float)frameSz.height}
     };
     std::vector<cv::Point2f> worldCorners;
-    cv::perspectiveTransform(corners, worldCorners, g_H);
+    cv::perspectiveTransform(arucoUndistortPixels(corners), worldCorners, g_H);
 
     float minX = worldCorners[0].x, maxX = worldCorners[0].x;
     float minY = worldCorners[0].y, maxY = worldCorners[0].y;

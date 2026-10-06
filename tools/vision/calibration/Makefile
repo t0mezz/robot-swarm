@@ -34,7 +34,7 @@ LIBHDRS  = $(LIBDIR)/ArucoTracker/aruco_tracker.h \
 
 .PHONY: all clean
 
-all: $(BUILD_DIR)/calibrate
+all: $(BUILD_DIR)/calibrate $(BUILD_DIR)/intrinsics $(BUILD_DIR)/homography
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -44,5 +44,15 @@ $(BUILD_DIR)/calibrate: calib_main.cpp $(LIBHDRS) $(LIBDIR)/ArucoTracker/basler_
 	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/Calibration \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(EXTRA_LDFLAGS)
 
+# Lens calibration (ChArUco board) and pixel -> mm homography. Camera + OpenCV
+# only: no SwarmClient, no hub.
+$(BUILD_DIR)/intrinsics: intrinsics.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/camera_intrinsics.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
+	    -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(EXTRA_LDFLAGS)
+
+$(BUILD_DIR)/homography: homography.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/camera_intrinsics.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
+	    -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(EXTRA_LDFLAGS)
+
 clean:
-	rm -f $(BUILD_DIR)/calibrate
+	rm -f $(BUILD_DIR)/calibrate $(BUILD_DIR)/intrinsics $(BUILD_DIR)/homography

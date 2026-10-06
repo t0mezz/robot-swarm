@@ -1,4 +1,109 @@
-# ArUco Tracker Calibration
+# Camera calibration
+
+Three separate tools, run in this order when you set the camera up:
+
+| Tool | What it fixes | Writes |
+|------|---------------|--------|
+| `make_charuco.py` + `build/intrinsics` | **The lens**: focal length, principal point, distortion | `tools/vision/camera_intrinsics.yml` |
+| `build/homography` | **The arena**: undistorted pixels to world millimetres | `tools/vision/aruco_homography.yml` |
+| `build/calibrate` | **The detector**: ArUco thresholds for this lighting (section below) | `aruco_tracker_config_optimised.json` |
+
+Each one needs the camera to itself — close any other vision tool first.
+
+## 1. Lens calibration (`intrinsics`)
+
+The Basler C125-0618-5M is a plain 6 mm rectilinear lens, so this fits the
+standard model (`k1 k2 [k3] p1 p2`) with `cv::calibrateCamera`. It is **not** the
+fisheye model (`FisheyeUndistortPreprocessor` in `aruco_tracker.h` is for fisheye
+lenses and is unused here).
+
+**Print the board:**
+
+```sh
+pip install opencv-contrib-python numpy pillow
+python3 make_charuco.py                      # -> charuco_board.pdf / .png / .json
+python3 make_charuco.py --cam-height-mm 1500 # check it is still detectable from 1.5 m
+```
+
+A3, 10 x 7 squares of 36 mm, `DICT_4X4_50` — the dictionary the tracker itself
+detects, whose few large cells survive distance and blur. The script checks that
+OpenCV finds all inner corners on a render shrunk to the camera's pixel density and
+prints the marker cell size in pixels (aim for >= 6). Print at **100 % / actual
+size**, mount it on something rigid and flat (aluminium composite, glass; not foam
+board), matt finish so the lights do not glare. Check the 100 mm scale bar with a
+ruler, then **measure the squares with calipers** over several squares and pass the
+result as `--square-mm`: the calibration is only as accurate as the board.
+
+**Capture and fit:**
+
+```sh
+cd tools && make        # builds build/intrinsics and build/homography
+./build/intrinsics --square-mm 36.02 --cam-height-mm 1200
+```
+
+Keys: `SPACE` take a view, `a` auto-capture (waits for a steady board in a new
+place), `u` undo, `ENTER` calibrate, `q` quit. Aim for 15-25 views. A coverage grid
+is drawn over the live image: red cells have no board corners yet. Distortion is
+largest at the edges, so bring the board into **every corner of the frame** and tilt
+it (up to ~45 degrees). Frames are saved to `./intrinsics_frames` so
+`--use-cache` re-runs the fit without the camera; `--images <dir>` calibrates from
+any set of photos.
+
+It prints per-view error, every parameter with its standard deviation, the
+coverage, how far the correction moves a pixel (in px, and in mm at the arena with
+`--cam-height-mm`) and a verdict. Views that do not fit the model (bent board,
+motion blur) are dropped automatically (`--no-prune` keeps them). `k3` and
+`aspect` are fixed by default (`--k3`, `--free-aspect` free them), because a free
+k3 overfits a 40 degree lens unless the corners are very well covered.
+
+`./build/intrinsics --verify` shows the live image with a straight-line grid; `u`
+toggles raw / undistorted — a straight edge near the border must stay straight.
+
+**What the tracker does with it:** `ArucoTracker::open()` loads
+`camera_intrinsics.yml` and undistorts the *tracked points* (marker centre and
+heading tip), not the frames — a full-frame remap costs more than the ArUco
+detection at 115 fps. It is ignored (with a message) if the resolution or the
+sensor ROI offset (`offset_x/offset_y`) differ from when it was made;
+`"use_intrinsics": 0` in `aruco_tracker_config.json` turns it off.
+
+## 2. Homography (`homography`)
+
+```sh
+./build/homography --arena 800 600 --plane-mm 35        # click reference points
+./build/homography --board --arena 800 600 --plane-mm 35 # lay the ChArUco board down
+```
+
+Fits pixel -> world mm in **undistorted** pixel space and stamps
+`undistorted: 1` into `aruco_homography.yml`; the tracker rejects a homography made
+with the other setting, so redo this after (re)calibrating the lens. It replaces the
+4-corner `c` / `--calibrate` flow in the demos (which still works, but gives you a
+4-point fit with no error estimate).
+
+*Arena mode:* mark the arena (tape at the corners, the four edge midpoints and the
+centre) and click them in order: TL TR BR BL, top / right / bottom / left mid,
+centre. A magnifier follows the cursor, arrow keys nudge the last point by 0.25 px,
+`r` snaps clicks to the nearest image corner. With 9 points it reports each point's
+residual and a **leave-one-out error** (fit without the point, predict it) — the
+honest accuracy. With only 4 it tells you the error is zero by construction.
+
+*Board mode:* lay the board flat and upright in the arena, `SPACE`, type where its
+top-left outer corner sits in the arena frame (mm; origin at the arena's top-left,
+x right, y down), and repeat in several places. Every inner corner (54 by default)
+is a sub-pixel reference point, and each placement is held out in turn. Take the
+robots out first: their markers share ids with the board's.
+
+Afterwards the 100 mm world grid is drawn back onto the live image — it should lie
+on the floor features; `s` saves, `b` goes back, `q` quits.
+
+**Calibrate at the height of the robot markers.** A homography is exact for one
+plane. Markers a few cm above the floor, seen at distance r from the optical axis,
+land `h·r/H_cam` off a floor calibration: centimetres at the arena edge. Put the
+board / tape at marker height and pass `--plane-mm` so it is recorded.
+
+Existing ring/circle fixtures (`car_following_ring.yml`, `circle_demo.yml`) are in
+world millimetres of the *old* frame: re-set them if the origin or arena changed.
+
+## 3. ArUco detector tuning (`calibrate`)
 
 Tunes `aruco_tracker_config.json` for a specific lighting environment using
 CMA-ES (Covariance Matrix Adaptation Evolution Strategy).  Run once when you
@@ -121,15 +226,12 @@ Refinements worth adding beyond the basic scoring:
 - **Per-robot speed weighting** — robots at the edge of the frame move through
   more distortion; weight their detection rate lower in the score
 
-### Fisheye calibration (`objective_fisheye.h`)
-A `FisheyeObjective : IObjective` that drives a checkerboard capture session,
-calls `cv::fisheye::calibrate`, writes `fisheye_calib.yaml`, and then runs the
-ArUco optimisation with `FisheyeUndistortPreprocessor` active.  This would make
-the full "new room" setup a single `./calibrate --fisheye` command.
-
-The `FisheyeUndistortPreprocessor` already exists in `aruco_tracker.h` and slots
-directly into the preprocessor pipeline — the objective just needs to load the
-resulting YAML and prepend the stage before scoring.
+### Lens correction inside the detector objective
+`objective_static.h` scores detection on the raw (distorted) frames, which is what
+the live tracker sees too — the lens model is applied to points afterwards, so the
+two stay consistent. If detection near the frame edge ever becomes the limit,
+a frame-level stage could be added here, at the cost described in
+`camera_intrinsics.h`.
 
 ### GP with ARD kernel (`gp_ard.h`)
 Drop-in replacement for CMA-ES implementing `IOptimizer`.  Gaussian Process

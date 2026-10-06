@@ -60,7 +60,11 @@ static constexpr float WAYPOINT_STEP   = 25.0f;  // mm between sampled waypoints
 static constexpr int   MAX_ROBOTS      = 32;
 
 static const char* SHAPE_FILE      = "/tmp/shape_demo.yml";
-static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
+// Exe-relative like circle_demo.cpp/car_following.cpp (arucoVisionDataPath() in
+// aruco_tracker.h), so every tool shares one calibration and it survives a
+// reboot instead of living in /tmp.
+static const std::string HOMOGRAPHY_FILE_S = arucoVisionDataPath("aruco_homography.yml");
+static const char* HOMOGRAPHY_FILE = HOMOGRAPHY_FILE_S.c_str();
 
 // ── Mode / tool ───────────────────────────────────────────────────────────────
 
@@ -90,7 +94,7 @@ static bool    g_hasH = false;
 
 static cv::Point2f pixelToWorld(cv::Point2f px) {
     if (!g_hasH) return px;
-    std::vector<cv::Point2f> src = {px}, dst;
+    std::vector<cv::Point2f> src = {arucoUndistortPixel(px)}, dst;   // clicks are in the distorted image
     cv::perspectiveTransform(src, dst, g_H);
     return dst[0];
 }
@@ -99,7 +103,7 @@ static cv::Point2f worldToPixel(cv::Point2f w) {
     cv::Mat Hinv = g_H.inv();
     std::vector<cv::Point2f> src = {w}, dst;
     cv::perspectiveTransform(src, dst, Hinv);
-    return dst[0];
+    return arucoDistortPixel(dst[0]);
 }
 
 // ── Shape system ──────────────────────────────────────────────────────────────
@@ -318,7 +322,7 @@ struct RobotTelRow {
     int      id;
     bool     visible;
     bool     known;
-    uint8_t  battery;
+    uint16_t battery;  // mV
     uint16_t latencyUs;
     int8_t   motorL, motorR;
     float    distMm;         // -1 = no waypoint assigned
@@ -399,7 +403,7 @@ static bool runCalibration(ArucoTracker& tracker, const char* win) {
     if (scanf("%f %f", &W, &H) != 2 || W <= 0 || H <= 0) return false;
 
     std::vector<cv::Point2f> worldPts = {{0,0},{W,0},{W,H},{0,H}};
-    g_H    = cv::findHomography(cs.pixPts, worldPts);
+    g_H    = cv::findHomography(arucoUndistortPixels(cs.pixPts), worldPts);
     g_hasH = !g_H.empty();
     if (g_hasH) {
         tracker.setHomography(cs.pixPts, worldPts);
@@ -738,7 +742,7 @@ int main(int argc, char* argv[]) {
                 }
             }
             rows.push_back({id, vis, ss.known || vis,
-                            ss.battery, ss.latencyUs, mL, mR, distMm});
+                            ss.batteryMv, ss.latencyUs, mL, mR, distMm});
         }
 
         float pathLen = 0.f;

@@ -101,7 +101,7 @@ static bool runCalibration(ArucoTracker& tracker, const char* win) {
     if (scanf("%f %f", &W, &H) != 2 || W <= 0 || H <= 0) return false;
 
     std::vector<cv::Point2f> worldPts = {{0,0},{W,0},{W,H},{0,H}};
-    cv::Mat H_ = cv::findHomography(cs.pixPts, worldPts);
+    cv::Mat H_ = cv::findHomography(arucoUndistortPixels(cs.pixPts), worldPts);
     if (H_.empty()) return false;
     tracker.setHomography(cs.pixPts, worldPts);
     tracker.saveHomography(HOMOGRAPHY_FILE);

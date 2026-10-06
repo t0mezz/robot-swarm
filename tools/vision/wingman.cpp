@@ -267,14 +267,18 @@ static void assignNewRobots(
 
 static cv::Mat  g_H;
 static bool     g_hasH = false;
-static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
+// Exe-relative like circle_demo.cpp/car_following.cpp (arucoVisionDataPath() in
+// aruco_tracker.h), so every tool shares one calibration and it survives a
+// reboot instead of living in /tmp.
+static const std::string HOMOGRAPHY_FILE_S = arucoVisionDataPath("aruco_homography.yml");
+static const char* HOMOGRAPHY_FILE = HOMOGRAPHY_FILE_S.c_str();
 
 static cv::Point2f worldToPixel(cv::Point2f w) {
     if (!g_hasH) return w;
     cv::Mat Hinv = g_H.inv();
     std::vector<cv::Point2f> src = {w}, dst;
     cv::perspectiveTransform(src, dst, Hinv);
-    return dst[0];
+    return arucoDistortPixel(dst[0]);
 }
 
 struct CalibState { std::vector<cv::Point2f> pts; bool done = false; };
@@ -314,7 +318,7 @@ static bool runCalibration(ArucoTracker& tracker) {
     if (scanf("%f %f", &W, &H) != 2 || W <= 0 || H <= 0) { printf("Invalid.\n"); return false; }
 
     std::vector<cv::Point2f> world = {{0,0},{W,0},{W,H},{0,H}};
-    g_H    = cv::findHomography(cs.pts, world);
+    g_H    = cv::findHomography(arucoUndistortPixels(cs.pts), world);
     g_hasH = !g_H.empty();
     if (g_hasH) {
         tracker.setHomography(cs.pts, world);
@@ -760,7 +764,7 @@ int main(int argc, char* argv[]) {
                 hud.row({
                     DemoHud::fmt("%d", id),
                     vis ? "YES" : "NO",
-                    ss.known ? DemoHud::formatBattery(ss.battery) : "--",
+                    ss.known ? DemoHud::formatBattery(ss.batteryMv) : "--",
                     ss.known ? DemoHud::formatLatency(ss.latencyUs) : "--",
                     vis ? DemoHud::fmt("%+d", (int)mL) : "--",
                     vis ? DemoHud::fmt("%+d", (int)mR) : "--",

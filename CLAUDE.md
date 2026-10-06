@@ -56,7 +56,7 @@ make test         # builds and runs tests/build/test_protocol
 make clean        # removes tests/build/
 ```
 
-Covers the CRC-8 framing pure functions (`crc8`, `buildFrame`, `validateFrame`, `frameSize` in `lib/SwarmProtocol/protocol.h`), the pose-hub publish/subscribe round trip (`test_pose_hub.cpp` — real sockets, no camera), the car-following models (`test_car_following.cpp`), the ring bookkeeping + run-state machine behind them (`test_car_following_ring.cpp`), and `battery_log`'s speed/stop bookkeeping (`test_battery_log.cpp`) with a small assert-based harness — no test framework dependency. There's no CI configured yet. Formation-math unit tests are still pending extraction of that logic into testable pure functions (see `TODO.md` under "Tooling / Tests"); `lib/CarFollowing/car_following.h` is the model for how that extraction should look.
+Covers the lens model's round trips and file-compatibility rules (`test_camera_intrinsics.cpp`), the CRC-8 framing pure functions (`crc8`, `buildFrame`, `validateFrame`, `frameSize` in `lib/SwarmProtocol/protocol.h`), the pose-hub publish/subscribe round trip (`test_pose_hub.cpp` — real sockets, no camera), the car-following models (`test_car_following.cpp`), the ring bookkeeping + run-state machine behind them (`test_car_following_ring.cpp`), and `battery_log`'s speed/stop bookkeeping (`test_battery_log.cpp`) with a small assert-based harness — no test framework dependency. There's no CI configured yet. Formation-math unit tests are still pending extraction of that logic into testable pure functions (see `TODO.md` under "Tooling / Tests"); `lib/CarFollowing/car_following.h` is the model for how that extraction should look.
 
 ## Architecture
 
@@ -85,6 +85,16 @@ The Basler admits exactly one application — a second `open()` gets `0xE1018006
 The rule this buys: **only tools that need pixels own the camera.** Every vision demo calls `debugFrame()`/`cv::imshow`, so they own it and publish. `swarm_telemetry_json` needs poses only, so it subscribes by default and a demo can always start alongside it. `--camera` makes it own the device instead, for standalone use — at the cost of locking demos out.
 
 `pose_hub.h` is deliberately free of OpenCV and pylon includes, so subscribers link neither. Frames are *not* shared (2048² at ~116 fps is ~470 MB/s — that needs shared memory, see `TODO.md` under "Webserver / Headless").
+
+### Lens and homography calibration: points are undistorted, frames never are
+
+`lib/ArucoTracker/camera_intrinsics.h` holds the lens model (K, D) that `tools/vision/calibration/intrinsics.cpp` fits from a printed ChArUco board (`make_charuco.py`, `DICT_4X4_50`). The camera is a plain 6 mm rectilinear Basler lens, so this is the standard `calibrateCamera` model — **not** the fisheye one (`FisheyeUndistortPreprocessor` is unused and nothing writes its YAML).
+
+- **Undistort points, not frames.** `ArucoTracker` undistorts the marker centre and heading tip before the homography; a full-frame remap costs more than the whole ArUco detection at 115 fps. `RobotPose::px/py` and `debugFrame()` stay in the raw, distorted image, so anything that draws or clicks on it converts at the boundary.
+- **Pixel space has two flavours, and the homography records which.** `aruco_homography.yml` carries `undistorted: 0/1`; `loadHomography()` refuses one fitted in the other space, as it already does for a different resolution. `camera_intrinsics.yml` is likewise rejected if the resolution or the `offset_x/offset_y` sensor ROI differ (K's principal point moves with the ROI).
+- **Tool-local `pixelToWorld`/`worldToPixel` helpers** (every demo has its own copy) call `arucoUndistortPixel()` / `arucoDistortPixel()` around the homography, and their own `findHomography(cs.pixPts, …)` calibrate flows go through `arucoUndistortPixels()`. Both are the identity without a loaded lens, so the old behaviour is unchanged. New tools doing click-to-world must do the same.
+- **`mirror_input`:** the tracker flips frames before detection, but K and D describe the unflipped sensor. `CameraIntrinsics::mirror` un-flips points before the lens model and flips back after.
+- **`tools/vision/calibration/homography.cpp`** replaces the 4-corner click flow for serious calibration: more points (arena marks, or ChArUco placements), sub-pixel, and a leave-one-out / leave-one-placement-out error. A 4-point fit has zero residual by construction; only held-out error says anything. It should be run at the plane of the robot markers (`--plane-mm`): a floor calibration is off by `h·r/H_cam` for markers at height `h`.
 
 ### Robot registration and addressing
 
@@ -166,7 +176,7 @@ src/dongle, src/receiver   — PlatformIO firmware (C++), built/flashed independ
 src/robots/                — MicroPython firmware for the RP2040, deployed without a build step
 lib/SwarmProtocol/         — wire protocol shared by both firmware targets (canonical C++ definition)
 lib/SwarmClient/           — header-only PC client library; new PC tools should build on this
-lib/ArucoTracker/          — camera + ArUco tracking abstraction (Basler pylon + OpenCV)
+lib/ArucoTracker/          — camera + ArUco tracking abstraction (Basler pylon + OpenCV); camera_intrinsics.h is the lens model (OpenCV only)
 lib/CarFollowing/          — car-following models, ring bookkeeping + run state, localhost HTTP bridge (no OpenCV/pylon/SwarmClient)
 lib/BatteryLog/            — battery_log's row/stop/schedule bookkeeping (no OpenCV/pylon/SwarmClient)
 tools/                     — Makefile + PC tool entry points (game.cpp, vision/*.cpp, swarm/*.cpp); binaries land in tools/build/

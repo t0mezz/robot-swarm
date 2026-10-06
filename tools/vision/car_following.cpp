@@ -372,7 +372,7 @@ static cv::Mat g_H, g_Hinv;
 
 static cv::Point2f pixelToWorld(cv::Point2f px) {
     if (g_H.empty()) return px;
-    std::vector<cv::Point2f> src = {px}, dst;
+    std::vector<cv::Point2f> src = {arucoUndistortPixel(px)}, dst;   // clicks are in the distorted image
     cv::perspectiveTransform(src, dst, g_H);
     return dst[0];
 }
@@ -381,7 +381,8 @@ static cv::Point worldToPixel(cv::Point2f w) {
     if (g_Hinv.empty()) return {(int)w.x, (int)w.y};
     std::vector<cv::Point2f> src = {w}, dst;
     cv::perspectiveTransform(src, dst, g_Hinv);
-    return {(int)dst[0].x, (int)dst[0].y};
+    cv::Point2f q = arucoDistortPixel(dst[0]);   // back into the distorted image we draw on
+    return {(int)q.x, (int)q.y};
 }
 
 // Resolve a path next to the executable, so the tool works from any cwd —
@@ -1538,7 +1539,7 @@ int main(int argc, char* argv[]) {
                      run.aligning() ? "-" : DemoHud::fmt("%.2f", c->measured),
                      DemoHud::fmt("%+d", (int)motors[id][0]),
                      DemoHud::fmt("%+d", (int)motors[id][1]),
-                     ss.known ? DemoHud::formatBattery(ss.battery) : "--"},
+                     ss.known ? DemoHud::formatBattery(ss.batteryMv) : "--"},
                     DemoHud::COL_OK);
         }
         hud.drawTopRight(disp);

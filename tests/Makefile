@@ -7,7 +7,7 @@ BUILD_DIR = build
 
 .PHONY: all test clean
 
-all: $(BUILD_DIR)/test_protocol $(BUILD_DIR)/test_pose_hub $(BUILD_DIR)/test_car_following $(BUILD_DIR)/test_car_following_ring $(BUILD_DIR)/test_battery_log
+all: $(BUILD_DIR)/test_protocol $(BUILD_DIR)/test_pose_hub $(BUILD_DIR)/test_car_following $(BUILD_DIR)/test_car_following_ring $(BUILD_DIR)/test_battery_log $(BUILD_DIR)/test_camera_intrinsics
 
 test: all
 	./$(BUILD_DIR)/test_protocol
@@ -15,6 +15,7 @@ test: all
 	./$(BUILD_DIR)/test_car_following
 	./$(BUILD_DIR)/test_car_following_ring
 	./$(BUILD_DIR)/test_battery_log
+	./$(BUILD_DIR)/test_camera_intrinsics
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -37,6 +38,10 @@ $(BUILD_DIR)/test_car_following_ring: test_car_following_ring.cpp ../lib/CarFoll
 # battery_log.h is the camera-free half of tools/vision/battery_log.cpp.
 $(BUILD_DIR)/test_battery_log: test_battery_log.cpp ../lib/BatteryLog/battery_log.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $< -o $@
+
+# camera_intrinsics.h needs OpenCV (calib3d) but no camera or pylon.
+$(BUILD_DIR)/test_camera_intrinsics: test_camera_intrinsics.cpp ../lib/ArucoTracker/camera_intrinsics.h | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(shell pkg-config --cflags opencv4) $< -o $@ $(shell pkg-config --libs opencv4)
 
 clean:
 	rm -rf $(BUILD_DIR)

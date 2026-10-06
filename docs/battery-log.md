@@ -40,9 +40,9 @@ Flipping that flag invalidates every comparison with earlier runs.
     poses go out on /tmp/vision_hub.sock for the dashboard)     ▼
                                                    ┌────────────────────────┐
  robot RP2040                                      │  tools/vision/         │
-   battery.get_level_millivolts() every 2 s        │  battery_log.cpp       │
+   mean of ~200 ADC reads, sent every 2 s         │  battery_log.cpp       │
    └► MSG_METRICS ─► receiver ESP32                │                        │
-        └► MSG_TELEMETRY (battery byte, 40 mV/LSB, │  orbit controller ─────┼──► SwarmClient
+        └► MSG_TELEMETRY (battery mV, uint16,     │  orbit controller ─────┼──► SwarmClient
              BAT_VALID flag) ─► dongle ─► swarm_hub│  (motor units)         │      └► swarm_hub ─► robot
              ─► SwarmClient::robotState(id) ──────►│                        │
                                                    │  lib/BatteryLog/       │
@@ -55,10 +55,11 @@ Flipping that flag invalidates every comparison with earlier runs.
                                                                │
                                                                ▼
                                     tools/analysis/battery_log_plot.py  (runs compared)
+                                    tools/analysis/battery_log_view.py  (one run, interactive)
 ```
 
-No new wire-protocol messages. The battery byte already rides in
-`MSG_TELEMETRY`, so the "keep it at three" rule for the protocol is untouched.
+No new wire-protocol messages. The battery voltage already rides in
+`MSG_TELEMETRY` (as uint16 millivolts), so the "keep it at three" rule for the protocol is untouched.
 
 ## Components
 
@@ -68,6 +69,7 @@ No new wire-protocol messages. The battery byte already rides in
 | `lib/BatteryLog/battery_log.h` | Camera-free bookkeeping: rows, stop criteria, rest schedule, rolling median | the standard library only |
 | `tests/test_battery_log.cpp` | Unit tests for the header, using synthetic orbits of known geometry | the header |
 | `tools/analysis/battery_log_plot.py` | Fits across runs; a figure if matplotlib is installed | stdlib (matplotlib optional) |
+| `tools/analysis/battery_log_view.py` | Zoomable viewer for one run's CSV | matplotlib, numpy (fetched by `uv run`) |
 
 This is the same split as `lib/CarFollowing/`: the tool does only vision,
 control and I/O, and everything that can be tested without hardware lives in
@@ -168,18 +170,19 @@ scale error in the calibration cancels out once speed is normalised per run.
 
 ## Battery reading
 
-`SwarmClient::robotState(id)` gives the battery as a telemetry byte at
-40 mV/LSB. A reading is **valid** only if all of these hold:
+`SwarmClient::robotState(id)` gives the battery as `batteryMv`, in
+millivolts. A reading is **valid** only if all of these hold:
 
-- `SC_STATUS_BAT_VALID` is set (a byte of 0 without it means "never measured",
+- `SC_STATUS_BAT_VALID` is set (a value of 0 without it means "never measured",
   not an empty battery);
-- the byte is non-zero;
+- the value is non-zero;
 - the telemetry is fresher than `TELEMETRY_STALE_S` (3 s).
 
 Two properties of the reading shape the rest of the design:
 
-- **Coarse resolution.** Four NiMH cells lose about 1 V over a full discharge,
-  so the reading moves through only about 25 steps of 40 mV.
+- **Averaged.** The robot adds one ADC read per 10 ms PID tick to a sum and
+  sends the mean every 2 s, so ADC noise and motor-PWM ripple are smoothed and
+  the value keeps the ADC's full 1 mV resolution on the wire.
 - **Repeated samples.** The robot samples every 2 s (`BAT_INTERVAL_MS`), and
   telemetry repeats the last sample, so the PC can't tell a new reading from a
   repeated one. That is why the low-voltage stop is debounced by **time**
@@ -256,6 +259,20 @@ end reason. It then fits all runs together on **speed / v0**, because robots
 differ in friction, gearing and wheel wear far more than in how their speed
 responds to voltage.
 
+### Interactive viewer
+
+`battery_log_view.py` opens one window per run with the in-tool plot's panels
+plus the sag per rest and the orbit quality (radial error, mean |turn|). The
+time panels share one axis, every y-axis rescales to the data in view, and the
+speed-vs-voltage panel and its fit follow the time window. Zoom with the
+toolbar or the scroll wheel; `--range FROM TO` (minutes) opens zoomed in.
+
+The smoothed speed is a trimmed mean over a **whole number of laps** (at least
+30 s), not a fixed 30 s median. The per-row speed varies around the lap with
+the robot's position on the ring, so a window of a fractional lap count leaves
+a ripple as large as the battery effect. The bimodal raw speeds come from the
+same lap pattern.
+
 ## Running an experiment
 
 ```bash
@@ -265,6 +282,7 @@ cd tools && make build/battery_log
 # real drain: fully charged cells, run until 4.0 V
 ./build/battery_log --robot 3 --cmd 60 --start
 python3 analysis/battery_log_plot.py battery_log_results/*.csv
+analysis/battery_log_view.py                 # newest run, zoomable (needs uv)
 ```
 
 Prerequisites: a saved ring (`car_following_ring.yml`, or `circle_demo.yml` as

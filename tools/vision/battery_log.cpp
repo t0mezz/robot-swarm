@@ -118,7 +118,8 @@ static cv::Point worldToPixel(cv::Point2f w) {
     if (g_Hinv.empty()) return {(int)w.x, (int)w.y};
     std::vector<cv::Point2f> src = {w}, dst;
     cv::perspectiveTransform(src, dst, g_Hinv);
-    return {(int)dst[0].x, (int)dst[0].y};
+    cv::Point2f q = arucoDistortPixel(dst[0]);   // back into the distorted image we draw on
+    return {(int)q.x, (int)q.y};
 }
 
 // car_following's ring fixture, read-only here: this tool never edits the
@@ -277,7 +278,7 @@ static void shadeRests(cv::Mat& img, const Axis& a, const std::vector<LogPoint>&
 static bool joined(const LogPoint& a, const LogPoint& b) { return b.tS - a.tS <= ROW_S * 1.5 + b.dtS; }
 
 static cv::Mat renderPlot(const std::vector<LogPoint>& pts, const std::string& title, int stopMv) {
-    const int W = 1100, H = 1020, mL = 80, mR = 30;
+    const int W = 1100, H = 1380, mL = 80, mR = 30;
     cv::Mat img(H, W, CV_8UC3, cv::Scalar(250, 250, 250));
     cv::putText(img, title, {mL, 28}, cv::FONT_HERSHEY_SIMPLEX, 0.55, INK, 1, cv::LINE_AA);
 
@@ -302,9 +303,9 @@ static cv::Mat renderPlot(const std::vector<LogPoint>& pts, const std::string& t
     for (auto& p : pts) if (p.mv > 0) { mvLo = std::min(mvLo, p.mv - 100); mvHi = std::max(mvHi, p.mv + 100); }
     mvLo = mvLo / 100 * 100; mvHi = (mvHi + 99) / 100 * 100;
 
-    Axis aS{{mL, 70, W - mL - mR, 360}, 0, xMax, 0, sMax};
-    Axis aV{{mL, 500, W - mL - mR, 230}, 0, xMax, (double)mvLo, (double)mvHi};
-    Axis aC{{mL, 800, W - mL - mR, 170}, (double)mvLo, (double)mvHi, 0, sMax};
+    Axis aS{{mL, 70, W - mL - mR, 720}, 0, xMax, 0, sMax};
+    Axis aV{{mL, 860, W - mL - mR, 230}, 0, xMax, (double)mvLo, (double)mvHi};
+    Axis aC{{mL, 1160, W - mL - mR, 170}, (double)mvLo, (double)mvHi, 0, sMax};
 
     // Speed vs time.
     shadeRests(img, aS, pts);
@@ -422,7 +423,7 @@ int main(int argc, char* argv[]) {
     // Speed has to be in mm for the log to mean anything, so unlike
     // car_following there is no pixel fallback.
     if (!tracker.loadHomography(HOMOGRAPHY_FILE)) {
-        fprintf(stderr, "[vision] no homography at %s — run `circle_demo --calibrate` first\n",
+        fprintf(stderr, "[vision] no usable homography at %s — run tools/build/homography first (it also rejects one made without/with a different lens correction)\n",
                 HOMOGRAPHY_FILE.c_str());
         return 1;
     }
@@ -493,9 +494,9 @@ int main(int argc, char* argv[]) {
         const auto& st = swarm.robotState((uint8_t)robotId);
         bool fresh = st.hasTelemetry &&
                      std::chrono::duration<float>(now - st.lastSeen).count() <= TELEMETRY_STALE_S;
-        valid   = fresh && (st.flags & SC_STATUS_BAT_VALID) && st.battery > 0;
+        valid   = fresh && (st.flags & SC_STATUS_BAT_VALID) && st.batteryMv > 0;
         lowFlag = fresh && (st.flags & SC_STATUS_LOW_BATTERY);
-        mv      = valid ? (int)std::lround(scBatteryVolts(st.battery) * 1000.f) : -1;
+        mv      = valid ? (int)st.batteryMv : -1;
     };
 
     auto sendMotors = [&](bool force) {

@@ -138,11 +138,15 @@ static void onMouse(int event, int x, int y, int, void*) {
 
 static cv::Mat  g_H;
 static bool     g_hasH = false;
-static const char* HOMOGRAPHY_FILE = "/tmp/aruco_homography.yml";
+// Exe-relative like circle_demo.cpp/car_following.cpp (arucoVisionDataPath() in
+// aruco_tracker.h), so every tool shares one calibration and it survives a
+// reboot instead of living in /tmp.
+static const std::string HOMOGRAPHY_FILE_S = arucoVisionDataPath("aruco_homography.yml");
+static const char* HOMOGRAPHY_FILE = HOMOGRAPHY_FILE_S.c_str();
 
 static cv::Point2f pixelToWorld(cv::Point2f px) {
     if (!g_hasH) return px;
-    std::vector<cv::Point2f> src = {px}, dst;
+    std::vector<cv::Point2f> src = {arucoUndistortPixel(px)}, dst;   // clicks are in the distorted image
     cv::perspectiveTransform(src, dst, g_H);
     return dst[0];
 }
@@ -193,7 +197,7 @@ static bool runCalibration(ArucoTracker& tracker) {
     if (scanf("%f %f", &W, &H) != 2 || W <= 0 || H <= 0) { printf("Invalid.\n"); return false; }
 
     std::vector<cv::Point2f> worldPts = {{0,0},{W,0},{W,H},{0,H}};
-    g_H    = cv::findHomography(cs.pixPts, worldPts);
+    g_H    = cv::findHomography(arucoUndistortPixels(cs.pixPts), worldPts);
     g_hasH = !g_H.empty();
     if (g_hasH) {
         tracker.setHomography(cs.pixPts, worldPts);
@@ -550,7 +554,7 @@ int main(int argc, char* argv[]) {
                 std::vector<cv::Point2f> ws = {{tgt.x, tgt.y}};
                 std::vector<cv::Point2f> ps;
                 cv::perspectiveTransform(ws, ps, Hinv);
-                p1 = ps[0];
+                p1 = arucoDistortPixel(ps[0]);
             } else {
                 p1 = cv::Point2f(tgt.x, tgt.y);
             }
@@ -564,7 +568,7 @@ int main(int argc, char* argv[]) {
                 cv::Mat Hinv = g_H.inv();
                 std::vector<cv::Point2f> src = {{tgt.x,tgt.y}}, dst;
                 cv::perspectiveTransform(src, dst, Hinv);
-                return dst[0];
+                return arucoDistortPixel(dst[0]);
             }() : cv::Point2f{tgt.x, tgt.y};
             cv::drawMarker(disp, tPix, {0,200,255}, cv::MARKER_CROSS, 20, 2);
             cv::line(disp, {(int)r.px,(int)r.py}, tPix, {0,200,255}, 1, cv::LINE_AA);
@@ -582,7 +586,7 @@ int main(int argc, char* argv[]) {
                     cv::Mat Hinv = g_H.inv();
                     std::vector<cv::Point2f> src = {{g_globalTarget.x,g_globalTarget.y}}, dst;
                     cv::perspectiveTransform(src, dst, Hinv);
-                    targetPix = dst[0];
+                    targetPix = arucoDistortPixel(dst[0]);
                 } else {
                     targetPix = cv::Point2f{g_globalTarget.x, g_globalTarget.y};
                 }
@@ -614,7 +618,7 @@ int main(int argc, char* argv[]) {
             hud.row({
                 DemoHud::fmt("%d", id),
                 vis ? "YES" : "NO",
-                ss.known ? DemoHud::formatBattery(ss.battery) : "--",
+                ss.known ? DemoHud::formatBattery(ss.batteryMv) : "--",
                 ss.known ? DemoHud::formatLatency(ss.latencyUs) : "--",
                 vis ? DemoHud::fmt("%+d", (int)motors[id][0]) : "--",
                 vis ? DemoHud::fmt("%+d", (int)motors[id][1]) : "--",

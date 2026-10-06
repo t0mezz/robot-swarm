@@ -44,7 +44,7 @@ robot-swarm/
 │       ├── marker_eval.cpp        # Camera + detection benchmarking tool
 │       ├── frame_inspector.cpp    # Record N seconds, step through frames, inspect detections
 │       ├── aruco_tracker_config.json
-│       └── calibration/           # CMA-ES detector calibrator
+│       └── calibration/           # CMA-ES detector calibrator, lens (intrinsics) + homography tools, ChArUco generator
 └── docs/
     └── architecture.md
 ```
@@ -550,6 +550,20 @@ Records a short burst of frames at the camera's current fps, then lets you step 
 
 ---
 
+### `intrinsics` and `homography`
+
+Lens calibration from a printed ChArUco board (`make_charuco.py`, same `DICT_4X4_50`
+the tracker detects) and a many-point pixel-to-mm homography with a held-out error
+estimate. Run them once per camera setup, lens first; see
+`tools/vision/calibration/README.md`.
+
+```bash
+cd tools/vision/calibration && python3 make_charuco.py   # print charuco_board.pdf at 100 %
+cd ../.. && make
+./build/intrinsics --square-mm <measured> --cam-height-mm 1200
+./build/homography --arena 800 600 --plane-mm <marker height>
+```
+
 ### `calibrate`
 CMA-ES optimiser that tunes `aruco_tracker_config.json` for the current lighting. Run once when setting up in a new room or after changing lighting conditions.
 
@@ -575,7 +589,7 @@ All frames: `[0xAA][0x55][type][len][payload…][CRC-8]`
 | ANNOUNCE_ACK | 0x21 | Dongle → Broadcast | `[id]` |
 | PING | 0x22 | PC → Robot | `[target_id, timestamp×4]` |
 | PONG | 0x23 | Robot → Dongle | `[id, echo_timestamp×4]` |
-| TELEMETRY | 0x30 | Robot → Dongle | `[id, rssi, bat, flags, mL, mR, uptime×2]` |
+| TELEMETRY | 0x30 | Robot → Dongle | `[id, mV×2, flags, mL, mR, uptime×2]` |
 | SPEED | 0x01 | ESP32 → RP2040 | `[left, right]` |
 
 ---

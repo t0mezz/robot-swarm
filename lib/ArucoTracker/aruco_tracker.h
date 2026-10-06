@@ -1,5 +1,6 @@
 #pragma once
 #include "pose_hub.h"
+#include "camera_intrinsics.h"
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/aruco.hpp>
@@ -126,6 +127,9 @@ struct ArucoConfig {
 
     bool debugOverlay = false;
     bool mirrorInput  = false;
+    // Correct lens distortion on tracked points (not frames) when a
+    // camera_intrinsics.yml from tools/build/intrinsics exists. Off = ignore it.
+    bool useIntrinsics = true;
 
     // Debug/display tuning — not read by ArucoTracker's detection pipeline
     // itself (that always runs at cam_width x cam_height), only by the parts
@@ -237,6 +241,7 @@ inline ArucoConfig ArucoConfig::fromFile(const std::string& path) {
     ri("clahe_tile",      c.claheTile);
     rb("debug_overlay",   c.debugOverlay);
     rb("mirror_input",    c.mirrorInput);
+    rb("use_intrinsics",  c.useIntrinsics);
     ri("offset_x",        c.offsetX);
     ri("offset_y",        c.offsetY);
     rf("debug_frame_scale", c.debugFrameScale);
@@ -285,6 +290,11 @@ private:
     cv::Ptr<cv::CLAHE> clahe_;
 };
 
+// Whole-frame undistortion for a FISHEYE lens (cv::fisheye model). Not used with
+// the Basler C125-0618-5M (a plain 6 mm rectilinear lens) and nothing writes the
+// yaml it reads. For that lens use tools/build/intrinsics, which writes
+// camera_intrinsics.yml, and the point-wise undistortion in camera_intrinsics.h:
+// remapping every frame costs more than the ArUco detection itself.
 struct FisheyeUndistortPreprocessor : IPreprocessor {
     bool load(const std::string& calibYaml, cv::Size frameSize) {
         cv::FileStorage fs(calibYaml, cv::FileStorage::READ);
@@ -341,6 +351,7 @@ public:
         auto sz = source_->size();
         fw_ = (float)sz.width;
         fh_ = (float)sz.height;
+        loadIntrinsics();
         captureRunning_   = true;
         detectionRunning_ = true;
         captureThread_   = std::thread(&ArucoTracker::captureLoop,   this);
@@ -377,9 +388,27 @@ public:
     // Signal the detection thread to zero its FPS/latency accumulators.
     void requestStatsReset() { statsReset_.store(true); }
 
+    // Lens model for point undistortion. open() calls this with the file
+    // tools/build/intrinsics writes; it is a no-op (identity) when the file is
+    // absent, stale for this resolution/ROI, or use_intrinsics is 0.
+    static std::string intrinsicsPath() { return arucoVisionDataPath("camera_intrinsics.yml"); }
+    bool loadIntrinsics() {
+        auto& I = arucoIntrinsics();
+        I = CameraIntrinsics{};
+        if (!cfg_.useIntrinsics) return false;
+        if (!I.load(intrinsicsPath(), {(int)fw_, (int)fh_}, {cfg_.offsetX, cfg_.offsetY}))
+            return false;
+        I.mirror = cfg_.mirrorInput;
+        fprintf(stderr, "[aruco] lens model loaded (rms %.3f px) — poses are undistorted\n", I.rms);
+        return true;
+    }
+    bool hasIntrinsics() const { return arucoIntrinsics().valid(); }
+
+    // `pix` are pixels as seen in debugFrame() (distorted); the homography is
+    // fitted in undistorted-pixel space, to match what update() feeds it.
     void setHomography(const std::vector<cv::Point2f>& pix,
                        const std::vector<cv::Point2f>& world) {
-        H_ = cv::findHomography(pix, world);
+        H_ = cv::findHomography(arucoUndistortPixels(pix), world);
         hasH_ = !H_.empty();
     }
     bool loadHomography(const std::string& path) {
@@ -405,6 +434,20 @@ public:
             hasH_ = false;
             return false;
         }
+        // A homography is also tied to the pixel space it was fitted in. One made
+        // from raw clicks, applied to undistorted points (or the reverse), is
+        // wrong by the lens distortion at that spot — worst at the edges.
+        int calUndist = 0;
+        if (!fs["undistorted"].empty()) fs["undistorted"] >> calUndist;
+        if (calUndist != (hasIntrinsics() ? 1 : 0)) {
+            fprintf(stderr,
+                "[aruco] Homography '%s' was fitted %s lens correction but the tracker is "
+                "running %s it — ignoring it. Re-run tools/build/homography.\n",
+                path.c_str(), calUndist ? "with" : "without", hasIntrinsics() ? "with" : "without");
+            H_.release();
+            hasH_ = false;
+            return false;
+        }
         hasH_ = !H_.empty();
         return hasH_;
     }
@@ -414,6 +457,7 @@ public:
         fs << "H" << H_;
         // Stamp the resolution so loadHomography() can reject a stale calibration.
         fs << "img_width" << (int)fw_ << "img_height" << (int)fh_;
+        fs << "undistorted" << (hasIntrinsics() ? 1 : 0);
     }
 
     void prependPreprocessor(std::unique_ptr<IPreprocessor> p) {
@@ -720,6 +764,7 @@ private:
                     float wx, wy, wyaw;
                     if (hasH_) {
                         std::vector<cv::Point2f> in{{pcx,pcy},{pcx+fwd.x,pcy+fwd.y}}, out;
+                        in = arucoUndistortPixels(in);   // identity without a lens model
                         cv::perspectiveTransform(in, out, H_);
                         wx = out[0].x; wy = out[0].y;
                         cv::Point2f wfwd = out[1] - out[0];

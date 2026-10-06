@@ -55,13 +55,11 @@ PID_INTERVAL_MS = 10      # 100 Hz control loop
 BAT_INTERVAL_MS = 2000    # read voltage every 2 s
 
 
-def _battery_byte(mv: int) -> int:
-    """Battery millivolts -> wire-protocol byte, 40mV/LSB (0-255 -> 0-10.2V).
-
-    The old 0-5V scale clipped at 255 for any healthy 4xAAA pack (4.8-6.4V),
-    so the telemetry byte carried no information. See MSG_TELEMETRY.
-    """
-    return min(255, max(0, mv // 40))
+# Every PID tick adds one ADC reading to a running sum; every BAT_INTERVAL_MS the
+# mean goes out as full-resolution millivolts. Averaging ~BAT_INTERVAL_MS/PID_INTERVAL_MS
+# readings smooths ADC noise and motor-PWM ripple that a single read would catch.
+_bat_sum = [0]
+_bat_n   = [0]
 
 
 # ─── PID Controller ───────────────────────────────────────────
@@ -222,10 +220,14 @@ def run_pid():
     _motor_left_pwr[0]  = pwr_l
     _motor_right_pwr[0] = pwr_r
 
+    _bat_sum[0] += battery.get_level_millivolts()
+    _bat_n[0]   += 1
     if time.ticks_diff(now, _last_bat_time) >= BAT_INTERVAL_MS:
-        _bat_mv[0] = battery.get_level_millivolts()
+        _bat_mv[0] = (_bat_sum[0] + _bat_n[0] // 2) // _bat_n[0]
+        _bat_sum[0] = 0
+        _bat_n[0]   = 0
         _last_bat_time = now
-        proto.send_metrics(_battery_byte(_bat_mv[0]))
+        proto.send_metrics(_bat_mv[0])
 
         rgb_leds.set(1, [0, 255, 100])
         rgb_leds.show()
