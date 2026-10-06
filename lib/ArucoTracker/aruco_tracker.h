@@ -1,5 +1,6 @@
 #pragma once
 #include "pose_hub.h"
+#include "frame_shm.h"
 #include "camera_intrinsics.h"
 
 #include <opencv2/opencv.hpp>
@@ -366,12 +367,18 @@ public:
 
     // Poses from whoever already owns the camera (a running vision_hub, or any
     // demo — they all publish on pose_hub.h's socket) instead of from the
-    // camera. No pylon, no detection threads, no frame: debugFrame() stays
-    // empty, so this is for tools that only steer from poses. Frame size and
-    // lens model are taken from the publisher so the homography check in
-    // loadHomography() sees the same pixel space it was fitted in.
-    // Returns false if nobody is publishing.
-    bool attach() {
+    // camera. No pylon, no detection threads. Frame size and lens model are
+    // taken from the publisher so the homography check in loadHomography()
+    // sees the same pixel space it was fitted in. Returns false if nobody is
+    // publishing.
+    //
+    // needFrames: also map the publisher's shared-memory frames (frame_shm.h),
+    // so debugFrame() works as it does for an owner. Only a vision_hub offers
+    // them; a demo that happens to own the camera does not, and then this
+    // returns false rather than attaching to something that cannot draw. Leave
+    // it off for tools that only steer from poses — the hub copies no frames
+    // for them.
+    bool attach(bool needFrames = false) {
         if (source_) return false;
         if (!subscriber_.connect()) return false;
         // The first snapshot carries the frame size; the publisher sends one per
@@ -385,15 +392,46 @@ public:
         if (!subscriber_.hasSnapshot()) { subscriber_.disconnect(); return false; }
         fw_ = (float)subscriber_.frameWidth();
         fh_ = (float)subscriber_.frameHeight();
+
+        if (needFrames) {
+            // The segment existing proves little (a crashed hub leaves one), so
+            // wait for an actual frame — the publisher only writes once asked.
+            bool got = false;
+            if (frames_.open()) {
+                startHubFrameThread();
+                std::unique_lock<std::mutex> lk(hubFrameMtx_);
+                got = hubFrameCv_.wait_for(lk, std::chrono::milliseconds(1500),
+                                          [&] { return hubFrameId_ != 0; });
+            }
+            if (!got) {
+                stopHubFrameThread();
+                frames_.close();
+                subscriber_.disconnect();
+                fprintf(stderr,
+                    "[aruco] a pose publisher is running but it shares no frames — only a "
+                    "vision_hub does (and not with --no-shm). This tool draws on the frame, so "
+                    "it needs either that or the camera itself.\n");
+                return false;
+            }
+            framesOn_ = true;
+        }
         loadIntrinsics();
         subscribed_ = true;
         return true;
     }
 
-    // Attach to a live publisher if there is one, otherwise own the camera. A
-    // publisher is preferred because it can never fail the way a second
-    // open() does, and because two owners cannot exist.
-    bool openOrAttach() { return attach() || open(); }
+    // The normal path first: own the camera if it is free. Only when it is held
+    // (open() fails — typically 0xE1018006 because a vision_hub or a demo has it)
+    // fall back to that owner's published poses (and frames, with needFrames).
+    // So a tool never gives up the direct, no-extra-hop path just because a hub
+    // *could* exist, and starting a hub is what opts tools into attaching.
+    bool openOrAttach(bool needFrames = false) {
+        if (open()) return true;
+        if (!attach(needFrames)) return false;
+        fprintf(stderr, "[aruco] the camera is held by another process — attached to its "
+                        "published poses%s instead.\n", needFrames ? " and shared frames" : "");
+        return true;
+    }
 
     bool subscribed() const { return subscribed_; }
 
@@ -442,10 +480,28 @@ public:
     // fitted in undistorted-pixel space, to match what update() feeds it.
     void setHomography(const std::vector<cv::Point2f>& pix,
                        const std::vector<cv::Point2f>& world) {
+        if (subscribed_) {
+            // The poses were converted by the publisher's homography; fitting a
+            // different one here changes nothing they carry, and saving it would
+            // leave a file the running hub disagrees with.
+            fprintf(stderr, "[aruco] cannot calibrate while attached to a publisher — its poses "
+                            "use its own homography. Stop the vision_hub (or whatever owns the "
+                            "camera) and run this tool with --calibrate.\n");
+            return;
+        }
         H_ = cv::findHomography(arucoUndistortPixels(pix), world);
         hasH_ = !H_.empty();
     }
     bool loadHomography(const std::string& path) {
+        bool ok = loadHomographyFile(path);
+        if (!ok && subscribed_ && subscriber_.worldCoords())
+            fprintf(stderr,
+                "[aruco] WARNING: the publisher's poses are in mm but this tool has no matching "
+                "homography ('%s'). Anything it converts between pixels and the world itself "
+                "will be wrong — restart the hub with the same file.\n", path.c_str());
+        return ok;
+    }
+    bool loadHomographyFile(const std::string& path) {
         cv::FileStorage fs(path, cv::FileStorage::READ);
         if (!fs.isOpened()) return false;
         fs["H"] >> H_;
@@ -497,7 +553,7 @@ public:
         return hasH_;
     }
     void saveHomography(const std::string& path) const {
-        if (!hasH_) return;
+        if (!hasH_ || subscribed_) return;
         cv::FileStorage fs(path, cv::FileStorage::WRITE);
         fs << "H" << H_;
         // Stamp the resolution so loadHomography() can reject a stale calibration.
@@ -513,7 +569,11 @@ public:
     }
 
     const std::vector<RobotPose>& robots()    const { return robots_; }
-    cv::Mat  debugFrame() const { return debug_; }
+    // The frame the poses were found in, with the tracker's own overlay. For an
+    // attached tool (needFrames) it is the newest frame the hub shared — up to
+    // one hub frame interval (~33 ms) behind the poses, where an owner's is
+    // exact. Empty for a poses-only attachment.
+    cv::Mat  debugFrame() const { return (subscribed_ && framesOn_) ? hubFrame() : debug_; }
     cv::Size frameSize()  const { return {(int)fw_, (int)fh_}; }
     bool     isOpen()     const { return source_ != nullptr || subscribed_; }
     // Detection-thread throughput (frames actually processed per second), NOT
@@ -896,6 +956,7 @@ private:
     }
 
     void stopThreads() {
+        stopHubFrameThread();
         captureRunning_   = false;
         detectionRunning_ = false;
         frameCv_.notify_all();
@@ -1062,8 +1123,91 @@ private:
         return true;
     }
 
+    // ── Shared frames (attach(needFrames)) ───────────────────────────────────
+    // A 12.6 MB copy is ~4 ms here (p90 ~8 ms) — done inside the tool's control
+    // thread that would stall a 116 Hz loop, so a small thread keeps the newest
+    // frame copied out and debugFrame() just hands over the latest finished one.
+    // It copies only while debugFrame() is being called (the hub in turn copies
+    // only while this thread's heartbeat is fresh), so a tool that stops looking
+    // costs the hub nothing.
+    cv::Mat hubFrame() const {
+        hubFrameAskedNs_.store(frame_shm::nowNs(), std::memory_order_relaxed);
+        std::lock_guard<std::mutex> lk(hubFrameMtx_);
+        return hubFrameFront_;
+    }
+
+    void startHubFrameThread() {
+        hubFrameRun_ = true;
+        hubFrameAskedNs_.store(frame_shm::nowNs());   // the caller is about to wait for a frame
+        hubFrameThread_ = std::thread(&ArucoTracker::hubFrameLoop, this);
+    }
+    void stopHubFrameThread() {
+        hubFrameRun_ = false;
+        if (hubFrameThread_.joinable()) hubFrameThread_.join();
+        std::lock_guard<std::mutex> lk(hubFrameMtx_);
+        hubFrameFront_.release();
+        hubFrameId_ = 0;
+    }
+
+    void hubFrameLoop() {
+        using SC = std::chrono::steady_clock;
+        cv::Mat  back;
+        uint64_t lastId = 0;
+        auto     lastAdvance = SC::now();
+        bool     wasAsking = false;
+
+        while (hubFrameRun_) {
+            const bool asking = frame_shm::nowNs() - hubFrameAskedNs_.load(std::memory_order_relaxed) < 1000000000ull;
+            if (!asking) {
+                wasAsking = false;
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                continue;
+            }
+            auto now = SC::now();
+            // Resuming after a pause: the hub stopped copying while nobody asked, so
+            // ids not moving yet is expected — don't read it as a dead writer.
+            if (!wasAsking) { wasAsking = true; lastAdvance = now; }
+            frames_.touch();
+
+            const uint64_t id = frames_.isOpen() ? frames_.latestId() : 0;
+            if (id != 0 && id != lastId) {
+                const int h = (int)frames_.height(), w = (int)frames_.width();
+                const int type = CV_MAKETYPE(CV_8U, (int)frames_.channels());
+                // refcount > 1: a caller still holds the last frame handed out;
+                // it must not change underneath them, so take a fresh buffer.
+                if (back.empty() || back.rows != h || back.cols != w || back.type() != type ||
+                    (back.u && back.u->refcount > 1))
+                    back = cv::Mat(h, w, type);
+                uint64_t got = frames_.copyLatest(back.data);
+                if (got) {
+                    lastId = got;
+                    lastAdvance = now;
+                    { std::lock_guard<std::mutex> lk(hubFrameMtx_); std::swap(hubFrameFront_, back); hubFrameId_ = got; }
+                    hubFrameCv_.notify_all();
+                }
+            }
+            // Ids that stop moving while we ask means the segment we hold belongs to a
+            // hub that is gone (a restart makes a new one): look for the new one.
+            if (now - lastAdvance > std::chrono::seconds(2)) {
+                lastAdvance = now;
+                frames_.open();
+                lastId = 0;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(3));
+        }
+    }
+
     PoseHubSubscriber    subscriber_;
     bool                 subscribed_ = false;
+    bool                 framesOn_   = false;
+    ShmFrameReader         frames_;
+    std::thread            hubFrameThread_;
+    std::atomic<bool>      hubFrameRun_{false};
+    mutable std::atomic<uint64_t> hubFrameAskedNs_{0};   // last debugFrame() call
+    mutable std::mutex     hubFrameMtx_;
+    std::condition_variable hubFrameCv_;
+    cv::Mat                hubFrameFront_;               // newest finished copy
+    uint64_t               hubFrameId_ = 0;
     std::chrono::steady_clock::time_point lastReconnect_{};
     PoseHubPublisher     poseHub_;
     std::vector<HubPose> hubPoses_;   // reused so publishing never allocates

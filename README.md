@@ -13,6 +13,9 @@ Controller-PC  →  USB-Serial  →  Dongle-ESP32  →  ESP-NOW Broadcast  →  
                   921600 Baud                        ~1 ms latency                          921600 Baud
 
 Basler ace2 GigE  →  pylon 8.1.0  →  OpenCV ArUco  →  vision_controller / wingman / circle_demo / shape_demo
+                                                     │
+                       (optional) vision_hub owns the camera instead, and shares
+                       poses (Unix socket) + frames (shared memory) + an MJPEG stream
 ```
 
 ---
@@ -27,7 +30,8 @@ robot-swarm/
 │   └── receiver/main.cpp       # Robot ESP32 firmware
 ├── lib/
 │   ├── SwarmProtocol/          # Shared headers (protocol.h, hardware.h, debug_protocol.h)
-│   ├── ArucoTracker/           # Camera abstraction + ArUco tracker (aruco_tracker.h, basler_pylon_source.h)
+│   ├── ArucoTracker/           # Camera abstraction + ArUco tracker (aruco_tracker.h, basler_pylon_source.h);
+│   │                           #   pose_hub.h / frame_shm.h / mjpeg_server.h: OpenCV-free pose, frame and video sharing
 │   ├── SwarmClient/            # High-level swarm socket client (SwarmClient.h)
 │   ├── Calibration/            # CMA-ES detector tuning (cmaes.h, param_space.h, objective*.h)
 │   └── swarm/                  # PC-side host tools (swarm_hub, swarm_terminal, swarm_controller, latency_plot)
@@ -36,6 +40,7 @@ robot-swarm/
 │   ├── game.cpp                # SFML game pad controller
 │   ├── dashboard-ink/          # Ink/React terminal dashboard (Node; own package.json, no build step)
 │   └── vision/
+│       ├── vision_hub.cpp         # Opt-in camera owner: shares poses, frames and an MJPEG stream
 │       ├── vision_controller.cpp  # Main vision-based swarm controller
 │       ├── wingman.cpp            # V-formation follower controller
 │       ├── circle_demo.cpp        # Circle orbit formation
@@ -242,7 +247,7 @@ Live ASCII latency plot for a specific robot. Shows round-trip ping time in µs.
 ### `swarm_telemetry_json`
 Headless telemetry producer: connects to `swarm_hub`, subscribes to the vision hub for poses, and writes one JSON object per tick to stdout. Sends no motor commands. Exists so UIs that aren't C++ can consume the swarm without reimplementing the wire protocol — it's what `dashboard-ink` runs underneath.
 
-It does **not** open the camera by default. The Basler allows one application at a time, so any tool that owns it publishes poses on `/tmp/vision_hub.sock` (see `lib/ArucoTracker/pose_hub.h`) and this subscribes — which is what lets a dashboard run alongside `circle_demo` or `vision_controller`. `--camera` opens the device directly for standalone use, and locks those demos out while it runs.
+It does **not** open the camera by default. The Basler allows one application at a time, so any tool that owns it — a demo, or [`vision_hub`](#vision_hub-opt-in-camera-owner) — publishes poses on `/tmp/vision_hub.sock` (see `lib/ArucoTracker/pose_hub.h`) and this subscribes — which is what lets a dashboard run alongside `circle_demo` or `vision_controller`. `--camera` opens the device directly for standalone use, and locks those demos out while it runs.
 
 ```bash
 ./build/swarm_telemetry_json [--interval MS] [--no-vision] [--camera]
@@ -269,6 +274,72 @@ node src/cli.js --camera   # own the camera instead (locks vision demos out)
 Poses come from whichever tool owns the camera, so this can run alongside a vision demo. The status bar tags the source: `cam 116fps·hub` (subscribed) vs `cam 116fps·own` (this process holds the device).
 
 The C++ `swarm_dashboard` is unchanged and still works; the two can be compared side by side.
+
+---
+
+### `vision_hub` (opt-in camera owner)
+The Basler admits **one** application, so normally whichever vision tool you start owns the camera and a second one fails with `0xE1018006`. `vision_hub` is an optional daemon that owns the camera *instead of a demo*, and shares what it sees three ways:
+
+| What | How | Who uses it |
+|---|---|---|
+| **Poses** (where the robots are) | Unix socket `/tmp/vision_hub.sock` | every tool; `swarm_telemetry_json` subscribes to it directly |
+| **Frames** (the picture, with the tracker's overlay) | POSIX shared memory `/swarm_vision_frames` | tools that draw on or click in the image: `circle_demo`, `wingman`, `shape_demo`, `vision_controller`, `drag_drop_demo`, `max_speed_test`, `circle_speed_test`, and `car_following` / `battery_log` with `--debug` |
+| **Video** | MJPEG on `127.0.0.1:8081` | a browser, over an SSH tunnel |
+
+```bash
+./build/vision_hub                 # foreground (Ctrl-C stops it)
+./build/vision_hub --daemon        # detach; PID in /tmp/vision_hub.pid, log in /tmp/vision_hub.log
+./build/vision_hub --stop          # stop the daemon
+
+./build/vision_hub [--stream-port N] [--stream-fps F] [--stream-width W] [--stream-quality Q]
+                   [--no-stream] [--shm-fps F] [--no-shm] [--robots N]
+                   [--serial SN] [--ip IP] [--homography FILE]
+```
+
+Nothing starts it for you. **With no hub running, every tool opens the camera itself exactly as before** — no extra hop, no change in latency.
+
+#### Which tools attach, and when
+Tools try the normal path first: they `open()` the camera if it is free, and only when it is held do they fall back to attaching to its poses (and frames, if they draw). So the hub is what *opts tools in*:
+
+```
+hub stopped :  ./build/circle_demo        → owns the camera, as always
+hub running :  ./build/circle_demo        → "the camera is held by another process — attached to its
+                                             published poses and shared frames instead."
+```
+
+Two things always own the camera themselves, never attach:
+- **Calibration runs** (`--calibrate`, or the calibration keys): a homography fitted in an attached tool would not match the poses the hub publishes, and `setHomography()` refuses while attached. Stop the hub, calibrate, then restart it.
+- **Evaluation tools** (`marker_eval`, `measurement_test`, `frame_inspector`, the `intrinsics`/`homography`/`calibrate` tools): they measure the camera and detection themselves.
+
+A tool that needs frames will **not** attach to a plain camera owner (for example another demo, or `swarm_telemetry_json --camera`), since those share poses but no frames; it says so and exits. Headless tools (`car_following`, `battery_log` without `--debug`) only need poses and attach to anything.
+
+#### Watching the camera from another machine
+```bash
+ssh -L 8081:localhost:8081 user@robot-pc       # on your laptop
+# then open  http://localhost:8081/             (also /stream, and /snapshot.jpg for one frame)
+```
+The stream is the tracker's own frame (marker outlines, ids, headings), raw sensor pixels, downscaled to 960 px wide at JPEG quality 70 by default. It binds to loopback only; the SSH tunnel is the way in. A viewer that cannot keep up simply misses frames — there is no backlog, so a slow link never adds latency. Overlays a demo draws for itself are *not* in the stream: the demo draws on its own copy.
+
+#### Cost
+Everything is demand-driven, so a hub nobody is using costs almost nothing: no viewer means no encoding, no attached tool asking for frames means no copying. Measured on the lab machine (2048×2048 BGR, 12.6 MB per frame):
+
+| | |
+|---|---|
+| Detection with the hub streaming | unchanged (~116 fps with a marker in view) |
+| MJPEG stream | ~28 fps, ~900 kB/s, ~10 ms to encode — on its own thread |
+| Shared-memory segment | 3 × 12.6 MB = 37.7 MB |
+| Copy into shared memory | ~5–7 ms per frame, on a worker thread, only while a tool is asking, at most `--shm-fps` (default 30) |
+| Attached tool, `debugFrame()` | ~0 ms in the control thread: a prefetch thread keeps the newest frame copied out (~4 ms, ~8 ms at p90) |
+| Attaching to a held camera | ~0.8 s slower to start (the failed `open()` attempt) |
+| Hub restart under an attached tool | frames freeze on the last good one, then resume ~2 s after the new hub is up; no tool restart needed |
+
+#### Things to know
+- **The shared frame is up to one hub frame (~33 ms) older than the poses.** An owner's frame is exact; attached tools see the newest copy the hub made. Fine for overlays and clicking, not for anything that needs pixel-exact alignment with a pose.
+- **Detection settings are the hub's.** Exposure, ROI, dictionary, `--robots`/`--count` and `debug_overlay` on an attached tool do nothing; set them on the hub (`aruco_tracker_config.json`, or the flags above).
+- **Restart the hub after recalibrating.** Attached tools read `aruco_homography.yml` for their own pixel↔world drawing; the hub reads it only at start. If the hub has no usable homography its poses are pixels, and attached tools run in pixels too (they refuse their local file rather than treat pixels as mm).
+- **Hub down means attached tools stall**, the same as a stalled camera: `update()` reports nothing fresh, they reconnect on their own when it comes back, and the robots' on-board watchdog stops the motors meanwhile.
+- **The HUD's `Radio RTT` column is not control latency.** It is the dongle's ESP-NOW ping round trip to that robot (dongle → robot ESP32 → back, timed on the dongle), sampled once per robot per ping interval — so it excludes the PC/USB legs, the UART hop to the RP2040 and the motors, and can be a few seconds old.
+- **Shared memory** lives in `/dev/shm`; the hub removes it on a clean exit. `--no-shm` shares no frames (poses-only tools still attach).
 
 ---
 
@@ -520,7 +591,7 @@ Draw shapes on the camera view; robots slowly trace the path.
 ---
 
 ### `marker_eval`
-Camera and detection benchmark. Shows per-marker detection rate, live FPS, resolution, and pipeline latency. Run this first to verify the camera and ArUco config are working correctly.
+Camera and detection benchmark. Always opens the camera itself, so stop a running `vision_hub` first. Shows per-marker detection rate, live FPS, resolution, and **Detect time** (the detection thread's smoothed processing time per frame — not photon-to-pose: exposure, readout, the GigE transfer and the wait for `update()` are not in it). Run this first to verify the camera and ArUco config are working correctly.
 
 ```bash
 ./build/marker_eval [--config JSON] [--serial SN] [--ip IP]

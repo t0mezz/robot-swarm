@@ -496,7 +496,13 @@ int main(int argc, char* argv[]) {
     const float dbgScale = (cfg.debugFrameScale > 0.f && cfg.debugFrameScale <= 1.0f)
                                 ? cfg.debugFrameScale : 1.0f;
     ArucoTracker tracker(cfg);
-    if (!tracker.open()) { fprintf(stderr, "Could not open Basler camera.\n"); return 1; }
+    // Own the camera if it is free; if a vision_hub (or another tool) holds it, attach
+    // to its poses and shared-memory frames instead of failing. Calibrating always
+    // owns it: a homography fitted here would not match the poses a hub publishes.
+    const bool opened = doCalibrate ? tracker.open() : tracker.openOrAttach(true);
+    if (!opened) { fprintf(stderr, "Could not open Basler camera.\n"); return 1; }
+    if (tracker.subscribed())
+        printf("Attached to the vision_hub (poses + shared-memory frames).\n");
     //auto undist = std::make_unique<FisheyeUndistortPreprocessor>();
     //if (undist->load("fisheye_calib.yaml", tracker.frameSize())) tracker.prependPreprocessor(std::move(undist));
     printf("Camera open at %dx%d.\n", tracker.frameSize().width, tracker.frameSize().height);
@@ -1092,7 +1098,7 @@ int main(int argc, char* argv[]) {
                 ? cv::format("ORBIT %.0fdeg/s", circle.orbitSpeed).c_str()
                 : "POSITION"),
             swarm.isConnected() ? DemoHud::COL_OK : DemoHud::COL_BAD);
-        hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Status"});
+        hud.header({"ID", "Vision", "Battery", DemoHud::HDR_RADIO_RTT, "Mot-L", "Mot-R", "Status"});
         std::set<int> hudIds;
         for (auto& [id, _] : poseById)    hudIds.insert(id);
         for (int id : swarm.knownIds())   hudIds.insert(id);

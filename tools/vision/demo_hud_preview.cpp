@@ -37,7 +37,7 @@ int main() {
         hud.title(DemoHud::fmt("loop_fps:%.0f  Robots:%d/4  HUB:%s  t:%.1fs",
                   loopFps.fps(), 3, hubOk ? "OK" : "OFFLINE", t),
                   hubOk ? DemoHud::COL_OK : DemoHud::COL_BAD);
-        hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Status"});
+        hud.header({"ID", "Vision", "Battery", DemoHud::HDR_RADIO_RTT, "Mot-L", "Mot-R", "Status"});
         for (int id = 0; id < 4; ++id) {
             bool visible = id != 3;
             uint8_t battery = (uint8_t)std::max(0.0, 255 - 20.0 * id - 30 * sin(t + id));

@@ -2,8 +2,8 @@
 // streams the tracked picture to a browser.
 //
 //   vision_hub [--stream-port N] [--stream-fps F] [--stream-width W]
-//              [--stream-quality Q] [--no-stream] [--robots N]
-//              [--serial SN] [--ip IP] [--homography FILE] [--daemon]
+//              [--stream-quality Q] [--no-stream] [--shm-fps F] [--no-shm]
+//              [--robots N] [--serial SN] [--ip IP] [--homography FILE] [--daemon]
 //   vision_hub --stop
 //
 // Start it by hand, and only when you want it. Nothing launches it for you, so
@@ -23,12 +23,19 @@
 // raw sensor pixels, so the same image `RobotPose::px/py` refer to. Overlays a
 // demo draws for itself are not in it: the demo has its own copy of the frame.
 //
-// The stream must never cost detection or control anything, which is why the
-// work is split the way it is:
-//   • this thread only calls tracker.update() (which publishes poses) and,
-//     when someone is watching, hands over a reference to the newest frame;
-//   • a second thread does the resize, JPEG encode and all socket I/O.
-// Nobody watching means no handoff and no encoding at all.
+// Tools that draw on the frame (circle_demo, wingman, …) get it through shared
+// memory (frame_shm.h). They own the camera when it is free and fall back to
+// ArucoTracker::openOrAttach(true) only when it is held, so with the hub running
+// they run beside it instead of failing, and with no hub nothing changes for them. The copy is only
+// made while a reader is asking.
+//
+// Neither the stream nor the shared frames may cost detection or control
+// anything, which is why the work is split the way it is:
+//   • this thread only calls tracker.update() (which publishes poses) and, when
+//     someone wants a frame, hands over a reference to the newest one;
+//   • one worker thread does the resize, JPEG encode and all socket I/O;
+//   • another does the copy into shared memory.
+// Nobody watching and nobody reading means no handoff and no work at all.
 //
 // --daemon detaches it like `swarm_hub --daemon`: PID in /tmp/vision_hub.pid,
 // output in /tmp/vision_hub.log, and `vision_hub --stop` ends it. Still opt-in.
@@ -60,6 +67,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include "aruco_tracker.h"
+#include "frame_shm.h"
 #include "mjpeg_server.h"
 #include "pose_hub.h"
 
@@ -72,6 +80,33 @@ static const char* HUB_PID_PATH = "/tmp/vision_hub.pid";
 static const char* HUB_LOG_PATH = "/tmp/vision_hub.log";
 
 static const std::string HOMOGRAPHY_FILE_S = arucoVisionDataPath("aruco_homography.yml");
+
+// The newest frame, passed from the main thread to a worker. Holds a Mat
+// header only — the tracker never writes into a frame it has handed out, it
+// moves a new buffer in on the next update() — so no pixel is copied here.
+class FrameMailbox {
+public:
+    void put(const cv::Mat& frame) {
+        { std::lock_guard<std::mutex> lk(m_); slot_ = frame; fresh_ = true; }
+        cv_.notify_one();
+    }
+    // Waits up to `ms` for a frame; empty if none arrived (or wake() was called).
+    cv::Mat take(int ms) {
+        std::unique_lock<std::mutex> lk(m_);
+        cv_.wait_for(lk, std::chrono::milliseconds(ms), [&] { return fresh_ || woken_; });
+        woken_ = false;
+        cv::Mat f;
+        if (fresh_) { f = slot_; slot_.release(); fresh_ = false; }
+        return f;
+    }
+    void wake() { { std::lock_guard<std::mutex> lk(m_); woken_ = true; } cv_.notify_all(); }
+
+private:
+    std::mutex              m_;
+    std::condition_variable cv_;
+    cv::Mat                 slot_;
+    bool                    fresh_ = false, woken_ = false;
+};
 
 // Encoder-thread statistics, read once a second by the main thread's status line.
 struct StreamStats {
@@ -92,17 +127,11 @@ public:
 
     void stop() {
         running_ = false;
-        cv_.notify_all();
+        box_.wake();
         if (thread_.joinable()) thread_.join();
     }
 
-    // Main-thread side. Takes a Mat header only — the tracker never writes into
-    // a frame it has already handed out, it moves a new buffer in on the next
-    // update() — so no pixel is copied here.
-    void submit(const cv::Mat& frame) {
-        { std::lock_guard<std::mutex> lk(m_); slot_ = frame; fresh_ = true; }
-        cv_.notify_one();
-    }
+    void submit(const cv::Mat& frame) { box_.put(frame); }
 
     StreamStats stats;
 
@@ -115,12 +144,7 @@ private:
         while (running_) {
             server_.poll();
 
-            cv::Mat frame;
-            {
-                std::unique_lock<std::mutex> lk(m_);
-                cv_.wait_for(lk, std::chrono::milliseconds(5), [&] { return fresh_ || !running_; });
-                if (fresh_) { frame = slot_; slot_.release(); fresh_ = false; }
-            }
+            cv::Mat frame = box_.take(5);
             if (frame.empty()) continue;
 
             auto t0 = Clock::now();
@@ -145,10 +169,66 @@ private:
     int                     width_, quality_;
     std::thread             thread_;
     std::atomic<bool>       running_{true};
-    std::mutex              m_;
-    std::condition_variable cv_;
-    cv::Mat                 slot_;
-    bool                    fresh_ = false;
+    FrameMailbox            box_;
+};
+
+// Copies frames into shared memory for attached tools (frame_shm.h). The segment
+// is created on the first frame, when the geometry is known; it is replaced, not
+// resized, if that ever changes.
+class ShmThread {
+public:
+    ~ShmThread() { stop(); }
+
+    void start() { thread_ = std::thread(&ShmThread::run, this); }
+
+    void stop() {
+        running_ = false;
+        box_.wake();
+        if (thread_.joinable()) thread_.join();
+    }
+
+    void submit(const cv::Mat& frame) { box_.put(frame); }
+
+    // Is a reader asking? Safe from the main thread: one atomic load. Before the
+    // first frame there is no segment and so no reader — the main thread hands
+    // one over unconditionally until the segment exists.
+    bool wanted() const { return !created_ || writer_.wanted(); }
+
+    std::atomic<int>  frames{0};
+    std::atomic<int>  copyUs{0};
+
+private:
+    void run() {
+        while (running_) {
+            cv::Mat f = box_.take(50);
+            if (f.empty()) continue;
+            if ((f.depth() != CV_8U) || f.channels() < 1 || f.channels() > 4) continue;
+
+            if (!created_) {
+                if (!writer_.create((uint32_t)f.cols, (uint32_t)f.rows, (uint32_t)f.channels())) {
+                    fprintf(stderr, "[hub] could not create shared-memory frames (" SWARM_FRAMES_SHM_NAME
+                                    ") — attached tools that need frames will not work\n");
+                    running_ = false;
+                    break;
+                }
+                created_ = true;
+                printf("[hub] sharing %dx%dx%d frames as " SWARM_FRAMES_SHM_NAME " (copied only while a tool asks)\n",
+                       f.cols, f.rows, f.channels());
+                continue;   // that frame was only for the geometry; wait for demand
+            }
+            auto t0 = Clock::now();
+            if (writer_.write(f.data, (uint32_t)f.cols, (uint32_t)f.rows, (uint32_t)f.channels(), f.step[0])) {
+                frames++;
+                copyUs = (int)std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
+            }
+        }
+    }
+
+    ShmFrameWriter    writer_;
+    std::atomic<bool> created_{false};
+    std::thread       thread_;
+    std::atomic<bool> running_{true};
+    FrameMailbox      box_;
 };
 
 // Detach before anything threaded exists (camera, stream) — fork() only keeps
@@ -168,8 +248,10 @@ static void daemonize() {
             }
             usleep(100000);
         }
-        std::ofstream pidFile(HUB_PID_PATH);
-        if (pidFile) pidFile << pid << "\n";
+        {   // closed before exit(): the stream is flushed by its destructor
+            std::ofstream pidFile(HUB_PID_PATH);
+            if (pidFile) pidFile << pid << "\n";
+        }
         printf("[hub] Daemon started (PID %d)\n[hub] Log: %s\n", (int)pid, HUB_LOG_PATH);
         exit(0);
     }
@@ -214,7 +296,8 @@ static int hubStop() {
 static void usage(const char* argv0) {
     fprintf(stderr,
         "usage: %s [--stream-port N] [--stream-fps F] [--stream-width W]\n"
-        "          [--stream-quality Q] [--no-stream] [--robots N]\n"
+        "          [--stream-quality Q] [--no-stream] [--shm-fps F] [--no-shm]\n"
+        "          [--robots N]\n"
         "          [--serial SN] [--ip IP] [--homography FILE] [--daemon]\n"
         "       %s --stop\n"
         "\n"
@@ -222,7 +305,9 @@ static void usage(const char* argv0) {
         "  --stream-fps F      stream frame-rate cap (default 30)\n"
         "  --stream-width W    downscale to W px wide before encoding, 0 = full (default 960)\n"
         "  --stream-quality Q  JPEG quality 1-100 (default 70)\n"
-        "  --no-stream         publish poses only\n"
+        "  --no-stream         no MJPEG stream\n"
+        "  --shm-fps F         cap on frames copied to shared memory for attached tools (default 30)\n"
+        "  --no-shm            share no frames (attached tools that draw on the frame cannot attach)\n"
         "  --robots N          pin the tracker's robot count (default: from config)\n"
         "  --homography FILE   world-coordinate calibration (default: the shared one)\n"
         "  --daemon, -d        detach; PID in %s, log in %s\n"
@@ -232,8 +317,8 @@ static void usage(const char* argv0) {
 
 int main(int argc, char** argv) {
     int         streamPort = 8081, streamWidth = 960, streamQuality = 70, robots = 0;
-    float       streamFps  = 30.f;
-    bool        stream     = true, daemonMode = false;
+    float       streamFps  = 30.f, shmFps = 30.f;
+    bool        stream     = true, shm = true, daemonMode = false;
     std::string serial, ip, homographyFile = HOMOGRAPHY_FILE_S;
 
     for (int i = 1; i < argc; i++) {
@@ -242,16 +327,18 @@ int main(int argc, char** argv) {
         else if (arg("--stream-fps"))     streamFps     = (float)atof(argv[++i]);
         else if (arg("--stream-width"))   streamWidth   = atoi(argv[++i]);
         else if (arg("--stream-quality")) streamQuality = atoi(argv[++i]);
+        else if (arg("--shm-fps"))        shmFps        = (float)atof(argv[++i]);
         else if (arg("--robots"))         robots        = atoi(argv[++i]);
         else if (arg("--serial"))         serial        = argv[++i];
         else if (arg("--ip"))             ip            = argv[++i];
         else if (arg("--homography"))     homographyFile = argv[++i];
         else if (strcmp(argv[i], "--no-stream") == 0) stream = false;
+        else if (strcmp(argv[i], "--no-shm") == 0)    shm    = false;
         else if (strcmp(argv[i], "--daemon") == 0 || strcmp(argv[i], "-d") == 0) daemonMode = true;
         else if (strcmp(argv[i], "--stop") == 0) return hubStop();
         else { usage(argv[0]); return strcmp(argv[i], "--help") == 0 ? 0 : 2; }
     }
-    if (streamPort < 1 || streamPort > 65535 || streamFps <= 0.f ||
+    if (streamPort < 1 || streamPort > 65535 || streamFps <= 0.f || shmFps <= 0.f ||
         streamQuality < 1 || streamQuality > 100 || streamWidth < 0) {
         usage(argv[0]);
         return 2;
@@ -311,21 +398,37 @@ int main(int argc, char** argv) {
         }
     }
 
-    const auto handoffEvery = std::chrono::duration_cast<Clock::duration>(
-                                  std::chrono::duration<float>(1.f / streamFps));
+    std::unique_ptr<ShmThread> sharer;
+    if (shm) {
+        sharer = std::make_unique<ShmThread>();
+        sharer->start();
+        printf("[hub] shared-memory frames for attached tools: %.0f fps max, only while one is reading\n", shmFps);
+    }
+
+    auto every = [](float fps) {
+        return std::chrono::duration_cast<Clock::duration>(std::chrono::duration<float>(1.f / fps));
+    };
+    const auto handoffEvery = every(streamFps), shmEvery = every(shmFps);
     auto lastHandoff = Clock::now() - handoffEvery;
+    auto lastShm     = Clock::now() - shmEvery;
     auto lastStatus  = Clock::now();
-    int  lastFrames  = 0;
+    int  lastFrames  = 0, lastShmFrames = 0;
     long lastBytes   = 0;
 
     while (g_running) {
         if (!tracker.update()) {
             std::this_thread::sleep_for(std::chrono::microseconds(200));
-        } else if (streamer && server.wantsFrames()) {
+        } else {
+            // One fresh result: hand its frame to whichever workers want one.
+            // debugFrame() is a header copy, so asking twice costs nothing.
             auto now = Clock::now();
-            if (now - lastHandoff >= handoffEvery) {
+            if (streamer && server.wantsFrames() && now - lastHandoff >= handoffEvery) {
                 lastHandoff = now;
                 streamer->submit(tracker.debugFrame());
+            }
+            if (sharer && sharer->wanted() && now - lastShm >= shmEvery) {
+                lastShm = now;
+                sharer->submit(tracker.debugFrame());
             }
         }
 
@@ -333,25 +436,33 @@ int main(int argc, char** argv) {
         if (now - lastStatus >= std::chrono::seconds(1)) {
             float dt = std::chrono::duration<float>(now - lastStatus).count();
             lastStatus = now;
+            std::string line = "[hub] det " + std::to_string((int)tracker.detectionFps()) + " fps  tags " +
+                               std::to_string(tracker.robots().size());
+            char buf[160];
             if (streamer) {
                 int  f = streamer->stats.frames;
                 long b = streamer->stats.bytes;
-                fprintf(stderr,
-                    "[hub] det %.0f fps  tags %zu  viewers %d  stream %.0f fps  %.0f kB/s  encode %.1f ms\n",
-                    tracker.detectionFps(), tracker.robots().size(), server.viewers(),
-                    (f - lastFrames) / dt, (b - lastBytes) / dt / 1024.f,
-                    streamer->stats.encodeUs / 1000.f);
+                snprintf(buf, sizeof(buf), "  viewers %d  stream %.0f fps  %.0f kB/s  encode %.1f ms",
+                         server.viewers(), (f - lastFrames) / dt, (b - lastBytes) / dt / 1024.f,
+                         streamer->stats.encodeUs / 1000.f);
+                line += buf;
                 lastFrames = f;
                 lastBytes  = b;
-            } else {
-                fprintf(stderr, "[hub] det %.0f fps  tags %zu\n",
-                        tracker.detectionFps(), tracker.robots().size());
             }
+            if (sharer) {
+                int f = sharer->frames;
+                snprintf(buf, sizeof(buf), "  shm %.0f fps  copy %.1f ms", (f - lastShmFrames) / dt,
+                         sharer->copyUs / 1000.f);
+                line += buf;
+                lastShmFrames = f;
+            }
+            fprintf(stderr, "%s\n", line.c_str());
         }
     }
 
     printf("[hub] shutting down\n");
     if (streamer) streamer->stop();
+    if (sharer)   sharer->stop();
     if (daemonMode) unlink(HUB_PID_PATH);
     return 0;
 }

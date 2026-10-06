@@ -16,7 +16,7 @@
 // plot window.
 //
 // Usage:
-//   ./battery_log --robot ID [--cmd N] [--dir cw|ccw]
+//   ./battery_log --robot ID [--cmd N | --max-speed N] [--dir cw|ccw]
 //                 [--rest-every S] [--rest-for S] [--stop-mv MV] [--max-time S]
 //                 [--start] [--out DIR] [--debug] [--no-open] [--serial SN] [--ip IP]
 //
@@ -365,7 +365,7 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         auto arg = [&](const char* n) { return strcmp(argv[i], n) == 0 && i + 1 < argc; };
         if      (arg("--robot"))      robotId  = atoi(argv[++i]);
-        else if (arg("--cmd"))        cmd      = atoi(argv[++i]);
+        else if (arg("--cmd") || arg("--max-speed")) cmd = atoi(argv[++i]);
         else if (arg("--rest-every")) sched.restEveryS = atof(argv[++i]);
         else if (arg("--rest-for"))   sched.restForS   = atof(argv[++i]);
         else if (arg("--stop-mv"))    stopCfg.stopMv   = atoi(argv[++i]);
@@ -383,10 +383,10 @@ int main(int argc, char* argv[]) {
         else if (!strcmp(argv[i], "--debug")) debug     = true;
         else if (!strcmp(argv[i], "--no-open")) openPlot = false;
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
-            printf("usage: %s --robot ID [--cmd N] [--dir cw|ccw]\n"
+            printf("usage: %s --robot ID [--cmd N | --max-speed N] [--dir cw|ccw]\n"
                    "       [--rest-every S] [--rest-for S] [--stop-mv MV] [--max-time S]\n"
                    "       [--start] [--out DIR] [--debug] [--no-open] [--serial SN] [--ip IP]\n\n"
-                   "Orbits one robot on the saved ring at motor command N (default 60) until\n"
+                   "Orbits one robot on the saved ring at motor command N, 1-100%% (default 60) until\n"
                    "its battery reads <= MV (default 4000) for %.0f s, it stalls, or it is\n"
                    "lost; logs vision speed + battery mV to DIR/*.csv and plots them to *.png.\n"
                    "Rests (motors off) every S (default 120, 0 = never) for S (default 12).\n"
@@ -400,7 +400,7 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "--robot ID is required (0..%d)\n", SC_MAX_ROBOTS - 1);
         return 2;
     }
-    if (cmd < 1 || cmd > 100) { fprintf(stderr, "--cmd must be 1..100\n"); return 2; }
+    if (cmd < 1 || cmd > 100) { fprintf(stderr, "--cmd/--max-speed must be 1..100 (percent of full motor command)\n"); return 2; }
     if (sched.restEveryS > 0.0 && sched.restForS <= 0.0) {
         fprintf(stderr, "--rest-for must be positive (or --rest-every 0 to disable rests)\n");
         return 2;
@@ -417,19 +417,21 @@ int main(int argc, char* argv[]) {
     const float dbgScale = (cfg.debugFrameScale > 0.f && cfg.debugFrameScale <= 1.f) ? cfg.debugFrameScale : 1.f;
 
     ArucoTracker tracker(cfg);
-    // Headless needs poses only, so it can ride on whoever already owns the camera
-    // (a vision_hub, or another demo) instead of locking them out. --debug draws on
-    // the frame, which only the owner has.
-    const bool opened = debug ? tracker.open() : tracker.openOrAttach();
+    // Own the camera if it is free; if a vision_hub (or another tool) holds it, ride on
+    // its poses instead of failing. Headless needs poses only; --debug draws on the
+    // frame, so it additionally needs a hub's shared-memory frames (a demo that owns
+    // the camera does not offer them).
+    const bool opened = tracker.openOrAttach(debug);
     if (!opened) {
         fprintf(stderr, "Could not open Basler camera.%s\n",
-                debug ? " (--debug needs the frame itself, so it cannot attach to a vision_hub; "
-                        "watch the hub's stream or run headless.)" : "");
+                debug ? " (--debug needs the frame itself: start a vision_hub that shares frames, "
+                        "or run headless.)" : "");
         return 1;
     }
     if (tracker.subscribed())
-        printf("[vision] attached to the pose publisher at %dx%d (no camera, no frame)\n",
-               tracker.frameSize().width, tracker.frameSize().height);
+        printf("[vision] attached to the pose publisher at %dx%d (no camera%s)\n",
+               tracker.frameSize().width, tracker.frameSize().height,
+               debug ? ", frames from shared memory" : ", no frame");
     else
         printf("[vision] camera open at %dx%d\n",
                tracker.frameSize().width, tracker.frameSize().height);

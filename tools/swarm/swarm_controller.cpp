@@ -11,7 +11,13 @@
 //   ./swarm_hub /dev/tty.usbmodem* muss laufen
 //
 // Aufruf:
-//   ./swarm_controller
+//   ./swarm_controller [-r ms] [--keys auto|local|terminal]
+//
+// Keyboard source: WASD normally reads the keyboard attached to this machine
+// (evdev / CoreGraphics). Over ssh that is the wrong keyboard, so under ssh
+// (SSH_CONNECTION/SSH_TTY set) it reads the terminal's input instead — exact
+// press/release on kitty-protocol terminals, a hold timeout elsewhere; see
+// terminal_keys.h. --keys local|terminal overrides the detection.
 //
 // Steuerung:
 //   0-9        Select robot by ID (. = all)
@@ -22,6 +28,7 @@
 //   q / Ctrl+C Quit
 
 #include "SwarmClient.h"
+#include "terminal_keys.h"
 
 #include <cstdint>
 #include <cstring>
@@ -42,7 +49,7 @@ static constexpr KeyHandle kKey_A = 0x00;
 static constexpr KeyHandle kKey_S = 0x01;
 static constexpr KeyHandle kKey_D = 0x02;
 static constexpr KeyHandle kKey_W = 0x0D;
-static inline bool keyDown(KeyHandle code) {
+static inline bool localKeyDown(KeyHandle code) {
     return CGEventSourceKeyState(kCGEventSourceStateHIDSystemState, code);
 }
 #else
@@ -53,12 +60,21 @@ static constexpr KeyHandle kKey_S = KEY_S;
 static constexpr KeyHandle kKey_D = KEY_D;
 static constexpr KeyHandle kKey_W = KEY_W;
 static EvdevKeyboard g_keyboard;
-static inline bool keyDown(KeyHandle code) {
+static inline bool localKeyDown(KeyHandle code) {
     return g_keyboard.down(code);
 }
 static int g_kbDeviceCount = -1;  // # evdev devices opened — surfaced in the debug line below
 
 #endif
+
+// WASD source: the terminal's input stream (ssh) or the local keyboard.
+static TerminalKeys g_termKeys;
+
+static inline bool keyDown(KeyHandle code) {
+    if (!g_termKeys.active()) return localKeyDown(code);
+    char c = code == kKey_W ? 'w' : code == kKey_A ? 'a' : code == kKey_S ? 's' : 'd';
+    return g_termKeys.down(c);
+}
 
 // ═══════════════════════════════════════════════════════════════
 // Robot State
@@ -319,6 +335,11 @@ static void drawUI() {
     {
         bool w = keyDown(kKey_W), a = keyDown(kKey_A), s = keyDown(kKey_S), d = keyDown(kKey_D);
         char kw = w ? 'W' : '_', ka = a ? 'A' : '_', ks = s ? 'S' : '_', kd = d ? 'D' : '_';
+        if (g_termKeys.active())
+            printf("\033[36m  [wasd debug] ssh terminal keys (%s)   raw keys: %c %c %c %c   →  out L:%+4d R:%+4d\033[0m\n",
+                   g_termKeys.kitty() ? "kitty protocol: exact" : "timeout fallback: no W+D arcs",
+                   kw, ka, ks, kd, (int)g_wasdL, (int)g_wasdR);
+        else
 #ifndef __APPLE__
         printf("\033[36m  [wasd debug] kbd devices: %d   raw keys: %c %c %c %c   →  out L:%+4d R:%+4d\033[0m\n",
                g_kbDeviceCount, kw, ka, ks, kd, (int)g_wasdL, (int)g_wasdR);
@@ -347,26 +368,34 @@ static void drawUI() {
 // Input
 // ═══════════════════════════════════════════════════════════════
 
-// Returns true if quit requested
-static bool handleInput() {
+// Next command character, or -1. Terminal-key mode parses stdin itself (and
+// consumes WASD into g_termKeys); otherwise only the first byte is looked at.
+static int readCommand() {
+    if (g_termKeys.active()) return g_termKeys.nextCommand();
+
     uint8_t buf[4];
     ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
-    if (n <= 0) return false;
+    if (n <= 0) return -1;
 
     // Skip escape sequences (arrow keys etc.) — not used in WASD mode
-    if (n >= 2 && buf[0] == 0x1B && buf[1] == '[') return false;
+    if (n >= 2 && buf[0] == 0x1B && buf[1] == '[') return -1;
+    return buf[0];
+}
 
-    uint8_t c = buf[0];
+// Returns true if quit requested
+static bool handleInput() {
+    int c = readCommand();
+    if (c < 0) return false;
 
     // ESC alone — stop all
-    if (c == 0x1B && n == 1) {
+    if (c == 0x1B) {
         if (g_testMenu) {
             g_testMenu = false;
         } else if (g_test.running) {
             stopAll(); g_test.running = false;
             snprintf(g_test.status, sizeof(g_test.status), "Aborted");
         } else {
-            g_wasdL = g_wasdR = 0; stopAll();
+            g_wasdL = g_wasdR = 0; stopAll(); g_termKeys.releaseAll();
         }
         return false;
     }
@@ -428,12 +457,19 @@ void signal_handler(int) { g_running = false; }
 
 int main(int argc, char* argv[]) {
     int drawIntervalMs = 200;  // default 5 fps
+    std::string keysMode = "auto";
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if ((arg == "-r") && i + 1 < argc) {
             int r = std::stoi(argv[++i]);
             if (r > 0) drawIntervalMs = r;
+        } else if (arg == "--keys" && i + 1 < argc) {
+            keysMode = argv[++i];
+            if (keysMode != "auto" && keysMode != "local" && keysMode != "terminal") {
+                fprintf(stderr, "--keys takes auto, local or terminal\n");
+                return 2;
+            }
         }
     }
 
@@ -441,12 +477,17 @@ int main(int argc, char* argv[]) {
 
     signal(SIGINT,  signal_handler);
     signal(SIGTERM, signal_handler);
+    signal(SIGHUP,  signal_handler);   // ssh dropped: stop the robots rather than hold the last command
 
     rawMode();
 
+    bool viaSsh = getenv("SSH_CONNECTION") || getenv("SSH_TTY");
+    bool useTerminalKeys = keysMode == "terminal" || (keysMode == "auto" && viaSsh);
+    if (useTerminalKeys) g_termKeys.begin();
+
 #ifndef __APPLE__
-    g_kbDeviceCount = g_keyboard.open();
-    if (g_kbDeviceCount == 0)
+    if (!useTerminalKeys) g_kbDeviceCount = g_keyboard.open();
+    if (!useTerminalKeys && g_kbDeviceCount == 0)
         fprintf(stderr, "[wasd] no readable keyboard in /dev/input — WASD disabled. "
                         "Add yourself to the 'input' group (sudo usermod -aG input $USER, "
                         "then log out and back in).\n");
@@ -480,6 +521,7 @@ int main(int argc, char* argv[]) {
     stopAll();
     sendSwarm();
     g_swarm.disconnect();
+    g_termKeys.end();
     normalMode();
 #ifndef __APPLE__
     g_keyboard.close();

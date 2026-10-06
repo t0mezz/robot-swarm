@@ -32,7 +32,10 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+// Overridable so tests can bind a private socket instead of the live hub's.
+#ifndef POSE_HUB_SOCK_PATH
 #define POSE_HUB_SOCK_PATH "/tmp/vision_hub.sock"
+#endif
 
 // Mirrors RobotPose (lib/ArucoTracker/aruco_tracker.h) field for field, but
 // declared here so this header stays OpenCV-free. ArucoTracker converts on

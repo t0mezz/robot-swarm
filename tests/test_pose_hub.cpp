@@ -10,6 +10,9 @@
 // No test framework — plain asserts with a pass/fail tally, run via
 // `make test` (see tests/Makefile).
 
+// A private socket: the default path belongs to a running vision_hub (or demo),
+// which this test must neither collide with nor unlink.
+#define POSE_HUB_SOCK_PATH "/tmp/vision_hub_test.sock"
 #include "../lib/ArucoTracker/pose_hub.h"
 
 #include <chrono>

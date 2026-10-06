@@ -2,12 +2,12 @@
 // Usage: ./marker_eval [--config JSON] [--serial SN] [--ip IP] [--mirror]
 //
 // Shows live camera feed with a telemetry panel:
-//   Resolution, FPS, pipeline latency, sensor temperature, marker count
+//   Resolution, FPS, per-frame detection time, sensor temperature, marker count
 //
 // Run this first to verify camera health and detection quality
 // before launching any controller.
 //
-// Keys: r = reset FPS/latency counters,  q / Esc = quit
+// Keys: r = reset FPS/detect-time counters,  q / Esc = quit
 
 #include "aruco_tracker.h"
 #include "DemoHud.h"
@@ -38,7 +38,10 @@ static void drawPanel(cv::Mat& img, float loopFps, float detFps, float latMs,
     hud.row("Resolution", DemoHud::fmt("%d x %d px", w, h));
     hud.row("Det FPS",    DemoHud::fmt("%.1f", detFps));
     hud.row("Loop FPS",   DemoHud::fmt("%.1f", loopFps), DemoHud::COL_OK);
-    hud.row("Latency",    DemoHud::fmt("%.1f ms", latMs));
+    // Detection-thread processing time per frame (smoothed): flip, gray, ArUco, Kalman,
+    // pose math, overlay. NOT photon-to-pose — exposure, readout, the GigE transfer
+    // and the wait for update() are not in it.
+    hud.row("Detect time", DemoHud::fmt("%.1f ms/frame", latMs));
     hud.row("Temp",       tempC >= 0.f ? DemoHud::fmt("%.1f C", tempC) : "n/a",
                           tempColor(tempC));
     hud.row("Markers",    DemoHud::fmt("%d", markerCount),

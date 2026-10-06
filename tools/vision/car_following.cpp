@@ -797,19 +797,21 @@ int main(int argc, char* argv[]) {
                                 ? cfg.debugFrameScale : 1.0f;
 
     ArucoTracker tracker(cfg);
-    // Headless needs poses only, so it can ride on whoever already owns the camera
-    // (a vision_hub, or another demo) instead of locking them out. --debug draws on
-    // the frame, which only the owner has.
-    const bool opened = debug ? tracker.open() : tracker.openOrAttach();
+    // Own the camera if it is free; if a vision_hub (or another tool) holds it, ride on
+    // its poses instead of failing. Headless needs poses only; --debug draws on the
+    // frame, so it additionally needs a hub's shared-memory frames (a demo that owns
+    // the camera does not offer them).
+    const bool opened = tracker.openOrAttach(debug);
     if (!opened) {
         fprintf(stderr, "Could not open Basler camera.%s\n",
-                debug ? " (--debug needs the frame itself, so it cannot attach to a vision_hub; "
-                        "watch the hub's stream or run headless.)" : "");
+                debug ? " (--debug needs the frame itself: start a vision_hub that shares frames, "
+                        "or run headless.)" : "");
         return 1;
     }
     if (tracker.subscribed())
-        printf("[vision] attached to the pose publisher at %dx%d (no camera, no frame)\n",
-               tracker.frameSize().width, tracker.frameSize().height);
+        printf("[vision] attached to the pose publisher at %dx%d (no camera%s)\n",
+               tracker.frameSize().width, tracker.frameSize().height,
+               debug ? ", frames from shared memory" : ", no frame");
     else
         printf("[vision] camera open at %dx%d\n",
                tracker.frameSize().width, tracker.frameSize().height);

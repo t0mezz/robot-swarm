@@ -27,7 +27,9 @@ else
     # pylon-config only emits -L/opt/pylon/lib (a link-time path); without an
     # rpath the binaries can't find libpylonbase.so.10 etc. at runtime since
     # /opt/pylon/lib isn't registered with ldconfig.
-    PYLON_LIBS         = $(shell pylon-config --libs 2>/dev/null) -Wl,-rpath,/opt/pylon/lib
+    # -lrt: shm_open (lib/ArucoTracker/frame_shm.h) is in librt before glibc 2.34;
+    # every tool that includes the tracker needs it, and this is on all their link lines.
+    PYLON_LIBS         = $(shell pylon-config --libs 2>/dev/null) -Wl,-rpath,/opt/pylon/lib -lrt
     SFML_CFLAGS       := $(shell pkg-config --cflags sfml-all 2>/dev/null)
     SFML_LIBS         := $(shell pkg-config --libs   sfml-all 2>/dev/null)
     # WASD multi-key polling reads /dev/input/eventN directly (see swarm/evdev_keys.h);
@@ -66,60 +68,60 @@ $(BUILD_DIR)/swarm_dashboard: $(SWARMDIR)/swarm_dashboard.cpp $(SWARMDIR)/teleme
 # Headless NDJSON producer behind the Ink dashboard (tools/dashboard-ink).
 # Same two data sources as swarm_dashboard, so it carries the same
 # OpenCV/pylon dependencies.
-$(BUILD_DIR)/swarm_telemetry_json: $(SWARMDIR)/swarm_telemetry_json.cpp $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)
+$(BUILD_DIR)/swarm_telemetry_json: $(SWARMDIR)/swarm_telemetry_json.cpp $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/ArucoTracker $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS)
 
-$(BUILD_DIR)/swarm_controller: $(SWARMDIR)/swarm_controller.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
+$(BUILD_DIR)/swarm_controller: $(SWARMDIR)/swarm_controller.cpp $(LIBDIR)/SwarmClient/SwarmClient.h $(SWARMDIR)/evdev_keys.h $(SWARMDIR)/terminal_keys.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@ $(CONTROLLER_LDFLAGS)
 
 $(BUILD_DIR)/game: game.cpp $(LIBDIR)/SwarmClient/SwarmClient.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(SFML_CFLAGS) -I$(LIBDIR)/SwarmClient $< -o $@ $(SFML_LIBS)
 
-$(BUILD_DIR)/vision_controller: vision/vision_controller.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(SWARMDIR)/evdev_keys.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+$(BUILD_DIR)/vision_controller: vision/vision_controller.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(SWARMDIR)/evdev_keys.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(SWARMDIR) -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-$(BUILD_DIR)/circle_demo: vision/circle_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+$(BUILD_DIR)/circle_demo: vision/circle_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-$(BUILD_DIR)/car_following: vision/car_following.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h $(LIBDIR)/CarFollowing/car_following.h $(LIBDIR)/CarFollowing/ring.h $(LIBDIR)/CarFollowing/http_bridge.h | $(BUILD_DIR)
+$(BUILD_DIR)/car_following: vision/car_following.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h $(LIBDIR)/CarFollowing/car_following.h $(LIBDIR)/CarFollowing/ring.h $(LIBDIR)/CarFollowing/http_bridge.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
 	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud -I$(LIBDIR)/CarFollowing \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-$(BUILD_DIR)/wingman: vision/wingman.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(SWARMDIR)/evdev_keys.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+$(BUILD_DIR)/wingman: vision/wingman.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(SWARMDIR)/evdev_keys.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(SWARMDIR) -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-$(BUILD_DIR)/shape_demo: vision/shape_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+$(BUILD_DIR)/shape_demo: vision/shape_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
 	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-$(BUILD_DIR)/drag_drop_demo: vision/drag_drop_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+$(BUILD_DIR)/drag_drop_demo: vision/drag_drop_demo.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
 	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
-$(BUILD_DIR)/marker_eval: vision/marker_eval.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+$(BUILD_DIR)/marker_eval: vision/marker_eval.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/DemoHud \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS)
 
 # Motor-command -> real-world mm/s calibration tool (see robotMaxMms note in
 # CLAUDE.md). Drives one robot and needs SwarmClient, same deps as drag_drop_demo.
-$(BUILD_DIR)/max_speed_test: vision/max_speed_test.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+$(BUILD_DIR)/max_speed_test: vision/max_speed_test.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
 	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
 
 # Homography/pixel-to-mm sanity check — click-to-measure against a tape
 # measure. No SwarmClient: camera + homography only, like marker_eval.
-$(BUILD_DIR)/measurement_test: vision/measurement_test.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+$(BUILD_DIR)/measurement_test: vision/measurement_test.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/DemoHud \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS)
 
 # Same motor-command -> mm/s calibration as max_speed_test, but orbiting on
 # circle_demo.cpp's own control law (shares its /tmp/circle_demo.yml fixture)
 # instead of driving straight, plus a sweep/plot mode (writes CSV + PNG).
-$(BUILD_DIR)/circle_speed_test: vision/circle_speed_test.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
+$(BUILD_DIR)/circle_speed_test: vision/circle_speed_test.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
 	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
@@ -127,7 +129,7 @@ $(BUILD_DIR)/circle_speed_test: vision/circle_speed_test.cpp $(LIBDIR)/ArucoTrac
 # Orbits one robot at a fixed command until its battery is flat, logging
 # vision speed against reported battery voltage (CSV + PNG plot). The
 # measurement bookkeeping is lib/BatteryLog/battery_log.h (tests/).
-$(BUILD_DIR)/battery_log: vision/battery_log.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h $(LIBDIR)/BatteryLog/battery_log.h | $(BUILD_DIR)
+$(BUILD_DIR)/battery_log: vision/battery_log.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/SwarmClient/SwarmClient.h $(LIBDIR)/DemoHud/DemoHud.h $(LIBDIR)/BatteryLog/battery_log.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) \
 	    -I$(LIBDIR)/ArucoTracker -I$(LIBDIR)/SwarmClient -I$(LIBDIR)/DemoHud -I$(LIBDIR)/BatteryLog \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS) $(CONTROLLER_LDFLAGS)
@@ -135,11 +137,11 @@ $(BUILD_DIR)/battery_log: vision/battery_log.cpp $(LIBDIR)/ArucoTracker/aruco_tr
 # Opt-in camera daemon: owns the Basler, publishes poses, streams the tracked
 # frame as MJPEG (tools/vision/vision_hub.cpp). No SwarmClient — it never
 # touches the dongle.
-$(BUILD_DIR)/vision_hub: vision/vision_hub.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/mjpeg_server.h | $(BUILD_DIR)
+$(BUILD_DIR)/vision_hub: vision/vision_hub.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h $(LIBDIR)/ArucoTracker/mjpeg_server.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -pthread -I$(LIBDIR)/ArucoTracker \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS)
 
-$(BUILD_DIR)/frame_inspector: vision/frame_inspector.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)
+$(BUILD_DIR)/frame_inspector: vision/frame_inspector.cpp $(LIBDIR)/ArucoTracker/aruco_tracker.h $(LIBDIR)/ArucoTracker/frame_shm.h $(LIBDIR)/ArucoTracker/pose_hub.h $(LIBDIR)/ArucoTracker/basler_pylon_source.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(OPENCV_CFLAGS) $(PYLON_CFLAGS) -I$(LIBDIR)/ArucoTracker \
 	    $< -o $@ $(OPENCV_LIBS) $(PYLON_LIBS)
 

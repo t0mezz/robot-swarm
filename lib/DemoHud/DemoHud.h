@@ -9,7 +9,7 @@
 // Usage:
 //   DemoHud hud;
 //   hud.title(fmt("loop_fps:%.0f  Robots:%d  HUB:%s", fps, n, ok ? "OK":"--"));
-//   hud.header({"ID", "Vision", "Battery", "Latency", "Mot-L", "Mot-R", "Status"});
+//   hud.header({"ID", "Vision", "Battery", DemoHud::HDR_RADIO_RTT, "Mot-L", "Mot-R", "Status"});
 //   for (auto& r : robots) hud.row({id, vis, battery, latency, l, r, st}, color);
 //   hud.drawTopRight(frame);   // canonical: docked to the top-right corner
 //   hud.clear();
@@ -167,6 +167,15 @@ public:
     static std::string formatBattery(uint16_t mv) {
         return mv > 0 ? fmt("%.2fV", mv * 0.001f) : "--";
     }
+
+    // Column header for formatLatency(). The number is NOT camera-to-motor
+    // latency: it is the radio round trip the dongle measures for one robot —
+    // a MSG_PING out over ESP-NOW, the robot ESP32's MSG_PONG back, timed with
+    // the dongle's micros(). It excludes the PC and USB-serial legs, the UART
+    // hop to the RP2040 and the motor response, and it is one sample per robot
+    // per ping interval, so it can be a few seconds old. Name the column for
+    // what it measures so nobody reads it as the control-loop delay.
+    static constexpr const char* HDR_RADIO_RTT = "Radio RTT";
 
     static std::string formatLatency(uint16_t latencyUs) {
         return latencyUs > 0 ? fmt("%.1fms", latencyUs / 1000.f) : "--";
