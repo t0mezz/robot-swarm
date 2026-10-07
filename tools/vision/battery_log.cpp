@@ -52,6 +52,7 @@
 #include "DemoHud.h"
 #include "battery_log.h"
 
+#include <cstdarg>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -69,6 +70,19 @@
 #include <poll.h>
 #include <fcntl.h>
 #include <unistd.h>
+
+// ── Console log ──────────────────────────────────────────────────────────────
+// With --log every stdout line is also appended to a file in /tmp, flushed per
+// line, so a run that dies unattended still leaves its last status behind.
+static FILE* g_logFile = nullptr;
+
+static void blPrintf(const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    if (g_logFile) { va_list cp; va_copy(cp, ap); vfprintf(g_logFile, fmt, cp); va_end(cp); fflush(g_logFile); }
+    vprintf(fmt, ap);
+    va_end(ap);
+}
 
 // ── Tunables ─────────────────────────────────────────────────────────────────
 
@@ -193,7 +207,7 @@ static void openInViewer(const std::string& path) {
 #else
     const char* opener = "xdg-open";
     if (!getenv("DISPLAY") && !getenv("WAYLAND_DISPLAY")) {
-        printf("[bl] no display — not opening %s\n", path.c_str());
+        blPrintf("[bl] no display — not opening %s\n", path.c_str());
         return;
     }
 #endif
@@ -360,6 +374,7 @@ int main(int argc, char* argv[]) {
     bool   autoStart = false;
     bool   debug     = false;
     bool   openPlot  = true;
+    bool   logFile   = false;
     BlSchedule   sched;
     BlStopConfig stopCfg;
 
@@ -383,16 +398,18 @@ int main(int argc, char* argv[]) {
         else if (!strcmp(argv[i], "--start")) autoStart = true;
         else if (!strcmp(argv[i], "--debug")) debug     = true;
         else if (!strcmp(argv[i], "--no-open")) openPlot = false;
+        else if (!strcmp(argv[i], "--log"))     logFile  = true;
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
-            printf("usage: %s --robot ID [--cmd N | --max-speed N] [--dir cw|ccw]\n"
+            blPrintf("usage: %s --robot ID [--cmd N | --max-speed N] [--dir cw|ccw]\n"
                    "       [--rest-every S] [--rest-for S] [--stop-mv MV] [--max-time S]\n"
-                   "       [--start] [--out DIR] [--debug] [--no-open] [--serial SN] [--ip IP]\n\n"
+                   "       [--start] [--out DIR] [--debug] [--no-open] [--log] [--serial SN] [--ip IP]\n\n"
                    "Orbits one robot on the saved ring at motor command N, 1-100%% (default 60) until\n"
                    "its battery reads <= MV (default 4000) for %.0f s, it stalls, or it is\n"
                    "lost; logs vision speed + battery mV to DIR/*.csv and plots them to *.png.\n"
                    "Rests (motors off) every S (default 120, 0 = never) for S (default 12).\n"
                    "Start: <enter> on stdin, space in --debug, or --start. s/q ends the run.\n"
-                   "When the run ends the final plot is opened in the image viewer (--no-open).\n",
+                   "When the run ends the final plot is opened in the image viewer (--no-open).\n"
+                   "--log also appends the console output to /tmp/battery_log_r<ID>_<time>.log.\n",
                    argv[0], stopCfg.lowHoldS);
             return 0;
         } else { fprintf(stderr, "unknown argument: %s\n", argv[i]); return 2; }
@@ -408,7 +425,13 @@ int main(int argc, char* argv[]) {
     }
 
     SwarmClient swarm;
-    printf(swarm.connect() ? "[hub] connected\n" : "[hub] not available — will retry\n");
+    if (logFile) {
+        std::string lp = DemoHud::fmt("/tmp/battery_log_r%d_%s.log", robotId, wallTime("%Y%m%d_%H%M%S").c_str());
+        g_logFile = fopen(lp.c_str(), "a");
+        if (g_logFile) printf("[bl] console log -> %s\n", lp.c_str());
+        else fprintf(stderr, "[bl] could not open %s\n", lp.c_str());
+    }
+    blPrintf(swarm.connect() ? "[hub] connected\n" : "[hub] not available — will retry\n");
 
     auto cfg = ArucoConfig::fromFile();
     if (!serial.empty()) cfg.baslerSerial = serial;
@@ -430,11 +453,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     if (tracker.subscribed())
-        printf("[vision] attached to the pose publisher at %dx%d (no camera%s)\n",
+        blPrintf("[vision] attached to the pose publisher at %dx%d (no camera%s)\n",
                tracker.frameSize().width, tracker.frameSize().height,
                debug ? ", frames from shared memory" : ", no frame");
     else
-        printf("[vision] camera open at %dx%d\n",
+        blPrintf("[vision] camera open at %dx%d\n",
                tracker.frameSize().width, tracker.frameSize().height);
 
     // Speed has to be in mm for the log to mean anything, so unlike
@@ -461,7 +484,7 @@ int main(int argc, char* argv[]) {
                 RING_FILE.c_str(), CIRCLE_FILE.c_str());
         return 1;
     }
-    printf("[ring] centre=(%.0f, %.0f) radius=%.0f mm <- %s\n",
+    blPrintf("[ring] centre=(%.0f, %.0f) radius=%.0f mm <- %s\n",
            ring.centre.x, ring.centre.y, ring.radius, ringSrc.c_str());
 
     const char* WIN  = "Battery Log";
@@ -501,6 +524,7 @@ int main(int argc, char* argv[]) {
     std::string csvPath, pngPath, title;
 
     auto lastFrame = t0, lastControl = t0, lastMotorTx = t0, lastHubRetry = t0;
+    long rowLoops = 0, statusLoops = 0;   // main-loop iterations since the last row / status line
     double lastStatusS = 0.0, lastPlotSaveS = 0.0, lastPlotDrawS = -1e9, lastRenderS = -1e9;
 
     auto tNowS = [&]() { return secondsSince(t0); };
@@ -540,6 +564,8 @@ int main(int argc, char* argv[]) {
         double t = tNowS();
         BlRow r = acc.take(t);
         if (r.dtS <= 0.0) return;
+        double loopHz = rowLoops / r.dtS;
+        rowLoops = 0;
         if (phase == BlPhase::Orbit) orbitS += r.dtS;
         int mv; bool valid, lowFlag;
         battery(mv, valid, lowFlag);
@@ -552,7 +578,7 @@ int main(int argc, char* argv[]) {
             << num(r.speedMms, "%.2f") << ',' << num(r.radialErrMm, "%.1f") << ','
             << num(r.absTurn, "%.2f") << ',' << r.nFrames << ',' << (r.visible() ? 1 : 0) << ','
             << (valid ? std::to_string(mv) : std::string()) << ',' << (valid ? 1 : 0) << ','
-            << (lowFlag ? 1 : 0) << '\n';
+            << (lowFlag ? 1 : 0) << ',' << DemoHud::fmt("%.1f", loopHz) << '\n';
         csv.flush();   // a crash hours in should cost one row, not the run
         points.push_back({t - runStartS, r.dtS, phase, r.speedMms, valid ? mv : -1});
     };
@@ -560,7 +586,7 @@ int main(int argc, char* argv[]) {
     auto setPhase = [&](BlPhase p, const char* why) {
         if (p == phase) return;
         emitRow();
-        printf("[bl] %s -> %s (%s)\n", blPhaseName(phase), blPhaseName(p), why);
+        blPrintf("[bl] %s -> %s (%s)\n", blPhaseName(phase), blPhaseName(p), why);
         phase = p;
         phaseStartS = tNowS();
         prevTurn = 0.f;
@@ -588,29 +614,31 @@ int main(int argc, char* argv[]) {
             << "# stop_mv: " << stopCfg.stopMv << "\n# max_time_s: " << maxTimeS << '\n'
             << "# assumes open-loop robot firmware (ODOMETRY_ENABLED = False)\n"
             << "t_s,wall_iso,robot,phase,dt_s,cmd,motor_l,motor_r,speed_mms,radial_err_mm,"
-               "abs_turn,n_frames,visible,bat_mv,bat_valid,low_bat_flag\n";
+               "abs_turn,n_frames,visible,bat_mv,bat_valid,low_bat_flag,loop_hz\n";
         csv.flush();
         title = DemoHud::fmt("robot %d   cmd %d   %s   ring R=%.0f mm   started %s",
                              robotId, cmd, dirSign > 0 ? "ccw" : "cw", ring.radius,
                              wallTime("%Y-%m-%d %H:%M").c_str());
         runStartS = tNowS();
         acc.begin(runStartS);
-        printf("[bl] logging to %s\n", csvPath.c_str());
+        rowLoops = 0;
+        blPrintf("[bl] logging to %s\n", csvPath.c_str());
         return true;
     };
 
-    printf("[bl] setup — robot %d held still. %s\n", robotId,
+    blPrintf("[bl] setup — robot %d held still. %s\n", robotId,
            debug ? "Press space to start, s/q to end." : "Press <enter> to start, s/q to end.");
 
     // ── Loop ─────────────────────────────────────────────────────────────────
     while (g_running && phase != BlPhase::Done) {
+        ++rowLoops; ++statusLoops;
         bool haveFrame = tracker.update();
         now = clock::now();
         const double t = tNowS();
 
         if (!swarm.isConnected() && secondsSince(lastHubRetry) >= 2.0) {
             lastHubRetry = now;
-            if (swarm.connect()) printf("[hub] connected\n");
+            if (swarm.connect()) blPrintf("[hub] connected\n");
         }
         swarm.poll();
 
@@ -619,7 +647,7 @@ int main(int argc, char* argv[]) {
             if (readStdinLine(line)) {
                 if      (line == "q" || line == "quit" || line == "s" || line == "stop") endRequested = true;
                 else if (line.empty() || line == "g" || line == "go" || line == "start") startRequested = true;
-                else printf("[bl] <enter>/go = start, s/q = end\n");
+                else blPrintf("[bl] <enter>/go = start, s/q = end\n");
             }
         }
 
@@ -734,18 +762,21 @@ int main(int argc, char* argv[]) {
 
         // ── Status, plot ─────────────────────────────────────────────────────
         if (t - lastStatusS >= 1.0) {
+            double prevStatusS = lastStatusS;
             lastStatusS = t;
             int mv; bool valid, lowFlag;
             battery(mv, valid, lowFlag);
             float spd = points.empty() ? NAN : points.back().speedMms;
-            printf("[bl] %s %-5s  speed %s  bat %s  radial %+.0f mm  %s  hub:%s\n",
+            blPrintf("[bl] %s %-5s  speed %s  bat %s  radial %+.0f mm  %s  hub:%s  loop %.0f/s\n",
                    phase == BlPhase::Setup ? "--:--:--" : hms(t - runStartS).c_str(),
                    blPhaseName(phase),
                    std::isnan(spd) ? "   -   " : DemoHud::fmt("%5.1f mm/s", spd).c_str(),
                    valid ? DemoHud::fmt("%.2f V", mv / 1000.0).c_str() : "  -  ",
                    visible ? distC - ring.radius : 0.f,
                    visible ? "seen" : "UNSEEN",
-                   swarm.isConnected() ? "ok" : "OFFLINE");
+                   swarm.isConnected() ? "ok" : "OFFLINE",
+                   statusLoops / std::max(1e-3, t - prevStatusS));
+            statusLoops = 0;
             fflush(stdout);
         }
         if (phase != BlPhase::Setup && t - lastPlotSaveS >= PLOT_SAVE_S) savePlot();
@@ -804,7 +835,7 @@ int main(int argc, char* argv[]) {
         csv.close();
         title += "   ended: " + endNote + " after " + hms(tNowS() - runStartS);
         savePlot();
-        printf("[bl] ended (%s) after %s — %zu rows\n[bl] wrote %s\n[bl] wrote %s\n",
+        blPrintf("[bl] ended (%s) after %s — %zu rows\n[bl] wrote %s\n[bl] wrote %s\n",
                endNote.c_str(), hms(tNowS() - runStartS).c_str(), points.size(),
                csvPath.c_str(), pngPath.c_str());
         if (openPlot) openInViewer(pngPath);

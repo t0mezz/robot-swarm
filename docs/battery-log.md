@@ -226,12 +226,18 @@ gives the duration, the reason and the stall baseline.
 
 ```
 t_s,wall_iso,robot,phase,dt_s,cmd,motor_l,motor_r,speed_mms,radial_err_mm,
-abs_turn,n_frames,visible,bat_mv,bat_valid,low_bat_flag
+abs_turn,n_frames,visible,bat_mv,bat_valid,low_bat_flag,loop_hz
 ```
 
 Missing values (no pose, no valid battery) are empty fields, not zeros.
 `radial_err_mm` and `abs_turn` are there so drift in orbit quality can be told
-apart from slowdown caused by the battery.
+apart from slowdown caused by the battery. `loop_hz` is the tool's own main-loop
+iterations per second over the row (not the camera rate, which is `n_frames`);
+a drop shows the PC side starving, as opposed to the robot slowing down. The
+same figure is on the once-a-second status line (`loop N/s`).
+
+`--log` additionally appends every console line to
+`/tmp/battery_log_r<ID>_<time>.log` (flushed per line).
 
 ### Plot (in the tool)
 
