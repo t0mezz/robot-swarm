@@ -205,7 +205,7 @@ firmware sets it today.
 | Low voltage | valid reading ≤ `stopMv` held for `lowHoldS` | 4000 mV (1.0 V/cell), 6 s |
 | Low-battery flag | `STATUS_LOW_BATTERY` set | immediately |
 | Stall | orbit rows < `stallFrac` × baseline for `stallS` without a break | 20 %, 10 s |
-| Seek timeout | seek lasts longer than `seekTimeoutS` while the robot could be driven | 30 s |
+| Seek timeout | seek lasts longer than `seekTimeoutS` while the robot could be driven | 300 s (the seek itself is floored at 18 motor units outside the arrival band, `blSeekRadial`, so it cannot stall just short of it) |
 | Robot lost | not seen for `lostS` (outside setup) | 60 s |
 | Max time | `--max-time` reached | off |
 | User | `s` / `q` / Ctrl-C | |

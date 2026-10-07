@@ -205,11 +205,21 @@ static void test_rest_rows_do_not_stall() {
     EXPECT_TRUE(!s.stopped(), "a rest is supposed to be slow");
 }
 
+static void test_seek_radial_floor() {
+    // The case from the 2026-10-06 run: 21.2 mm inside the ring, P alone = 6.4.
+    float v = blSeekRadial(-21.2f, 0.30f, 50.f, 18.f, 20.f);
+    EXPECT_TRUE(v == 18.f, "stalled-band error is driven outward at the floor");
+    EXPECT_TRUE(blSeekRadial(21.2f, 0.30f, 50.f, 18.f, 20.f) == -18.f, "and inward on the other side");
+    EXPECT_TRUE(blSeekRadial(-19.f, 0.30f, 50.f, 18.f, 20.f) < 18.f, "inside the band the floor is off");
+    EXPECT_TRUE(blSeekRadial(-300.f, 0.30f, 50.f, 18.f, 20.f) == 50.f, "far away is capped at max");
+    EXPECT_NEAR(blSeekRadial(-100.f, 0.30f, 50.f, 18.f, 20.f), 30.0, 1e-4, "P term untouched above the floor");
+}
+
 static void test_seek_timeout_and_lost() {
     BlStop s;
-    s.tick(BlPhase::Seek, 29.0, 0.0);
+    s.tick(BlPhase::Seek, 299.0, 0.0);
     EXPECT_TRUE(!s.stopped(), "seek within timeout");
-    s.tick(BlPhase::Seek, 30.0, 0.0);
+    s.tick(BlPhase::Seek, 300.0, 0.0);
     EXPECT_TRUE(s.reason() == BlStopReason::SeekTimeout, "seek timed out");
 
     BlStop s2;
@@ -246,6 +256,7 @@ static void test_rolling_median_all_nan() {
 }
 
 int main() {
+    test_seek_radial_floor();
     test_schedule_cycles();
     test_schedule_disabled();
     test_speed_ccw_and_cw();

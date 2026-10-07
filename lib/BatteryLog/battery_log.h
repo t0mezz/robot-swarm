@@ -62,6 +62,21 @@ struct BlSchedule {
     }
 };
 
+// ── Seek drive ───────────────────────────────────────────────────────────────
+// Seek is a P controller on the radial error, and P shrinks its own command as
+// it closes: just outside the arrival band it asks for ~6 motor units, which
+// is below what starts the wheels, so the robot stalls a hair outside the
+// band and the seek never ends. Outside the band the command is therefore
+// floored at minDrive. Inside it the P term is left alone (the seek is over).
+
+inline float blSeekRadial(float errMm, float kRad, float maxDrive, float minDrive, float arrivalMm) {
+    float v = -kRad * errMm;
+    if (v >  maxDrive) v =  maxDrive;
+    if (v < -maxDrive) v = -maxDrive;
+    if (std::fabs(errMm) > arrivalMm && std::fabs(v) < minDrive) v = v < 0.f || (v == 0.f && errMm > 0.f) ? -minDrive : minDrive;
+    return v;
+}
+
 // ── One log row ──────────────────────────────────────────────────────────────
 // Speed is each frame's displacement projected onto the ring's tangent at the
 // midpoint of that step, summed over the row and divided by the time those
@@ -169,7 +184,7 @@ struct BlStopConfig {
     double baselineS   = 60.0;
     float  stallFrac   = 0.2f;
     double stallS      = 10.0;
-    double seekTimeoutS = 30.0;
+    double seekTimeoutS = 300.0;  // a seek that stalls is nudged (blSeekRadial); this is the backstop
     double lostS       = 60.0;
 };
 

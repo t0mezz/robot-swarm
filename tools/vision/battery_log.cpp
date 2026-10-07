@@ -85,6 +85,7 @@ static constexpr float YAW_TAU_S       = 0.50f;
 static constexpr float D_TERM_WINDOW_S = 0.01f;
 
 static constexpr float SEEK_ARRIVAL_MM   = 20.f;   // circle_speed_test's
+static constexpr float SEEK_MIN_DRIVE_MM = 18.f;   // motor units; below ~10 the wheels do not turn
 static constexpr float CONTROL_STALL_S   = 0.05f;  // control floor if the camera stalls
 static constexpr float MOTOR_KEEPALIVE_S = 0.10f;  // well inside WATCHDOG_TIMEOUT_MS
 static constexpr float MOTOR_HOLD_S      = 0.20f;  // unseen this long -> motors to zero
@@ -700,7 +701,9 @@ int main(int argc, char* argv[]) {
                     // Seek is radial only; orbit feeds --cmd straight in as
                     // the tangential speed, in motor units like circle_demo.
                     float vTan = phase == BlPhase::Orbit ? (float)cmd : 0.f;
-                    float vRad = clampf(-K_RAD * (distC - ring.radius), -MOTOR_MAX * 0.5f, MOTOR_MAX * 0.5f);
+                    float vRad = phase == BlPhase::Seek
+                        ? blSeekRadial(distC - ring.radius, K_RAD, MOTOR_MAX * 0.5f, SEEK_MIN_DRIVE_MM, SEEK_ARRIVAL_MM)
+                        : clampf(-K_RAD * (distC - ring.radius), -MOTOR_MAX * 0.5f, MOTOR_MAX * 0.5f);
                     float vx = vTan * tx + vRad * rx, vy = vTan * ty + vRad * ry;
                     float vMag = std::hypot(vx, vy);
                     if (vMag >= 0.5f) {
